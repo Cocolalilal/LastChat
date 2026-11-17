@@ -80,6 +80,9 @@ fun SettingPromptInjectionsPage(
     val pagerState = rememberPagerState(initialPage = initialPage) { 3 }
     val skillsListState = rememberLazyListState()
     val lorebooksListState = rememberLazyListState()
+    val contextListState = rememberLazyListState()
+    var showAddLorebook by remember { mutableStateOf(false) }
+    var creatingLorebook by remember { mutableStateOf(false) }
     LaunchedEffect(scrollToSkillId, settings.skills) {
         val index = settings.skills.indexOfFirst { it.id.toString() == scrollToSkillId }
         if (index >= 0) skillsListState.scrollToItem(index)
@@ -219,7 +222,7 @@ fun SettingPromptInjectionsPage(
                             } else if (pagerState.currentPage == 1) {
                                 navController.navigate(Screen.SettingAdditionalContextCreate)
                             } else {
-                                navController.navigate(Screen.SettingLorebookSettings())
+                                showAddLorebook = true
                             }
                         },
                         shape = AppShapes.CardLarge
@@ -248,6 +251,8 @@ fun SettingPromptInjectionsPage(
                     settings = settings,
                     contentPadding = contentPadding,
                     onEdit = { navController.navigate(Screen.SettingAdditionalContextDetail(it.id.toString())) },
+                    listState = contextListState,
+                    onUpdateSettings = { vm.updateSettings(transform = it) },
                 )
                 else -> {
                     LorebooksPageContent(
@@ -261,6 +266,25 @@ fun SettingPromptInjectionsPage(
             }
         }
     }
+
+    if (showAddLorebook) LorebookCreatorSheet(
+        saving = creatingLorebook,
+        onDismiss = { if (!creatingLorebook) showAddLorebook = false },
+        onDiscardFiles = { vm.cleanupFilesIfUnreferenced(it) },
+        onSave = { created ->
+            if (!creatingLorebook) {
+                creatingLorebook = true
+                vm.updateSettings(afterPersist = {
+                    creatingLorebook = false
+                    showAddLorebook = false
+                    navController.navigate(Screen.SettingLorebookDetail(created.id.toString()))
+                }, onError = { error ->
+                    creatingLorebook = false
+                    toaster.show(error.message ?: "Could not create lorebook")
+                }) { latest -> latest.copy(lorebooks = latest.lorebooks.filterNot { it.id == created.id } + created) }
+            }
+        },
+    )
 
 }
 

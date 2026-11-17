@@ -7,13 +7,21 @@ import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
 import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
 import me.rerere.rikkahub.ui.hooks.reorderedByKeys
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,27 +30,59 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Input
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Book
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.DragIndicator
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.collectMediaFileRefs
+import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.ToastAction
@@ -50,8 +90,13 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.PremiumHaptics
-import me.rerere.rikkahub.ui.pages.setting.components.AddonEmptyState
-import me.rerere.rikkahub.ui.pages.setting.components.AddonListItem
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.utils.LorebookExportImport
+import me.rerere.rikkahub.utils.OwnedFileDirectory
+import me.rerere.rikkahub.utils.importOwnedFile
+import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import me.rerere.rikkahub.ui.hooks.AppReorderableItem
 import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
@@ -97,9 +142,40 @@ fun LorebooksPageContent(
         ) {
             if (orderedLorebooks.isEmpty()) {
                 item(key = "empty") {
-                    AddonEmptyState(icon = Icons.Rounded.Book,
-                        title = stringResource(R.string.lorebooks_page_empty_title),
-                        modifier = Modifier.fillMaxWidth().padding(32.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (LocalDarkMode.current) {
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            }
+                        ),
+                        shape = AppShapes.CardLarge
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Book,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                            Text(
+                                text = stringResource(R.string.lorebooks_page_empty_title),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = stringResource(R.string.lorebooks_page_empty_desc),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             } else {
                 itemsIndexed(
@@ -144,9 +220,13 @@ fun LorebooksPageContent(
                                         label = context.getString(R.string.undo),
                                         onClick = {
                                             vm.cancelUnreferencedFileCleanup(cleanupKey)
-                                            vm.updateSettings { settings -> settings.copy(lorebooks = settings.lorebooks.toMutableList().apply {
-                                                    add(index.coerceAtMost(size), deletedLorebook)
-                                                }) }
+                                            vm.updateSettings { latest ->
+                                                if (latest.lorebooks.any { it.id == deletedLorebook.id }) latest else latest.copy(
+                                                    lorebooks = latest.lorebooks.toMutableList().apply {
+                                                        add(index.coerceIn(0, size), deletedLorebook)
+                                                    }
+                                                )
+                                            }
                                         }
                                     )
                                 )
@@ -158,6 +238,7 @@ fun LorebooksPageContent(
                                 lorebook = lorebook,
                                 position = position,
                                 onClick = {
+                                    haptics.perform(HapticPattern.Tick)
                                     navController.navigate(Screen.SettingLorebookDetail(lorebook.id.toString()))
                                 },
                                 dragHandle = {
@@ -185,7 +266,20 @@ fun LorebooksPageContent(
             }
         }
 
-
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(120.dp)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            MaterialTheme.colorScheme.background
+                        )
+                    )
+                )
+        )
     }
 }
 
@@ -196,26 +290,270 @@ private fun LorebookCard(
     onClick: () -> Unit,
     dragHandle: @Composable () -> Unit,
 ) {
-    AddonListItem(
-        title = lorebook.name.ifBlank { stringResource(R.string.lorebooks_page_unnamed) },
-        subtitle = listOf(stringResource(R.string.lorebooks_page_entries_count, lorebook.entries.size),
-            lorebook.description.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty())
-            .filter { it.isNotBlank() }.joinToString(" · "),
-        position = position,
-        leading = {
-            Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.size(width = 44.dp, height = 60.dp)) {
+    Card(
+        onClick = onClick,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        shape = AppShapes.CardLarge
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Book cover or placeholder
+            val bookShape = when (position) {
+                ItemPosition.ONLY -> RoundedCornerShape(
+                    topStart = 16.dp, topEnd = 6.dp,
+                    bottomStart = 16.dp, bottomEnd = 6.dp
+                )
+                ItemPosition.FIRST -> RoundedCornerShape(
+                    topStart = 16.dp, topEnd = 6.dp,
+                    bottomStart = 6.dp, bottomEnd = 6.dp
+                )
+                ItemPosition.MIDDLE -> RoundedCornerShape(6.dp)
+                ItemPosition.LAST -> RoundedCornerShape(
+                    topStart = 6.dp, topEnd = 6.dp,
+                    bottomStart = 16.dp, bottomEnd = 6.dp
+                )
+            }
+            Surface(
+                shape = bookShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(width = 50.dp, height = 70.dp)
+            ) {
                 Box(contentAlignment = Alignment.Center) {
                     when (val cover = lorebook.cover) {
-                        is Avatar.Image -> coil3.compose.AsyncImage(model = cover.url, contentDescription = null,
-                            modifier = Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-                        is Avatar.Emoji -> Text(cover.content, style = MaterialTheme.typography.titleLarge)
-                        else -> Icon(Icons.Rounded.Book, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        is Avatar.Image -> {
+                            coil3.compose.AsyncImage(
+                                model = cover.url,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        }
+                        is Avatar.Emoji -> {
+                            Text(
+                                text = cover.content,
+                                fontSize = 24.sp
+                            )
+                        }
+                        else -> {
+                            Icon(
+                                Icons.Rounded.Book,
+                                contentDescription = null,
+                                modifier = Modifier.size(28.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
                 }
             }
-        },
-        trailing = dragHandle,
-        onClick = onClick,
-    )
+
+            // Book info
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = lorebook.name.ifEmpty { stringResource(R.string.lorebooks_page_unnamed) },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = lorebook.description.ifEmpty {
+                        stringResource(R.string.lorebooks_page_no_description)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = stringResource(R.string.lorebooks_page_entries_count, lorebook.entries.size),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            dragHandle()
+        }
+    }
+}
+
+@Composable
+internal fun LorebookCreatorSheet(
+    onDismiss: () -> Unit,
+    onSave: (Lorebook) -> Unit,
+    saving: Boolean = false,
+    onDiscardFiles: (List<String>) -> Unit = {},
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val initialLorebook = remember { Lorebook() }
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var cover by remember { mutableStateOf<Avatar?>(null) }
+    var showCoverPicker by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val toaster = LocalToaster.current
+    var activeEditor by remember { mutableStateOf(true) }
+    var importingCover by remember { mutableStateOf(false) }
+    val importedCoverUrls = remember { mutableSetOf<String>() }
+    DisposableEffect(Unit) {
+        onDispose {
+            activeEditor = false
+            onDiscardFiles(importedCoverUrls.toList())
+        }
+    }
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        if (uri != null && !saving && !importingCover) {
+            importingCover = true
+            scope.launch {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    try {
+                        context.importOwnedFile(uri, OwnedFileDirectory.LOREBOOK_COVER)?.let { localUri ->
+                            if (!activeEditor) onDiscardFiles(listOf(localUri.toString())) else {
+                                importedCoverUrls += localUri.toString()
+                                cover = Avatar.Image(localUri.toString())
+                            }
+                        }
+                    } catch (error: Exception) {
+                        if (activeEditor) toaster.show(error.message ?: "Could not import cover",
+                            me.rerere.rikkahub.ui.components.ui.ToastType.Error)
+                    } finally {
+                        if (activeEditor) importingCover = false
+                    }
+                }
+            }
+        }
+    }
+
+    ModalBottomSheet(
+containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+        onDismissRequest = { if (!saving) onDismiss() },
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.lorebooks_page_create_lorebook),
+                style = MaterialTheme.typography.titleLarge
+            )
+
+            // Cover picker + Name input inline
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Cover picker - book-like aspect ratio
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(width = 56.dp, height = 78.dp),
+                    onClick = { if (!saving && !importingCover) imagePickerLauncher.launch("image/*") }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        when (val c = cover) {
+                            is Avatar.Image -> {
+                                coil3.compose.AsyncImage(
+                                    model = c.url,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                            }
+                            is Avatar.Emoji -> {
+                                Text(text = c.content, fontSize = 28.sp)
+                            }
+                            else -> {
+                                Icon(
+                                    Icons.Rounded.AddPhotoAlternate,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Name input
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.lorebooks_page_name),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = name,
+                        enabled = !saving,
+                        onValueChange = { name = it },
+                        modifier = Modifier.fillMaxWidth().semantics {
+                            contentDescription = context.getString(R.string.lorebooks_page_name)
+                        },
+                        singleLine = true,
+                        placeholder = { Text(stringResource(R.string.lorebooks_page_name_placeholder)) },
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                    )
+                }
+            }
+
+            FormItem(
+                label = { Text(stringResource(R.string.lorebooks_page_description), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            ) {
+                OutlinedTextField(
+                    value = description,
+                    enabled = !saving,
+                    onValueChange = { description = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp).semantics {
+                            contentDescription = context.getString(R.string.lorebooks_page_description)
+                        },
+                    placeholder = { Text(stringResource(R.string.lorebooks_page_description_placeholder)) },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(enabled = !saving, onClick = onDismiss) {
+                    Text(stringResource(R.string.cancel))
+                }
+                Spacer(Modifier.width(8.dp))
+                TextButton(
+                    onClick = {
+                        val lorebook = initialLorebook.copy(
+                            name = name,
+                            description = description,
+                            cover = cover
+                        )
+                        onSave(lorebook)
+                    },
+                    enabled = name.isNotBlank() && !saving && !importingCover
+                ) {
+                    Text(stringResource(R.string.create))
+                }
+            }
+        }
+    }
 }

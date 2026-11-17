@@ -121,7 +121,7 @@ jobs:
             --tests '*PromptPlaceholdersTest' --tests '*PromptHistoryBoundaryTest' \
             --tests '*AssistantInitialMessagesTest' --tests '*ChatGenerationTransformersTest' \
             --tests '*AddonPagerLayoutTest' --tests '*OneUITopAppBarTest' \
-            --tests '*DebouncedTextFieldPresentationTest' --tests '*SkillEditPersistenceTest' \
+            --tests '*SkillEditPersistenceTest' --tests '*PromptEditorBehaviorTest' \
             --tests '*WidgetReliabilityTest' --tests '*WidgetAvatarRendererTest' \
             --tests '*SkillActivationResumeTest' --tests '*LorebookEntryEditorTest' \
             -Dlastchat.renderDir="$GITHUB_WORKSPACE/app/build/reports/addon-ui" \

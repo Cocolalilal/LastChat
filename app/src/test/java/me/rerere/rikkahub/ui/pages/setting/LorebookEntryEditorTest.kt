@@ -160,11 +160,13 @@ class LorebookEntryEditorTest {
     @Test fun retryKeepsTheSameNewEntryId() {
         val attempts = mutableListOf<LorebookEntry>()
         content { LorebookEntryEditorSheet(null, onDismiss = {}, onSave = { attempts += it }) }
+        compose.onNodeWithContentDescription(text(R.string.lorebook_entry_name))
+            .performScrollTo().performTextReplacement("New location")
         compose.onNodeWithContentDescription(text(R.string.lorebook_entry_prompt))
             .performScrollTo().performTextReplacement("A new location")
         settleDraft()
-        compose.onNodeWithText(text(R.string.create)).performScrollTo().performClick()
-        compose.onNodeWithText(text(R.string.create)).performClick()
+        compose.onNodeWithText(text(R.string.save)).performScrollTo().performClick()
+        compose.onNodeWithText(text(R.string.save)).performClick()
         assertEquals(2, attempts.size)
         assertEquals(attempts.first().id, attempts.last().id)
     }

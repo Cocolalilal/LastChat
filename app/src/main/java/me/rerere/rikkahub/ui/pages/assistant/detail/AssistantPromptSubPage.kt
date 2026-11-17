@@ -35,6 +35,9 @@ import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import me.rerere.rikkahub.ui.components.ui.PromptInput
+import me.rerere.rikkahub.ui.components.ui.PromptTokenCount
+import me.rerere.rikkahub.ui.components.ui.ExpandedPromptEditor as FullScreenSystemPromptEditor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -405,59 +408,15 @@ fun AssistantPromptSubPage(
         Column(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
+            SyncPromptDraft(state = systemPromptValue, enabled = !isFullScreen) { text ->
+                holder.applySystemPrompt(text)
+            }
+            PromptInput(
+                title = stringResource(R.string.assistant_page_system_prompt),
+                state = systemPromptValue,
+                tokenCount = { PromptTokenCount(systemPromptValue, vm::estimateTokens) },
+                onExpand = { isFullScreen = !isFullScreen },
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Title with token count. The count composable is the only thing that
-                    // reads the field each keystroke, so the rest of this page does not recompose.
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.assistant_page_system_prompt),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        PromptTokenCount(systemPromptValue, vm::estimateTokens)
-                        val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-                        Spacer(Modifier.weight(1f))
-                        IconButton(
-                            onClick = {
-                                focusManager.clearFocus()
-                                isFullScreen = !isFullScreen
-                            },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(Icons.Rounded.Fullscreen, null)
-                        }
-                    }
-
-                    SyncPromptDraft(
-                        state = systemPromptValue,
-                        enabled = !isFullScreen,
-                    ) { text ->
-                        holder.applySystemPrompt(text)
-                    }
-                    OutlinedTextField(
-                        state = systemPromptValue,
-                        modifier = Modifier
-                            .fillMaxWidth(),
-                        trailingIcon = null,
-                        lineLimits = TextFieldLineLimits.MultiLine(
-                            minHeightInLines = 5,
-                            maxHeightInLines = 10,
-                        ),
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
-                    )
-
                     if (isFullScreen) {
                         FullScreenSystemPromptEditor(
                             systemPrompt = systemPromptValue.text.toString(),
@@ -539,7 +498,6 @@ fun AssistantPromptSubPage(
                             }
                         }
                     }
-                }
             }
         }
 
@@ -547,112 +505,6 @@ fun AssistantPromptSubPage(
     }
 }
 
-
-@Composable
-private fun FullScreenSystemPromptEditor(
-    systemPrompt: String,
-    onDraft: (String) -> Unit,
-    onUpdate: (String) -> Unit,
-    onDone: () -> Unit
-) {
-    // Use TextFieldState for stable, reliable text editing
-    // Initialize once with the current value - do NOT re-sync from parent
-    val textFieldState = rememberTextFieldState(initialText = systemPrompt)
-    val currentText = textFieldState.text.toString()
-    val draft = rememberUpdatedState(onDraft)
-    val commit = rememberUpdatedState(onUpdate)
-
-    // In-memory only. Writing the datastore here made typing hitch, and the
-    // debounce was cancelled when the dialog or the screen went away.
-    SideEffect {
-        draft.value(currentText)
-    }
-    DisposableEffect(Unit) {
-        onDispose {
-            draft.value(textFieldState.text.toString())
-        }
-    }
-
-    BasicAlertDialog(
-        onDismissRequest = {
-            val latest = textFieldState.text.toString()
-            draft.value(latest)
-            commit.value(latest)
-            onDone()
-        },
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false
-        ),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize(),
-            verticalArrangement = Arrangement.Bottom
-        ) {
-            Surface(
-                modifier = Modifier
-                    .widthIn(max = 800.dp)
-                    .fillMaxHeight(0.9f),
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.BottomSheet,
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) {
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh
-                },
-            ) {
-                Column(
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .fillMaxSize(),
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        TextButton(
-                            onClick = {
-                                val latest = textFieldState.text.toString()
-                                draft.value(latest)
-                                commit.value(latest)
-                                onDone()
-                            }
-                        ) {
-                            Text(stringResource(R.string.assistant_page_save))
-                        }
-                    }
-                    OutlinedTextField(
-                        state = textFieldState,
-                        modifier = Modifier
-                            .imePadding()
-                            .fillMaxSize(),
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
-                        placeholder = {
-                            Text(stringResource(R.string.assistant_page_system_prompt))
-                        },
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(
-                            fontFamily = FontFamily.Monospace,
-                            lineHeight = 20.sp
-                        ),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PromptTokenCount(
-    state: TextFieldState,
-    estimate: (String) -> Int,
-) {
-    Text(
-        text = "${estimate(state.text.toString())} tokens",
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.secondary,
-    )
-}
 
 @Composable
 private fun SyncPromptDraft(

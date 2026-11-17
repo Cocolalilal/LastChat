@@ -50,7 +50,9 @@ import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
-import me.rerere.rikkahub.ui.pages.setting.components.AddonListItem
+import androidx.compose.material3.Card
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.Text
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.SeafoamMintThemeId
 import me.rerere.rikkahub.ui.theme.Shapes
@@ -149,11 +151,11 @@ class AddonPagerLayoutTest {
                                         verticalArrangement = Arrangement.spacedBy(4.dp),
                                     ) {
                                         item {
-                                            AddonListItem(
-                                                title = "Neighbor add-on $page", subtitle = "A neighboring add-on list item",
-                                                position = ItemPosition.ONLY, leading = { Box(Modifier.size(40.dp)) },
-                                                onClick = {},
-                                            )
+                                            Card(onClick = {}, modifier = Modifier.testTag("Neighbor add-on $page")) {
+                                            ListItem(headlineContent = { Text("Neighbor add-on $page") },
+                                                supportingContent = { Text("A neighboring add-on list item") },
+                                                leadingContent = { Box(Modifier.size(40.dp)) })
+                                            }
                                         }
                                     }
                                 }
@@ -167,7 +169,8 @@ class AddonPagerLayoutTest {
     }
 
     private fun firstRowTop(title: String): Float =
-        compose.onNode(hasText(title) and hasClickAction()).fetchSemanticsNode().boundsInRoot.top
+        (if (title.startsWith("Neighbor add-on")) compose.onNodeWithTag(title)
+        else compose.onNode(hasText(title) and hasClickAction())).fetchSemanticsNode().boundsInRoot.top
 
     private fun page(index: Int) {
         compose.runOnIdle { compositionScope.launch { pagerState.scrollToPage(index) } }

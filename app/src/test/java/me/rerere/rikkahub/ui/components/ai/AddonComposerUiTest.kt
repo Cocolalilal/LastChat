@@ -18,8 +18,10 @@ import androidx.compose.runtime.getValue
 import androidx.navigation.compose.rememberNavController
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.components.ui.AppToasterState
 import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
-import me.rerere.rikkahub.ui.pages.setting.LorebookSettingsContent
+import me.rerere.rikkahub.ui.pages.setting.LorebookEditorSheet
+import me.rerere.rikkahub.ui.pages.setting.AdditionalContextEditorPage
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.ui.pages.setting.SkillEditorPage
 import org.robolectric.shadows.ShadowDialog
@@ -32,6 +34,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -183,19 +186,47 @@ class AddonComposerUiTest {
         assertEquals(snippets.first().id, selected?.id)
     }
 
+    @Test fun contextDeletionUsesTheListSwipeActionAndUndoRestoresThePosition() {
+        var settings by mutableStateOf(Settings(additionalContexts = snippets))
+        lateinit var toaster: AppToasterState
+        var opened = false
+        content {
+            toaster = LocalToaster.current
+            AdditionalContextContent(settings, onEdit = { opened = true }, onUpdateSettings = { settings = it(settings) })
+        }
+        compose.onNodeWithText("Writing style").performTouchInput { swipeLeft() }
+        compose.mainClock.advanceTimeBy(1000)
+        compose.waitForIdle()
+        compose.onAllNodesWithContentDescription("Delete").onFirst().performClick()
+        compose.waitForIdle()
+        assertEquals(listOf(snippets[1].id), settings.additionalContexts.map { it.id })
+        assertFalse(opened)
+        compose.runOnIdle { requireNotNull(toaster.toasts.last().action).onClick() }
+        compose.waitForIdle()
+        assertEquals(snippets.map { it.id }, settings.additionalContexts.map { it.id })
+    }
+
+    @Test fun contextEditorUsesTheEntryNameAndHasNoToolbarDeleteAction() {
+        content { AdditionalContextEditorPage(snippets.first(), listOf(assistant), onUpdate = {}) }
+        compose.onNode(hasText("Writing style") and !hasSetTextAction()).assertExists()
+        compose.onNodeWithContentDescription("Delete").assertDoesNotExist()
+    }
+
     @Test fun contextEditorKeepsCharacterAssignmentsWhenAllCharactersIsToggled() {
         var snippet by mutableStateOf(snippets.first())
-        content { AdditionalContextEditor(snippet, listOf(assistant), onUpdate = { snippet = it(snippet) }) }
+        content { AdditionalContextEditorPage(snippet, listOf(assistant), onUpdate = { snippet = it(snippet) }) }
         capture("additional-context-editor")
         compose.runOnIdle { dark = true }
         capture("additional-context-editor")
-        compose.onNodeWithText("All characters").performClick()
+        compose.onNodeWithText("Characters").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("All characters").performClick()
         assertTrue(snippet.allAssistants)
         compose.onNodeWithText("Mira").assertDoesNotExist()
-        compose.onNodeWithText("All characters").performClick()
+        compose.onNodeWithContentDescription("All characters").performClick()
         assertFalse(snippet.allAssistants)
         assertTrue(assistant.id in snippet.assistantIds)
-        compose.onNodeWithText("Mira").performClick()
+        compose.onNodeWithContentDescription("Mira").performClick()
+        compose.waitForIdle()
         assertFalse(assistant.id in snippet.assistantIds)
     }
     @Test fun skillCreationUsesThePageWithoutOpeningAModal() {
@@ -217,12 +248,10 @@ class AddonComposerUiTest {
         assertFalse(saved.enabled)
         compose.onNodeWithText("Slash command").performScrollTo().performClick()
         assertFalse(saved.userInvocable)
-        compose.onNodeWithText("All characters").performScrollTo().assertIsOn().performClick()
+        compose.onNodeWithText("Characters").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("All characters").assertIsOn().performClick()
         assertFalse(saved.availableForAllAssistants)
-        // The character list has its own scroll container. Scroll the outer form into view
-        // before touching its first row; performScrollTo only moves the nearest container.
-        compose.onRoot().performTouchInput { swipeUp() }
-        compose.onNodeWithText("Mira").performScrollTo().assertIsDisplayed().assertIsOff().performClick()
+        compose.onNodeWithContentDescription("Mira").assertIsOff().performClick()
         compose.waitForIdle()
         assertTrue("Save history: ${saveHistory.map { it.availableAssistantIds }}", assistant.id in saved.availableAssistantIds)
         assertFalse(saved.enabled)
@@ -238,22 +267,24 @@ class AddonComposerUiTest {
         compose.runOnIdle { dark = true }
         capture("skill-editor-long")
         compose.onNodeWithContentDescription("Expand Instructions").performClick()
-        compose.onAllNodes(hasText("Instructions")).assertCountEquals(2)
+        compose.onAllNodes(hasText("Instructions")).assertCountEquals(1)
         compose.onNodeWithText("Save").assertExists()
         capture("skill-prompt-expanded")
     }
 
-    @Test fun lorebookSettingsUseTheSameFieldsAndCharacterSelectionInBothThemes() {
+    @Test fun lorebookMetadataKeepsTheOriginalSheetAndCancelBehavior() {
         fontScale = 1.3f
-        var book by mutableStateOf(Lorebook(name = "Coastal town", description = "Locations, characters, and local history."))
+        var book = Lorebook(name = "Coastal town", description = "Locations, characters, and local history.")
+        var shown by mutableStateOf(true)
         content {
-            LorebookSettingsContent(book, listOf(assistant), setOf(assistant.id),
-                onUpdate = { book = it(book) }, onPickCover = {}, onAssistantSelectionChange = { _, _ -> })
+            if (shown) LorebookEditorSheet(book, onDismiss = { shown = false },
+                onSave = { book = it; shown = false })
         }
-        capture("lorebook-settings")
+        capture("lorebook-metadata")
         compose.runOnIdle { dark = true }
-        capture("lorebook-settings")
-        compose.onNodeWithText("Mira").assertIsOn()
+        capture("lorebook-metadata")
+        compose.onNodeWithText("Cancel").performClick()
+        assertEquals("Coastal town", book.name)
     }
 
 }

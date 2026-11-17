@@ -9,15 +9,14 @@ import me.rerere.rikkahub.ui.hooks.reorderedByKeys
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import me.rerere.rikkahub.ui.pages.setting.components.AddonEmptyState
 import me.rerere.rikkahub.ui.pages.setting.components.AddonTextEditor
 import me.rerere.rikkahub.utils.fileSizeToString
-import me.rerere.rikkahub.ui.pages.setting.components.AddonEditorField
+import me.rerere.rikkahub.ui.pages.setting.components.AddonPromptField
 import me.rerere.rikkahub.ui.pages.setting.components.CharacterAccessSection
-import me.rerere.rikkahub.ui.pages.setting.components.AddonListItem
-import me.rerere.rikkahub.ui.pages.setting.components.addonItemShape
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import androidx.compose.material.icons.rounded.IosShare
@@ -76,6 +75,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -319,19 +322,90 @@ fun DismissibleBannerCard(
 }
 
 @Composable
-private fun SkillCard(skill: Skill, position: ItemPosition, onEdit: () -> Unit, dragHandle: @Composable () -> Unit) {
-    AddonListItem(
-        title = skill.name.ifBlank { stringResource(R.string.skills_page_unnamed) }, subtitle = skill.description,
-        position = position,
-        leading = {
-            Box(Modifier.size(40.dp).clip(AppShapes.Avatar).background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center) {
-                Icon(ModeIcons.getIcon(skill.icon ?: "category"), null,
-                    modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+private fun SkillCard(
+    skill: Skill,
+    position: ItemPosition,
+    onEdit: () -> Unit,
+    dragHandle: @Composable () -> Unit,
+) {
+    val cornerRadius = 28.dp
+    val smallCorner = 8.dp
+    val shape = when (position) {
+        ItemPosition.ONLY -> RoundedCornerShape(cornerRadius)
+        ItemPosition.FIRST -> RoundedCornerShape(
+            topStart = cornerRadius,
+            topEnd = cornerRadius,
+            bottomStart = smallCorner,
+            bottomEnd = smallCorner
+        )
+
+        ItemPosition.MIDDLE -> RoundedCornerShape(smallCorner)
+        ItemPosition.LAST -> RoundedCornerShape(
+            topStart = smallCorner,
+            topEnd = smallCorner,
+            bottomStart = cornerRadius,
+            bottomEnd = cornerRadius
+        )
+    }
+
+    Card(
+        onClick = onEdit,
+        colors = CardDefaults.cardColors(
+            containerColor = if (LocalDarkMode.current) {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
             }
-        },
-        trailing = dragHandle, onClick = onEdit,
-    )
+        ),
+        shape = shape
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = ModeIcons.getIcon(skill.icon ?: "category"),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = skill.name.ifEmpty { stringResource(R.string.skills_page_unnamed) },
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Medium,
+                    fontFamily = if (skill.name.isNotEmpty()) FontFamily.Monospace else FontFamily.Default
+                )
+                if (skill.description.isNotBlank()) {
+                    Text(
+                        text = skill.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            dragHandle()
+        }
+    }
 }
 
 @Composable
@@ -360,7 +434,6 @@ fun SkillEditorPage(
     var depth by remember { mutableStateOf(skill?.depth?.toString() ?: "0") }
     var availableForAllAssistants by remember { mutableStateOf(skill?.availableForAllAssistants ?: true) }
     var availableAssistantIds by remember { mutableStateOf(skill?.availableAssistantIds ?: emptySet()) }
-    var showInstructionEditor by remember { mutableStateOf(false) }
     var showIconPicker by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var namePending by remember { mutableStateOf(false) }
@@ -417,21 +490,25 @@ fun SkillEditorPage(
     }
 
     androidx.activity.compose.BackHandler(enabled = isSaving && !isEditing) { }
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection).imePadding(),
+        modifier = Modifier.imePadding(),
         topBar = {
-            OneUITopAppBar(
-                title = stringResource(if (isEditing) R.string.skills_page_edit_skill else R.string.skills_page_add_skill),
-                scrollBehavior = scrollBehavior, navigationIcon = {
+            TopAppBar(
+                title = { Text(if (isEditing) name.ifBlank { stringResource(R.string.skills_page_unnamed) }
+                    else stringResource(R.string.skills_page_add_skill), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                navigationIcon = {
                     if (isSaving && !isEditing) Box(Modifier.size(48.dp)) else BackButton()
                 },
                 actions = {
                     AutoSaveIndicator(visible = isAutoSaving || isSaving)
                     if (isEditing) {
-                        IconButton(onClick = { haptics.perform(HapticPattern.Pop); showExportDialog = true },
-                            enabled = !isAutoSaving && !isSaving) {
-                            Icon(Icons.Rounded.IosShare, contentDescription = stringResource(R.string.export_label))
+                        Box {
+                            IconButton(onClick = { haptics.perform(HapticPattern.Pop); showExportDialog = true },
+                                enabled = !isAutoSaving && !isSaving) {
+                                Icon(Icons.Rounded.IosShare, contentDescription = stringResource(R.string.export_label))
+                            }
+                            SkillExportMenu(skill = currentDraft(), expanded = showExportDialog,
+                                onDismiss = { showExportDialog = false })
                         }
                     } else {
                         TextButton(
@@ -450,33 +527,32 @@ fun SkillEditorPage(
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             SettingsGroup(title = "") {
-                AddonEditorField(
-                    title = stringResource(R.string.skills_page_name), value = name,
-                    onValueChange = { value ->
+                SettingGroupItem(title = stringResource(R.string.skills_page_name), trailing = {
+                    DebouncedTextField(value = name, onValueChange = { value ->
                         name = value.lowercase().filter { it.isLetterOrDigit() || it == '-' || it == '_' }.take(64)
                         persistDraft()
                     }, stateKey = "skill_name_${skill?.id ?: "new"}", singleLine = true,
-                    onPendingChange = { namePending = it }, enabled = formEnabled,
-                )
-                SettingGroupItem(
-                    title = "Icon",
-                    icon = { Icon(ModeIcons.getIcon(icon ?: "category"), null) },
-                    onClick = if (formEnabled) ({ showIconPicker = true }) else null,
-                )
-                AddonEditorField(
-                    title = stringResource(R.string.skills_page_description), value = description,
-                    onValueChange = { description = it.take(1024); persistDraft() },
-                    stateKey = "skill_desc_${skill?.id ?: "new"}", minLines = 2, maxLines = 4,
-                    onPendingChange = { descriptionPending = it }, enabled = formEnabled,
-                )
-                AddonEditorField(
-                    title = stringResource(R.string.skills_page_instructions), value = instructions,
-                    onValueChange = { instructions = it; persistDraft() },
-                    stateKey = "skill_instructions_${skill?.id ?: "new"}", minLines = 5, maxLines = 12,
-                    onPendingChange = { instructionsPending = it }, enabled = formEnabled,
-                    onExpand = { showInstructionEditor = true },
-                )
+                        inputTransformation = InputTransformation {
+                            val normalized = asCharSequence().toString().lowercase()
+                                .filter { it.isLetterOrDigit() || it == '-' || it == '_' }.take(64)
+                            if (normalized != asCharSequence().toString()) replace(0, length, normalized)
+                        },
+                        modifier = Modifier.fillMaxWidth(0.5f), onPendingChange = { namePending = it }, enabled = formEnabled)
+                })
+                SettingGroupItem(title = "Icon", icon = { Icon(ModeIcons.getIcon(icon ?: "category"), null) },
+                    onClick = if (formEnabled) ({ showIconPicker = true }) else null)
             }
+            FormItem(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), label = {
+                Text(stringResource(R.string.skills_page_description), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }) {
+                DebouncedTextField(value = description, onValueChange = { description = it.take(1024); persistDraft() },
+                    stateKey = "skill_desc_${skill?.id ?: "new"}", minLines = 2, maxLines = 4,
+                    modifier = Modifier.fillMaxWidth(), textStyle = MaterialTheme.typography.bodySmall,
+                    onPendingChange = { descriptionPending = it }, enabled = formEnabled)
+            }
+            AddonPromptField(title = stringResource(R.string.skills_page_instructions), value = instructions,
+                onValueChange = { instructions = it; persistDraft() }, stateKey = "skill_instructions_${skill?.id ?: "new"}",
+                enabled = formEnabled, onPendingChange = { instructionsPending = it })
             SettingsGroup(title = "Activation") {
                 SettingGroupItem(
                     title = "Assistant can use",
@@ -492,7 +568,7 @@ fun SkillEditorPage(
                 )
             }
             CharacterAccessSection(
-                assistants = assistants, selectedIds = availableAssistantIds, enabled = formEnabled,
+                assistants = assistants, selectedIds = availableAssistantIds, enabled = formEnabled, entryName = name,
                 allSelected = availableForAllAssistants,
                 onAllSelectedChange = { availableForAllAssistants = it; persistDraft() },
                 onSelectionChange = { id, selected ->
@@ -517,35 +593,10 @@ fun SkillEditorPage(
             )
         }
     }
-    if (showInstructionEditor) AddonTextEditor(
-        title = "Instructions", initialContent = instructions,
-        onDismiss = { showInstructionEditor = false },
-        onSave = { instructions = it; persistDraft(); showInstructionEditor = false },
-    )
     if (showIconPicker) MaterialIconPickerDialog(
         onDismiss = { showIconPicker = false },
         onIconSelected = { icon = it; showIconPicker = false; persistDraft() },
     )
-
-    if (showExportDialog && skill != null) {
-        SkillExportDialog(
-            skill = (packageSkillMetadata ?: skill).copy(
-                name = name.trim(),
-                description = description.trim(),
-                icon = icon,
-                instructions = instructions,
-                enabled = (packageSkillMetadata ?: skill).enabled,
-                alwaysEnabled = alwaysEnabled,
-                disableModelInvocation = disableModelInvocation,
-                userInvocable = userInvocable,
-                injectionPosition = injectionPosition,
-                depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
-                availableForAllAssistants = availableForAllAssistants,
-                availableAssistantIds = availableAssistantIds,
-            ),
-            onDismiss = { showExportDialog = false }
-        )
-    }
 
     editingPackagePath?.let { relativePath ->
         SkillPackageTextEditorDialog(
@@ -645,37 +696,28 @@ fun SkillEditorPage(
     }
 
     deletePackagePath?.let { relativePath ->
-        AlertDialog(
-            onDismissRequest = { deletePackagePath = null },
-            title = { Text("Delete skill file?") },
-            text = { Text(relativePath, fontFamily = FontFamily.Monospace) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val currentSkill = packageSkillMetadata ?: skill ?: return@TextButton
-                        scope.launch {
-                            val deleted = withContext(Dispatchers.IO) {
-                                withSkillPackageEdit { SkillExportImport.deletePackageFile(context, currentSkill, relativePath) }
-                            }
-                            if (deleted) {
-                                haptics.perform(HapticPattern.Success)
-                                refreshPackageFiles(currentSkill)
-                            } else {
-                                haptics.perform(HapticPattern.Error)
-                                toaster.show("Could not delete skill file")
-                            }
-                            deletePackagePath = null
-                        }
+        LastChatDestructiveConfirmDialog(
+            title = "Delete skill file?", consequence = relativePath,
+            onDismiss = { deletePackagePath = null },
+            onConfirm = {
+                val currentSkill = packageSkillMetadata ?: skill
+                deletePackagePath = null
+                if (currentSkill != null) scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching { withSkillPackageEdit { SkillExportImport.deletePackageFile(context, currentSkill, relativePath) } }
                     }
-                ) { Text(stringResource(R.string.delete)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { deletePackagePath = null }) {
-                    Text(stringResource(R.string.cancel))
+                    result.onSuccess { deleted ->
+                        if (deleted) { haptics.perform(HapticPattern.Success); refreshPackageFiles(currentSkill) }
+                        else toaster.show("Could not delete skill file")
+                    }.onFailure {
+                        if (it is kotlinx.coroutines.CancellationException) throw it
+                        toaster.show(it.message ?: "Could not delete skill file")
+                    }
                 }
             },
         )
     }
+
 }
 
 @Composable
@@ -737,12 +779,13 @@ private fun AddSkillPackageFileDialog(
         onDismissRequest = onDismiss,
         title = { Text("New package file") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = relativePath,
                     onValueChange = { relativePath = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Path") },
+                    shape = AppShapes.InputField,
                     placeholder = { Text("references/guide.md", fontFamily = FontFamily.Monospace) },
                     supportingText = if (pathInvalid) {
                         { Text("Use a relative path without empty, . or .. segments") }
@@ -754,9 +797,10 @@ private fun AddSkillPackageFileDialog(
                 OutlinedTextField(
                     value = content,
                     onValueChange = { content = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(240.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 5,
+                    maxLines = 10,
+                    shape = AppShapes.InputField,
                     label = { Text("Content") },
                     textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 )
@@ -779,108 +823,43 @@ private fun AddSkillPackageFileDialog(
 }
 
 @Composable
-private fun SkillExportDialog(
+private fun SkillExportMenu(
     skill: Skill,
+    expanded: Boolean,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
 
-    val skillMdLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/markdown")
-    ) { uri ->
-        if (uri != null) {
-            runCatching {
-                val content = SkillExportImport.exportToSkillMd(skill)
-                context.contentResolver.openOutputStream(uri)?.use {
-                    it.write(content.toByteArray())
-                }
-            }.onSuccess {
-                toaster.show(context.getString(R.string.skill_export_success))
-            }.onFailure {
-                toaster.show(
-                    context.getString(
-                        R.string.export_failed_message,
-                        it.message ?: context.getString(R.string.backup_page_unknown_error)
-                    )
-                )
+    val scope = rememberCoroutineScope()
+    fun exportFile(write: suspend () -> Unit) {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { write() } }
+            result.onSuccess { toaster.show(context.getString(R.string.skill_export_success)) }.onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                toaster.show(it.message ?: context.getString(R.string.export_failed_message, ""))
             }
         }
-        onDismiss()
+    }
+    val skillMdLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
+        if (uri != null) exportFile {
+            context.contentResolver.openOutputStream(uri)?.use { it.write(SkillExportImport.exportToSkillMd(skill).toByteArray()) }
+                ?: error("Could not open export destination")
+        }
+    }
+    val skillPackageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) exportFile {
+            withSkillPackageEdit {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(SkillExportImport.exportPackage(context, skill)) }
+                    ?: error("Could not open export destination")
+            }
+        }
     }
 
-    val skillPackageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/zip")
-    ) { uri ->
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.openOutputStream(uri)?.use {
-                    it.write(SkillExportImport.exportPackage(context, skill))
-                } ?: error("Could not open export destination")
-            }.onSuccess {
-                toaster.show(context.getString(R.string.skill_export_success))
-            }.onFailure {
-                toaster.show(it.message ?: "Could not export skill package")
-            }
-        }
-        onDismiss()
-    }
-
-    ModalBottomSheet(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        onDismissRequest = onDismiss
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp)
-                .padding(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.skill_export_format),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            Card(
-                onClick = {
-                    skillMdLauncher.launch(SkillExportImport.getSuggestedFileName(skill, "skill_md"))
-                },
-                colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) {
-                        MaterialTheme.colorScheme.surfaceContainerLow
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHighest
-                    }
-                ),
-                shape = AppShapes.CardLarge
-            ) {
-                ListItem(
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    headlineContent = { Text(stringResource(R.string.export_format_skill_md)) },
-                    supportingContent = { Text(stringResource(R.string.skills_claude_standard)) },
-                    leadingContent = {
-                        Icon(Icons.Rounded.Code, contentDescription = null)
-                    }
-                )
-            }
-
-            Card(
-                onClick = { skillPackageLauncher.launch("${skill.name.ifBlank { "skill" }}.zip") },
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                ),
-                shape = AppShapes.CardLarge
-            ) {
-                ListItem(
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    headlineContent = { Text("Full skill package (.zip)") },
-                    supportingContent = { Text("Includes SKILL.md, scripts, references, and assets") },
-                    leadingContent = { Icon(Icons.Rounded.Archive, contentDescription = null) }
-                )
-            }
-        }
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        DropdownMenuItem(text = { Text("SKILL.md") },
+            onClick = { onDismiss(); skillMdLauncher.launch(SkillExportImport.getSuggestedFileName(skill, "skill_md")) })
+        DropdownMenuItem(text = { Text("Package (.zip)") },
+            onClick = { onDismiss(); skillPackageLauncher.launch("${skill.name.ifBlank { "skill" }}.zip") })
     }
 }

@@ -1,87 +1,104 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.material.icons.rounded.Fullscreen
-import androidx.compose.material3.IconButton
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.toggleableState
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
+import me.rerere.rikkahub.ui.components.ui.ExpandedPromptEditor
+import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
+import me.rerere.rikkahub.ui.components.ui.PromptInput
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
-import me.rerere.rikkahub.ui.hooks.HapticPattern
-import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import kotlin.uuid.Uuid
 
+/** Settings binding for the same prompt field and expanded editor used by characters. */
 @Composable
-fun AddonEditorField(
+fun AddonPromptField(
     title: String,
     value: String,
     onValueChange: (String) -> Unit,
     stateKey: Any?,
-    singleLine: Boolean = false,
-    minLines: Int = 1,
-    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
-    onPendingChange: (Boolean) -> Unit = {},
-    onExpand: (() -> Unit)? = null,
     enabled: Boolean = true,
+    onPendingChange: (Boolean) -> Unit = {},
 ) {
-    var pending by remember(stateKey) { mutableStateOf(false) }
-    val haptics = rememberPremiumHaptics()
-    SettingGroupInputItem(title = title, trailing = onExpand?.let { expand -> {
-        IconButton(enabled = enabled && !pending, onClick = { haptics.perform(HapticPattern.Pop); expand() }) {
-            Icon(Icons.Rounded.Fullscreen, "Expand $title")
+    val state = key(stateKey) { rememberTextFieldState(initialText = value) }
+    var published by remember(stateKey) { mutableStateOf(value) }
+    var expanded by remember(stateKey) { mutableStateOf(false) }
+    var expandedDraft by remember(stateKey) { mutableStateOf(value) }
+    val update by rememberUpdatedState(onValueChange)
+    val pending by rememberUpdatedState(onPendingChange)
+    fun publish(text: String) {
+        if (text != published) {
+            published = text
+            update(text)
         }
-    } }) {
-        DebouncedTextField(
-            value = value, onValueChange = onValueChange, stateKey = stateKey,
-            singleLine = singleLine, minLines = minLines, maxLines = maxLines,
-            textStyle = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = title },
-            onPendingChange = { pending = it; onPendingChange(it) }, outlined = false, enabled = enabled,
-        )
+        pending(false)
     }
+    LaunchedEffect(value) {
+        // Incoming changes may update an idle field, never an uncommitted local draft.
+        if (!expanded && state.text.toString() == published) {
+            if (state.text.toString() != value) state.edit { replace(0, length, value) }
+            published = value
+        }
+    }
+    LaunchedEffect(stateKey, expanded) {
+        if (!expanded) snapshotFlow { state.text.toString() }.collectLatest { text ->
+            if (text != published) {
+                pending(true)
+                delay(300)
+                publish(text)
+            }
+        }
+    }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(stateKey, lifecycle) {
+        fun flush() = publish(if (expanded) expandedDraft else state.text.toString())
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE) flush() }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer); flush() }
+    }
+    PromptInput(
+        title = title, state = state, enabled = enabled && !expanded,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        onFocusLost = { if (!expanded) publish(state.text.toString()) },
+        onExpand = {
+            expandedDraft = state.text.toString()
+            publish(expandedDraft)
+            expanded = true
+        },
+    )
+    if (expanded) ExpandedPromptEditor(
+        systemPrompt = expandedDraft, title = title,
+        onDraft = { expandedDraft = it },
+        onUpdate = { text ->
+            if (state.text.toString() != text) state.edit { replace(0, length, text) }
+            publish(text)
+        },
+        onDone = { expanded = false },
+    )
 }
 
 fun addonItemPosition(index: Int, count: Int): ItemPosition = when {
@@ -91,51 +108,15 @@ fun addonItemPosition(index: Int, count: Int): ItemPosition = when {
     else -> ItemPosition.MIDDLE
 }
 
+/** Connected row geometry used by the existing skill and lorebook assignment lists. */
 fun addonItemShape(position: ItemPosition): Shape = when (position) {
-    ItemPosition.ONLY -> AppShapes.CardMedium
-    ItemPosition.FIRST -> AppShapes.ListItemFirst
-    ItemPosition.MIDDLE -> AppShapes.ListItemMiddle
-    ItemPosition.LAST -> AppShapes.ListItemLast
+    ItemPosition.ONLY -> AppShapes.CardLarge
+    ItemPosition.FIRST -> RoundedCornerShape(28.dp, 28.dp, 8.dp, 8.dp)
+    ItemPosition.MIDDLE -> RoundedCornerShape(8.dp)
+    ItemPosition.LAST -> RoundedCornerShape(8.dp, 8.dp, 28.dp, 28.dp)
 }
 
-@Composable
-fun AddonListItem(
-    title: String,
-    subtitle: String? = null,
-    position: ItemPosition,
-    leading: @Composable () -> Unit,
-    trailing: @Composable () -> Unit = {},
-    onClick: () -> Unit,
-    selected: Boolean? = null,
-    enabled: Boolean = true,
-) {
-    val haptics = rememberPremiumHaptics()
-    Card(
-        onClick = { haptics.perform(HapticPattern.Pop); onClick() }, enabled = enabled,
-        shape = addonItemShape(position),
-        colors = CardDefaults.cardColors(containerColor = if (LocalDarkMode.current) {
-            MaterialTheme.colorScheme.surfaceContainerLow
-        } else MaterialTheme.colorScheme.surfaceContainerHighest),
-        modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {
-            if (selected != null) {
-                role = Role.Checkbox
-                toggleableState = if (selected) ToggleableState.On else ToggleableState.Off
-            }
-        },
-    ) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            leading()
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (!subtitle.isNullOrBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-            trailing()
-        }
-    }
-}
-
+/** Uses the original lorebook character picker interaction and switch rows. */
 @Composable
 fun CharacterAccessSection(
     assistants: List<Assistant>,
@@ -145,37 +126,51 @@ fun CharacterAccessSection(
     onAllSelectedChange: ((Boolean) -> Unit)? = null,
     horizontalPadding: Dp = 16.dp,
     title: String = "Characters",
+    entryName: String = title,
     enabled: Boolean = true,
 ) {
-    var query by remember { mutableStateOf("") }
-    val visible = assistants.filter { it.name.contains(query.trim(), ignoreCase = true) }
-    Column(Modifier.padding(horizontal = horizontalPadding).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (title.isNotBlank()) Text(title, style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        if (allSelected != null && onAllSelectedChange != null) {
-            AddonListItem(title = "All characters", position = ItemPosition.ONLY, leading = {}, selected = allSelected, enabled = enabled,
-                trailing = { Checkbox(allSelected, onCheckedChange = null, enabled = enabled) },
-                onClick = { onAllSelectedChange(!allSelected) })
-        }
-        if (allSelected != true) {
-            if (assistants.size > 8) OutlinedTextField(
-                value = query, onValueChange = { query = it }, singleLine = true, enabled = enabled,
-                placeholder = { Text("Search characters") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                shape = AppShapes.SearchField, modifier = Modifier.fillMaxWidth(),
-            )
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 320.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                itemsIndexed(visible, key = { _, it -> it.id }) { index, assistant ->
-                    val selected = assistant.id in selectedIds
-                    AddonListItem(
-                        title = assistant.name.ifBlank { "Unnamed character" }, selected = selected, enabled = enabled,
-                        position = addonItemPosition(index, visible.size),
-                        leading = { UIAvatar(name = assistant.name, value = assistant.avatar, modifier = Modifier.size(40.dp).clearAndSetSemantics {}) },
-                        trailing = { Checkbox(selected, onCheckedChange = null, enabled = enabled) },
-                        onClick = { onSelectionChange(assistant.id, !selected) },
-                    )
+    var open by remember { mutableStateOf(false) }
+    val summary = if (allSelected == true) "All characters" else "${assistants.count { it.id in selectedIds }} selected"
+    SettingsGroup(title = "", horizontalPadding = horizontalPadding) {
+        SettingGroupItem(title = title, subtitle = summary,
+            trailing = { Icon(Icons.Rounded.KeyboardArrowDown, null) },
+            onClick = if (enabled) ({ open = true }) else null)
+    }
+    if (!open) return
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        onDismissRequest = { open = false }, sheetState = sheetState, sheetGesturesEnabled = false,
+        dragHandle = {
+            IconButton(onClick = { scope.launch { sheetState.hide(); open = false } }) {
+                Icon(Icons.Rounded.KeyboardArrowDown, "Close characters")
+            }
+        },
+    ) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(entryName.ifBlank { title }, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
+            if (allSelected != null && onAllSelectedChange != null) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), shape = AppShapes.CardLarge) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("All characters", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        HapticSwitch(allSelected, onAllSelectedChange, enabled = enabled,
+                            modifier = Modifier.semantics { contentDescription = "All characters" })
+                    }
                 }
-                if (visible.isEmpty() && query.isNotBlank()) item {
-                    Text("No matching characters", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(12.dp))
+            }
+            if (allSelected != true) assistants.forEachIndexed { index, assistant ->
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                    shape = addonItemShape(addonItemPosition(index, assistants.size))) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        UIAvatar(name = assistant.name, value = assistant.avatar,
+                            modifier = Modifier.size(40.dp).clearAndSetSemantics {})
+                        Text(assistant.name.ifBlank { "Character" }, style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        HapticSwitch(assistant.id in selectedIds, { onSelectionChange(assistant.id, it) }, enabled = enabled,
+                            modifier = Modifier.semantics { contentDescription = assistant.name })
+                    }
                 }
             }
         }
@@ -185,64 +180,15 @@ fun CharacterAccessSection(
 @Composable
 fun AddonEmptyState(icon: ImageVector, title: String, modifier: Modifier = Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(icon, null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
-/** Full-height editor for long prompt or package text; only Save commits this draft. */
+/** Package files keep explicit Save, using the existing expanded prompt editor presentation. */
 @Composable
-fun AddonTextEditor(
-    title: String,
-    initialContent: String,
-    onDismiss: () -> Unit,
-    onSave: (String) -> Unit,
-    monospace: Boolean = false,
-    saving: Boolean = false,
-) {
-    var content by androidx.compose.runtime.saveable.rememberSaveable(title) { mutableStateOf(initialContent) }
-    val haptics = rememberPremiumHaptics()
-    androidx.compose.ui.window.Dialog(
-        onDismissRequest = { if (!saving) onDismiss() },
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false,
-            dismissOnBackPress = !saving, dismissOnClickOutside = false),
-    ) {
-        androidx.compose.material3.Scaffold(
-            modifier = Modifier.fillMaxSize().imePadding(),
-            topBar = {
-                androidx.compose.material3.TopAppBar(
-                    title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    navigationIcon = {
-                        if (saving) Box(Modifier.size(48.dp)) else {
-                            me.rerere.rikkahub.ui.components.nav.LastChatBackButton(
-                                onClick = onDismiss, contentDescription = "Back",
-                                onHaptic = { haptics.perform(HapticPattern.Pop) },
-                            )
-                        }
-                    },
-                    actions = {
-                        me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator(saving)
-                        androidx.compose.material3.TextButton(enabled = !saving, onClick = { haptics.perform(HapticPattern.Pop); onSave(content) }) {
-                            Text("Save")
-                        }
-                    },
-                )
-            },
-        ) { padding ->
-            androidx.compose.material3.TextField(
-                value = content, onValueChange = { content = it }, enabled = !saving,
-                modifier = Modifier.fillMaxSize().padding(padding),
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    fontFamily = if (monospace) androidx.compose.ui.text.font.FontFamily.Monospace
-                    else MaterialTheme.typography.bodyLarge.fontFamily,
-                ),
-                colors = androidx.compose.material3.TextFieldDefaults.colors(
-                    focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                ),
-            )
-        }
-    }
+fun AddonTextEditor(title: String, initialContent: String, onDismiss: () -> Unit, onSave: (String) -> Unit,
+    monospace: Boolean = true, saving: Boolean = false) {
+    ExpandedPromptEditor(systemPrompt = initialContent, title = title, onDraft = {}, onUpdate = onSave,
+        commitOnDismiss = false, closeOnSave = false, saving = saving, onDone = onDismiss)
 }

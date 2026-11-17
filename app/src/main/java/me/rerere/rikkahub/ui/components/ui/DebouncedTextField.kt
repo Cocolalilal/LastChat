@@ -1,12 +1,8 @@
 package me.rerere.rikkahub.ui.components.ui
 
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
@@ -56,6 +52,7 @@ fun DebouncedTextField(
     placeholder: String? = null,
     enabled: Boolean = true,
     readOnly: Boolean = false,
+    inputTransformation: InputTransformation? = null,
     singleLine: Boolean = false,
     minLines: Int = 1,
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
@@ -65,23 +62,29 @@ fun DebouncedTextField(
     keyboardOptions: androidx.compose.foundation.text.KeyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default,
     isError: Boolean = false,
     onPendingChange: (Boolean) -> Unit = {},
-    trailingIcon: @Composable (() -> Unit)? = null,
-    outlined: Boolean = true,
+    trailingIcon: @Composable (() -> Unit)? = null
 ) {
     val textFieldState = androidx.compose.runtime.key(stateKey) {
         rememberTextFieldState(initialText = value)
     }
     var isFocused by remember { mutableStateOf(false) }
+    var syncedText by remember(stateKey) { mutableStateOf(value) }
     var visible by remember { mutableStateOf(false) }
     val latestValue by rememberUpdatedState(value)
     val latestOnValueChange by rememberUpdatedState(onValueChange)
     val latestOnPendingChange by rememberUpdatedState(onPendingChange)
 
-    // Sync from external state ONLY when NOT focused
+    // On blur, publish a local draft before accepting incoming values. A focus
+    // change must never replace the last keystrokes with the pre-debounce value.
     LaunchedEffect(value, stateKey, isFocused) {
-        if (!isFocused && textFieldState.text.toString() != value) {
-            textFieldState.edit {
-                replace(0, length, value)
+        if (!isFocused) {
+            val text = textFieldState.text.toString()
+            if (text == syncedText) {
+                if (text != value) textFieldState.edit { replace(0, length, value) }
+                syncedText = value
+            } else {
+                syncedText = text
+                if (text != latestValue) latestOnValueChange(text)
             }
         }
     }
@@ -92,20 +95,10 @@ fun DebouncedTextField(
             .drop(1) // Skip initial emission
             .debounce(debounceMs)
             .collect {
-                if (it.toString() != latestValue) {
-                    latestOnValueChange(it.toString())
-                }
+                val text = it.toString()
+                syncedText = text
+                if (text != latestValue) latestOnValueChange(text)
             }
-    }
-
-    // Immediate commit on losing focus
-    LaunchedEffect(isFocused) {
-        if (!isFocused) {
-            val currentText = textFieldState.text.toString()
-            if (currentText != latestValue) {
-                latestOnValueChange(currentText)
-            }
-        }
     }
 
     // Leaving the screen inside the debounce window cancels both effects above, which used to
@@ -115,7 +108,10 @@ fun DebouncedTextField(
     androidx.compose.runtime.DisposableEffect(stateKey, lifecycleOwner) {
         fun commitPending() {
             val currentText = textFieldState.text.toString()
-            if (currentText != latestValue) latestOnValueChange(currentText)
+            if (currentText != syncedText) {
+                syncedText = currentText
+                if (currentText != latestValue) latestOnValueChange(currentText)
+            }
         }
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) commitPending()
@@ -132,36 +128,9 @@ fun DebouncedTextField(
         latestOnPendingChange(hasPendingChanges)
     }
 
-    val limits = if (singleLine) TextFieldLineLimits.SingleLine else TextFieldLineLimits.MultiLine(
-        minHeightInLines = minLines, maxHeightInLines = maxLines,
-    )
-    // The compact editor has no label, validation decoration, or secure-text controls.
-    // Keep those callers on Material's complete presentation rather than silently dropping them.
-    val supportsBorderless = !isSecure && !isError && label == null && trailingIcon == null
-    if (!outlined && supportsBorderless) {
-        BasicTextField(
-            state = textFieldState,
-            modifier = modifier.onFocusChanged { isFocused = it.isFocused },
-            enabled = enabled,
-            readOnly = readOnly,
-            textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
-            keyboardOptions = keyboardOptions,
-            lineLimits = limits,
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            decorator = { inner ->
-                Box(Modifier.padding(vertical = 4.dp)) {
-                    if (textFieldState.text.isEmpty() && placeholder != null) {
-                        Text(placeholder, style = textStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    inner()
-                }
-            },
-        )
-        return
-    }
-
     OutlinedTextField(
         state = textFieldState,
+        inputTransformation = inputTransformation,
         modifier = modifier.onFocusChanged {
             isFocused = it.isFocused
         },
@@ -195,7 +164,14 @@ fun DebouncedTextField(
         } else {
             trailingIcon
         },
-        lineLimits = limits,
+        lineLimits = if (singleLine) {
+            TextFieldLineLimits.SingleLine
+        } else {
+            TextFieldLineLimits.MultiLine(
+                minHeightInLines = minLines,
+                maxHeightInLines = maxLines
+            )
+        },
         shape = AppShapes.InputField
     )
 }
