@@ -150,7 +150,7 @@ class PlaceholderRuntimeInstrumentedTest {
         assertFalse(overridden.contains("DEFAULT_CONTEXT"))
         assertTrue(java.util.regex.Pattern.compile("FIRST_CONTEXT.*SECOND_CONTEXT", java.util.regex.Pattern.DOTALL)
             .matcher(overridden).find())
-        assertFalse(prompt(emptySet()).contains("_CONTEXT"))
+        assertFalse(prompt(java.util.Collections.emptySet()).contains("_CONTEXT"))
     }
 
     @Test fun realProviderProtocolsCompleteAGenerationWithLiteralChatTags() = runBlocking {
