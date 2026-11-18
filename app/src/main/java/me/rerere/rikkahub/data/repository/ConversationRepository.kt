@@ -262,6 +262,8 @@ class ConversationRepository(
             enabledLorebookIds = conversation.enabledLorebookIds
                 ?.let { JsonInstant.encodeToString(it.map { id -> id.toString() }) }
                 .orEmpty(),
+            enabledAdditionalContextIds = conversation.enabledAdditionalContextIds
+                ?.let { JsonInstant.encodeToString(it.map(Uuid::toString)) }.orEmpty(),
             contextSummary = conversation.contextSummary ?: "",
             contextSummaryUpToIndex = conversation.contextSummaryUpToIndex,
             lastPruneTime = conversation.lastPruneTime,
@@ -315,6 +317,9 @@ class ConversationRepository(
             isConsolidated = conversationEntity.isConsolidated,
             enabledModeIds = enabledModeIds,
             enabledLorebookIds = enabledLorebookIds,
+            enabledAdditionalContextIds = conversationEntity.enabledAdditionalContextIds.takeIf { it.isNotBlank() }?.let { raw ->
+                runCatching { JsonInstant.decodeFromString<List<String>>(raw).map(Uuid::parse).toSet() }.getOrNull()
+            },
             contextSummary = conversationEntity.contextSummary.takeIf { it.isNotBlank() },
             contextSummaryUpToIndex = conversationEntity.contextSummaryUpToIndex,
             lastPruneTime = conversationEntity.lastPruneTime,

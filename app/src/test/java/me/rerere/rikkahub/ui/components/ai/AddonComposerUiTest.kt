@@ -287,4 +287,50 @@ class AddonComposerUiTest {
         assertEquals("Coastal town", book.name)
     }
 
+    @Test fun attachmentSheetContextSelectionInheritsThenOverridesOnlyThisChat() {
+        val settings = Settings(additionalContexts = snippets)
+        val otherChat = me.rerere.rikkahub.data.model.Conversation.ofId(kotlin.uuid.Uuid.random(), assistant.id)
+        var chat by mutableStateOf(otherChat.copy(id = kotlin.uuid.Uuid.random()))
+        var navigate: String? = null
+        content { AdditionalContextPickerItem(settings, assistant, chat, { chat = it }, { navigate = it }) }
+        compose.onNodeWithText("1 active").assertExists()
+        compose.onNodeWithText("Additional context").performClick()
+        compose.onNodeWithContentDescription("Writing style").assertIsOn().performClick()
+        compose.onNodeWithContentDescription("Story setting").assertIsOff().performClick()
+        compose.onNodeWithContentDescription("Story setting").assertIsOn()
+        assertEquals(setOf(snippets[1].id), chat.enabledAdditionalContextIds)
+        assertNull(otherChat.enabledAdditionalContextIds)
+        assertEquals(setOf(assistant.id), snippets[0].assistantIds)
+        capture("additional-context-picker")
+        compose.runOnIdle { dark = true }
+        capture("additional-context-picker")
+        compose.onNodeWithText("Story setting").performClick()
+        assertEquals(snippets[1].id.toString(), navigate)
+        compose.onNodeWithText("Additional context").performClick()
+        compose.onNodeWithContentDescription("Story setting").assertIsOn().performClick()
+        assertEquals(emptySet<kotlin.uuid.Uuid>(), chat.enabledAdditionalContextIds)
+        compose.onNodeWithContentDescription("Writing style").assertIsOff()
+    }
+
+    @Test fun additionalContextDragReordersTheActualListWithoutChangingPrompts() {
+        var settings by mutableStateOf(Settings(additionalContexts = snippets))
+        content { AdditionalContextContent(settings, onEdit = {}, onUpdateSettings = { settings = it(settings) }) }
+        compose.mainClock.autoAdvance = false
+        val handles = compose.onAllNodesWithContentDescription("Drag to reorder")
+        val distance = compose.onNodeWithText("Story setting").fetchSemanticsNode().boundsInRoot.center.y -
+            compose.onNodeWithText("Writing style").fetchSemanticsNode().boundsInRoot.center.y
+        val handleId = handles.onFirst().fetchSemanticsNode().id
+        val handle = compose.onNode(SemanticsMatcher("dragged context handle") { it.id == handleId })
+        handle.performTouchInput { down(center) }
+        compose.mainClock.advanceTimeBy(650)
+        compose.waitForIdle()
+        handle.performTouchInput { moveBy(androidx.compose.ui.geometry.Offset(0f, distance + 16f)) }
+        compose.mainClock.advanceTimeBy(500)
+        compose.waitForIdle()
+        handle.performTouchInput { up() }
+        compose.mainClock.advanceTimeBy(500)
+        compose.waitForIdle()
+        assertEquals(snippets.reversed(), settings.additionalContexts)
+    }
+
 }

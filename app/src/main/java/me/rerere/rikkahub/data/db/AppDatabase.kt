@@ -74,7 +74,7 @@ import kotlinx.serialization.json.put
         MemoryIngestStateEntity::class,
         MemoryProjectionEntity::class,
     ],
-    version = 39,
+    version = 41,
     autoMigrations = [
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 1, to = 2),
@@ -530,6 +530,20 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.i(TAG, "migrate: start migrate from 32 to 33")
                 db.execSQL("ALTER TABLE ConversationEntity ADD COLUMN last_model_id TEXT NOT NULL DEFAULT ''")
                 Log.i(TAG, "migrate: migrate from 32 to 33 success")
+            }
+        }
+
+        val MIGRATION_39_41 = object : Migration(39, 41) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE ConversationEntity ADD COLUMN enabled_additional_context_ids TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        // v40 was already shipped with a different schema; never reuse its version number.
+        val MIGRATION_40_41 = object : Migration(40, 41) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                MIGRATION_40_39.migrate(db)
+                MIGRATION_39_41.migrate(db)
             }
         }
 

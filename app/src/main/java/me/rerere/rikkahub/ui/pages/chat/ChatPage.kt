@@ -2077,6 +2077,9 @@ private fun ChatPageContent(
                             answer = answer,
                         )
                     },
+                    onNavigateToAdditionalContext = { contextId ->
+                        navController.navigate(Screen.SettingAdditionalContextDetail(contextId))
+                    },
                     onNavigateToLorebook = { lorebookId ->
                         navController.navigate(Screen.SettingLorebookDetail(lorebookId))
                     },
@@ -3384,7 +3387,8 @@ private fun rememberContextMeterUsage(
     val toolDefinitionTokens = matchingRequestUsage?.toolDefinitionTokens ?: toolAccounting.second
     val systemPromptText = buildString {
         append(assistant.systemPrompt)
-        settings.additionalContexts.filter { it.appliesTo(assistant.id) }.forEach { appendLine(it.prompt) }
+        me.rerere.rikkahub.data.model.resolveAdditionalContexts(
+            settings.additionalContexts, assistant.id, conversation.enabledAdditionalContextIds).forEach { appendLine(it.prompt) }
         if (assistant.learningMode) {
             appendLine()
             append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })

@@ -63,6 +63,11 @@ class SettingsStoreDurabilityTest {
         store.awaitQueuedWrites()
         assertEquals(listOf(snippet), persisted().additionalContexts)
         assertEquals(listOf(snippet), store.settingsFlow.value.additionalContexts)
+        val second = snippet.copy(id = kotlin.uuid.Uuid.random(), name = "Story setting", prompt = "Coastal town")
+        store.update { it.copy(additionalContexts = listOf(snippet, second)) }
+        store.update { it.copy(additionalContexts = it.additionalContexts.reversed()) }
+        store.awaitQueuedWrites()
+        assertEquals(listOf(second, snippet), persisted().additionalContexts)
     }
 
     @Test

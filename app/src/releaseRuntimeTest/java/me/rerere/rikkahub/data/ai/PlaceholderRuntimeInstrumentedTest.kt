@@ -134,6 +134,25 @@ class PlaceholderRuntimeInstrumentedTest {
         }
     }
 
+    @Test fun chatContextOverrideControlsTheActualPromptAndRetainsListOrder() = runBlocking {
+        val handler = getKoin().get<GenerationHandler>()
+        val assistant = Assistant(name = "Mira", systemPrompt = "", enableMemory = false, enableTimeAwareness = false)
+        val inherited = AdditionalContext(name = "Default", prompt = "DEFAULT_CONTEXT", allAssistants = true)
+        val first = AdditionalContext(name = "First", prompt = "FIRST_CONTEXT")
+        val second = AdditionalContext(name = "Second", prompt = "SECOND_CONTEXT")
+        val settings = Settings(init = false, additionalContexts = listOf(inherited, first, second))
+        suspend fun prompt(ids: Set<kotlin.uuid.Uuid>?): String = handler.buildMessages(
+            assistant, settings, listOf(UIMessage.user("Hello")), Model(abilities = emptyList()),
+            emptyList(), emptyList(), -1, conversationEnabledAdditionalContextIds = ids,
+        ).messages.joinToString("\n") { it.toContentText() }
+        assertTrue(prompt(null).contains("DEFAULT_CONTEXT"))
+        val overridden = prompt(linkedSetOf(second.id, first.id))
+        assertFalse(overridden.contains("DEFAULT_CONTEXT"))
+        assertTrue(overridden.indexOf("FIRST_CONTEXT") >= 0)
+        assertTrue(overridden.indexOf("SECOND_CONTEXT") > overridden.indexOf("FIRST_CONTEXT"))
+        assertFalse(prompt(emptySet()).contains("_CONTEXT"))
+    }
+
     @Test fun realProviderProtocolsCompleteAGenerationWithLiteralChatTags() = runBlocking {
         withTimeout(45_000) {
             val responses = listOf(

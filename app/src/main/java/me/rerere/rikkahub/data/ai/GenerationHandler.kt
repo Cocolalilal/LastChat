@@ -602,6 +602,7 @@ class GenerationHandler(
         maxSteps: Int = 256,
         enabledModeIds: Set<Uuid> = emptySet(),
         enabledLorebookIds: Set<Uuid>? = null,
+        enabledAdditionalContextIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
         contextSummary: String? = null,
         contextSummaryUpToIndex: Int = -1,
@@ -714,6 +715,7 @@ class GenerationHandler(
                 conversationEnabledModeIds = enabledModeIds,
                 turnScopedEnabledModeIds = currentTurnScopedSkillIds,
                 conversationEnabledLorebookIds = enabledLorebookIds,
+                conversationEnabledAdditionalContextIds = enabledAdditionalContextIds,
                 activeConversationId = activeConversationId,
                 contextSummary = contextSummary,
                 contextSummaryUpToIndex = contextSummaryUpToIndex,
@@ -861,6 +863,7 @@ class GenerationHandler(
         conversationEnabledModeIds: Set<Uuid> = emptySet(),
         turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
         conversationEnabledLorebookIds: Set<Uuid>? = null,
+        conversationEnabledAdditionalContextIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
         contextSummary: String? = null,
         contextSummaryUpToIndex: Int = -1,
@@ -1052,7 +1055,8 @@ class GenerationHandler(
             )
         }
 
-        val additionalContexts = settings.additionalContexts.filter { it.appliesTo(assistant.id) }
+        val additionalContexts = me.rerere.rikkahub.data.model.resolveAdditionalContexts(
+            settings.additionalContexts, assistant.id, conversationEnabledAdditionalContextIds)
             .map { it.copy(prompt = resolvePrompt(it.prompt)) }
         val promptInjections = enabledSkills + additionalContexts.map { it.asPromptInjection() }
         val additionalContextIds = additionalContexts.map { it.id }.toSet()
@@ -1752,6 +1756,7 @@ class GenerationHandler(
         conversationEnabledModeIds: Set<Uuid> = emptySet(),
         turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
         conversationEnabledLorebookIds: Set<Uuid>? = null,
+        conversationEnabledAdditionalContextIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
         contextSummary: String? = null,
         contextSummaryUpToIndex: Int = -1,
@@ -1770,6 +1775,7 @@ class GenerationHandler(
             conversationEnabledModeIds = conversationEnabledModeIds,
             turnScopedEnabledModeIds = turnScopedEnabledModeIds,
             conversationEnabledLorebookIds = conversationEnabledLorebookIds,
+            conversationEnabledAdditionalContextIds = conversationEnabledAdditionalContextIds,
             activeConversationId = activeConversationId,
             contextSummary = contextSummary,
             contextSummaryUpToIndex = contextSummaryUpToIndex,

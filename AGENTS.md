@@ -76,7 +76,7 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 
 ### Package layout (`me.rerere.rikkahub.*`)
 - `data/ai/` — `GenerationHandler` (orchestrator, ~1768 lines), `MemorySearchService`, `AILogging`, `AIRequestInterceptor`, `BuiltInToolResolution.kt` (top-level functions, NOT a class), transformers (`transformers/`), tools (`tools/`), MCP (`mcp/`), RAG (`rag/`), model catalog (`models/`). (`ChatService` lives in `service/`, NOT here.)
-- `data/db/` — Room v39; schema history at `app/schemas/me.rerere.rikkahub.data.db.AppDatabase/`.
+- `data/db/` — Room v41; schema history at `app/schemas/me.rerere.rikkahub.data.db.AppDatabase/`.
 - `data/datastore/` — `PreferencesStore.kt` (canonical `SettingsStore.update { ... }` API), `SecureStore.kt` (EncryptedSharedPreferences), `QuickSettingsCache.kt`, `SecretKeyManager.kt`, `DefaultProviders.kt`, `migration/PreferenceStoreV1Migration.kt`
 - `data/repository/` — 7 repos (Conversation with paging3, ChatAttachment with sha256-dedup + OCR, Memory with RAG, GenMedia, AppStorage, Workspace, ChatAttachmentManager)
 - `data/sync/` — `WebdavSync.kt` (dav4jvm + zip), `BackupArchiveFormat.kt`, `DatabaseSanitizer.kt`, importer (`ChatboxImporter`, `CherryStudioProviderImporter`)

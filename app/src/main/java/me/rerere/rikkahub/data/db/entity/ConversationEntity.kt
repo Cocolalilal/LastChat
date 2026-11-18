@@ -35,6 +35,8 @@ data class ConversationEntity(
     val enabledModeIds: String = "[]",
     @ColumnInfo(name = "enabled_lorebook_ids", defaultValue = "")
     val enabledLorebookIds: String = "",
+    @ColumnInfo(name = "enabled_additional_context_ids", defaultValue = "")
+    val enabledAdditionalContextIds: String = "",
     @ColumnInfo(name = "context_summary", defaultValue = "")
     val contextSummary: String = "",
     @ColumnInfo(name = "context_summary_up_to_index", defaultValue = "-1")

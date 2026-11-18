@@ -29,3 +29,13 @@ data class AdditionalContext(
         attachments = attachments,
     )
 }
+
+/** Resolve once for the picker, token estimate, and request assembly; retain Add-ons ordering. */
+fun resolveAdditionalContexts(
+    contexts: List<AdditionalContext>,
+    assistantId: Uuid,
+    conversationEnabledIds: Set<Uuid>? = null,
+): List<AdditionalContext> = contexts.filter { context ->
+    context.enabled && context.prompt.isNotBlank() &&
+        (conversationEnabledIds?.contains(context.id) ?: (context.allAssistants || assistantId in context.assistantIds))
+}

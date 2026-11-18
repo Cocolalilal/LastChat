@@ -250,6 +250,7 @@ fun MinimalChatInput(
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
     onNavigateToLorebook: (String) -> Unit = {},
+    onNavigateToAdditionalContext: (String) -> Unit = {},
     onRefreshContext: () -> Unit = {},
     contextCompressionStatus: me.rerere.rikkahub.service.ContextCompressionStatus? = null,
     contextUsage: me.rerere.ai.context.ContextUsageBreakdown? = null,
@@ -1480,6 +1481,7 @@ fun MinimalChatInput(
                 onUpdateAssistant = onUpdateAssistant,
                 onUpdateSearchService = onUpdateSearchService,
                 onNavigateToLorebook = onNavigateToLorebook,
+                onNavigateToAdditionalContext = onNavigateToAdditionalContext,
                 onManageContext = {
                     scope.launch {
                         attachmentSheetState.hideBeforeDialog(
@@ -1821,6 +1823,7 @@ private fun MinimalPickerContent(
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateSearchService: (Int) -> Unit,
     onNavigateToLorebook: (String) -> Unit,
+    onNavigateToAdditionalContext: (String) -> Unit,
     onManageContext: () -> Unit,
     importScope: CoroutineScope,
     onAttachmentImportStarted: () -> Unit,
@@ -2124,6 +2127,14 @@ private fun MinimalPickerContent(
             onClick = {
                 showSearchPicker = true
             }
+        )
+
+        AdditionalContextPickerItem(
+            settings = settings,
+            assistant = assistant,
+            conversation = conversation,
+            onUpdateConversation = onUpdateConversation,
+            onNavigateToContext = onNavigateToAdditionalContext,
         )
 
         if (settings.lorebooks.isNotEmpty()) {
@@ -2535,7 +2546,7 @@ private fun MinimalFileButtonGroupedIconOnly(
 }
 
 @Composable
-private fun MinimalPickerItem(
+internal fun MinimalPickerItem(
     icon: @Composable () -> Unit,
     title: String,
     subtitle: String,

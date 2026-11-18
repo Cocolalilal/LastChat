@@ -19,6 +19,7 @@ internal fun contextUsageSourceKey(
     conversation.contextSummaryUpToIndex,
     conversation.enabledModeIds,
     conversation.enabledLorebookIds,
+    conversation.enabledAdditionalContextIds,
     assistant.systemPrompt,
     assistant.messageTemplate,
     assistant.searchMode,

@@ -59,4 +59,42 @@ class AdditionalContextTest {
         val edited = base.copy(skills = listOf(Skill(name = "new-skill")))
         assertEquals(listOf(snippet), mergeSettingsEdit(base, edited, latest).additionalContexts)
     }
+    @Test fun `chat overrides inherit by default and explicitly disable all with an empty set`() {
+        val character = Uuid.random()
+        val first = AdditionalContext(name = "First", prompt = "first", assistantIds = setOf(character))
+        val second = AdditionalContext(name = "Second", prompt = "second")
+        val disabled = AdditionalContext(prompt = "disabled", enabled = false)
+        val blank = AdditionalContext(prompt = " ", allAssistants = true)
+        val contexts = listOf(first, second, disabled, blank)
+        fun active(ids: Set<Uuid>?) = me.rerere.rikkahub.data.model.resolveAdditionalContexts(contexts, character, ids)
+        assertEquals(listOf(first), active(null))
+        assertEquals(emptyList<AdditionalContext>(), active(emptySet()))
+        assertEquals(listOf(second), active(setOf(second.id, disabled.id, blank.id, Uuid.random())))
+        assertEquals(listOf(first, second), active(linkedSetOf(second.id, first.id)))
+        assertEquals(listOf(second, first), me.rerere.rikkahub.data.model.resolveAdditionalContexts(
+            listOf(second, first), character, setOf(first.id, second.id)))
+    }
+
+    @Test fun `chat selection round trips without changing legacy inheritance or character assignments`() {
+        val original = me.rerere.rikkahub.data.model.Conversation.ofId(Uuid.random())
+        val legacy = JsonInstant.decodeFromString<me.rerere.rikkahub.data.model.Conversation>(JsonInstant.encodeToString(original))
+        assertEquals(null, legacy.enabledAdditionalContextIds)
+        listOf(emptySet(), setOf(Uuid.random())).forEach { ids ->
+            val selected = original.copy(enabledAdditionalContextIds = ids)
+            assertEquals(ids, JsonInstant.decodeFromString<me.rerere.rikkahub.data.model.Conversation>(
+                JsonInstant.encodeToString(selected)).enabledAdditionalContextIds)
+        }
+    }
+
+    @Test fun `changing context during generation preserves live messages and the new selection`() {
+        val draft = me.rerere.rikkahub.data.model.Conversation.ofId(Uuid.random())
+        val live = draft.updateCurrentMessages(listOf(me.rerere.ai.ui.UIMessage.assistant("Live reply")))
+            .copy(updateAt = draft.updateAt.plusSeconds(1))
+        val ids = setOf(Uuid.random())
+        val merged = me.rerere.rikkahub.service.mergeLiveMessagesIfIncomingIsStale(live,
+            draft.copy(enabledAdditionalContextIds = ids))
+        assertEquals(ids, merged.enabledAdditionalContextIds)
+        assertEquals(live.messageNodes, merged.messageNodes)
+    }
+
 }
