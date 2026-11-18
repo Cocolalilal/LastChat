@@ -112,6 +112,7 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :workspace:testDebugUnitTest --tests '*Rootfs*Test' \
+            :speech:testDebugUnitTest --tests '*SherpaCatalogTest' \
             :app:testStableDebugUnitTest \
             --tests '*GenerationHandlerSkillToolTest' --tests '*AdditionalContextTest' \
             --tests '*SettingsStoreDurabilityTest' --tests '*SettingsMergeTest' \
@@ -122,6 +123,7 @@ jobs:
             --tests '*AssistantInitialMessagesTest' --tests '*ChatGenerationTransformersTest' \
             --tests '*AddonPagerLayoutTest' --tests '*OneUITopAppBarTest' \
             --tests '*SkillEditPersistenceTest' --tests '*PromptEditorBehaviorTest' \
+            --tests '*LocalSpeechModelSettingsSyncTest' --tests '*LocalSttInstallTest' \
             --tests '*WidgetReliabilityTest' --tests '*WidgetAvatarRendererTest' \
             --tests '*SkillActivationResumeTest' --tests '*LorebookEntryEditorTest' \
             -Dlastchat.renderDir="$GITHUB_WORKSPACE/app/build/reports/addon-ui" \

@@ -11,8 +11,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,7 +50,7 @@ class SherpaASRController(
     override val state: StateFlow<ASRState> = _state.asStateFlow()
 
     private var sessionJob: Job? = null
-    private var audioRecord: AudioRecord? = null
+    @Volatile private var audioRecord: AudioRecord? = null
     private var callback: ((String) -> Unit)? = null
     @Volatile private var stopRequested = false
 
@@ -60,17 +64,17 @@ class SherpaASRController(
         callback = onTranscriptChange
         _state.value = ASRState(status = ASRStatus.Connecting, isAvailable = true)
         sessionJob = scope.launch(Dispatchers.IO) {
-            inferenceManager.withLease(LocalInferenceWorkload.SPEECH, modelId) {
-                runCatching {
+            runCatching {
+                inferenceManager.withLease(LocalInferenceWorkload.SPEECH, modelId) {
                     val model = store.get(modelId) ?: error("Local speech model is not installed")
                     if (stopRequested) {
                         finishIdle("")
-                        return@runCatching
+                    } else {
+                        if (model.streaming) runOnline(model) else runOffline(model)
                     }
-                    if (model.streaming) runOnline(model) else runOffline(model)
-                }.onFailure { error ->
-                    if (error !is kotlinx.coroutines.CancellationException) fail(error.message ?: "Local transcription failed")
                 }
+            }.onFailure { error ->
+                if (error !is kotlinx.coroutines.CancellationException) fail(error.message ?: "Local transcription failed")
             }
         }
     }
@@ -83,17 +87,18 @@ class SherpaASRController(
     }
 
     override fun dispose() {
+        stopRequested = true
         runCatching { audioRecord?.stop() }
-        audioRecord?.release()
-        audioRecord = null
+        // The recording job owns release, including when construction/start fails.
         sessionJob?.cancel()
         scope.cancel()
     }
 
-    private suspend fun runOffline(model: InstalledSherpaModel) {
+    private suspend fun runOffline(model: InstalledSherpaModel) = coroutineScope {
         val chunks = Channel<FloatArray>(capacity = Channel.UNLIMITED)
         val completed = mutableListOf<String>()
-        val decoder = scope.launch(Dispatchers.Default) {
+        // A decode failure cancels this recording session and reaches start()'s error handler.
+        val decoder = async(Dispatchers.Default) {
             for (samples in chunks) {
                 val text = runtime.transcribe(model, samples)
                 if (text.isNotBlank()) {
@@ -103,18 +108,23 @@ class SherpaASRController(
             }
         }
 
-        val recorder = createRecorder()
-        audioRecord = recorder
+        var recorder: AudioRecord? = null
         val segment = ByteArrayOutputStream()
         var speechSeen = false
         var silentBuffers = 0
         val endpoint = ConservativeSpeechEndpointDetector()
         val readBuffer = ByteArray(BUFFER_BYTES)
-        recorder.startRecording()
-        _state.update { it.copy(status = ASRStatus.Listening) }
         try {
-            while (!stopRequested && recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                val read = recorder.read(readBuffer, 0, readBuffer.size)
+            val activeRecorder = createRecorder()
+            recorder = activeRecorder
+            audioRecord = activeRecorder
+            currentCoroutineContext().ensureActive()
+            if (!stopRequested) activeRecorder.startRecording()
+            _state.update { it.copy(status = ASRStatus.Listening) }
+            while (!stopRequested && activeRecorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                currentCoroutineContext().ensureActive()
+                val read = activeRecorder.read(readBuffer, 0, readBuffer.size)
+                check(read >= 0 || stopRequested) { "Microphone read failed ($read)" }
                 if (read <= 0) continue
                 segment.write(readBuffer, 0, read)
                 val amplitude = calculateRmsAmplitude(readBuffer, read)
@@ -124,6 +134,13 @@ class SherpaASRController(
                     silentBuffers = 0
                 } else if (speechSeen) {
                     silentBuffers++
+                }
+                if (!speechSeen && segment.size() > MIN_SEGMENT_BYTES) {
+                    // Keep a short pre-roll without retaining unlimited initial silence.
+                    val buffered = segment.toByteArray()
+                    val preRoll = buffered.copyOfRange(buffered.size - MIN_SEGMENT_BYTES, buffered.size)
+                    segment.reset()
+                    segment.write(preRoll)
                 }
                 val longEnoughSilence = silentBuffers >= SILENT_BUFFERS_TO_FLUSH
                 val maxSegmentReached = segment.size() >= MAX_SEGMENT_BYTES
@@ -137,28 +154,35 @@ class SherpaASRController(
                     stopRequested = true
                 }
             }
-        } finally {
-            recorder.release()
-            audioRecord = null
+            runCatching { activeRecorder.stop() }
             if (segment.size() >= MIN_SEGMENT_BYTES) chunks.send(pcm16ToFloat(segment.toByteArray()))
             chunks.close()
-            decoder.join()
+            decoder.await()
             finishIdle(completed.joinToString(" "))
+        } finally {
+            releaseRecorder(recorder)
+            chunks.cancel()
+            decoder.cancel()
         }
     }
 
     private suspend fun runOnline(model: InstalledSherpaModel) {
         val session = runtime.openOnlineSession(model)
         val completed = mutableListOf<String>()
-        val recorder = createRecorder()
-        audioRecord = recorder
+        var recorder: AudioRecord? = null
         val endpoint = ConservativeSpeechEndpointDetector()
         val readBuffer = ByteArray(BUFFER_BYTES)
-        recorder.startRecording()
-        _state.update { it.copy(status = ASRStatus.Listening) }
         try {
-            while (!stopRequested && recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                val read = recorder.read(readBuffer, 0, readBuffer.size)
+            val activeRecorder = createRecorder()
+            recorder = activeRecorder
+            audioRecord = activeRecorder
+            currentCoroutineContext().ensureActive()
+            if (!stopRequested) activeRecorder.startRecording()
+            _state.update { it.copy(status = ASRStatus.Listening) }
+            while (!stopRequested && activeRecorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                currentCoroutineContext().ensureActive()
+                val read = activeRecorder.read(readBuffer, 0, readBuffer.size)
+                check(read >= 0 || stopRequested) { "Microphone read failed ($read)" }
                 if (read <= 0) continue
                 val amplitude = calculateRmsAmplitude(readBuffer, read)
                 _state.update { it.copy(amplitudes = it.amplitudes.appendAmplitude(amplitude)) }
@@ -174,12 +198,17 @@ class SherpaASRController(
             }
             val final = session.finish()
             if (final.isNotBlank()) completed += final
-        } finally {
-            recorder.release()
-            audioRecord = null
-            session.close()
             finishIdle(completed.joinToString(" "))
+        } finally {
+            releaseRecorder(recorder)
+            session.close()
         }
+    }
+
+    private fun releaseRecorder(recorder: AudioRecord?) {
+        runCatching { recorder?.stop() }
+        runCatching { recorder?.release() }
+        if (audioRecord === recorder) audioRecord = null
     }
 
     private fun createRecorder(): AudioRecord {
@@ -194,7 +223,12 @@ class SherpaASRController(
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
             maxOf(minBuffer, BUFFER_BYTES * 2),
-        ).also { check(it.state == AudioRecord.STATE_INITIALIZED) { "Unable to initialize microphone" } }
+        ).also {
+            if (it.state != AudioRecord.STATE_INITIALIZED) {
+                it.release()
+                error("Unable to initialize microphone")
+            }
+        }
     }
 
     private suspend fun publish(text: String) {

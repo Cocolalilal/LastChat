@@ -6,209 +6,489 @@
       "name": "Moonshine Tiny (English)",
       "description": "Small, fast English transcription model. Recommended for most devices.",
       "family": "moonshine",
-      "languages": ["en"],
+      "languages": [
+        "en"
+      ],
       "streaming": false,
       "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-quantized-2026-02-27.tar.bz2",
       "archiveSizeBytes": 29858559,
-      "revision": "2026-02-27",
+      "revision": "d1e6c30921780b8508d04b492dfb3ce8a51605d4",
       "files": {
         "encoder": "encoder_model.ort",
         "decoder": "decoder_model_merged.ort",
         "tokens": "tokens.txt"
       },
-      "defaultConfig": { "language": "en", "numThreads": 2 }
+      "defaultConfig": {
+        "language": "en",
+        "numThreads": 2
+      },
+      "downloads": {
+        "encoder": {
+          "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-moonshine-tiny-en-quantized-2026-02-27/resolve/d1e6c30921780b8508d04b492dfb3ce8a51605d4/encoder_model.ort",
+          "sizeBytes": 13281600,
+          "sha256": "94e90a4654fc45cdfedb77c4c08e1739f48862998e58fada384b25118134f221"
+        },
+        "decoder": {
+          "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-moonshine-tiny-en-quantized-2026-02-27/resolve/d1e6c30921780b8508d04b492dfb3ce8a51605d4/decoder_model_merged.ort",
+          "sizeBytes": 30412256,
+          "sha256": "cf524c4862d36e9e5ab032eddc73637efd822d70e868ac575cf1a46e1e4708a0"
+        },
+        "tokens": {
+          "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-moonshine-tiny-en-quantized-2026-02-27/resolve/d1e6c30921780b8508d04b492dfb3ce8a51605d4/tokens.txt",
+          "sizeBytes": 549350,
+          "sha256": "2870d843e14c1e187bf1913a521562a63b53933814bd7f2145120468f494a049"
+        }
+      }
     },
     {
       "id": "sherpa-whisper-tiny-en",
       "name": "Whisper Tiny (English)",
       "description": "Compact Whisper model optimized for English.",
       "family": "whisper",
-      "languages": ["en"],
+      "languages": [
+        "en"
+      ],
       "streaming": false,
       "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.en.tar.bz2",
       "archiveSizeBytes": 118071777,
-      "revision": "asr-models",
+      "revision": "d026532c022fa99fd789d6b32446a1df7b6bfc43",
       "files": {
         "encoder": "tiny.en-encoder.int8.onnx",
         "decoder": "tiny.en-decoder.int8.onnx",
         "tokens": "tiny.en-tokens.txt"
       },
-      "defaultConfig": { "language": "en", "numThreads": 2 }
+      "defaultConfig": {
+        "language": "en",
+        "numThreads": 2
+      },
+      "downloads": {
+        "encoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny.en/resolve/d026532c022fa99fd789d6b32446a1df7b6bfc43/tiny.en-encoder.int8.onnx",
+          "sizeBytes": 12937772,
+          "sha256": "0ce578b827c94a961aacb8fa14b02f096504b337e5c94be37c36238cbe3e8bc6"
+        },
+        "decoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny.en/resolve/d026532c022fa99fd789d6b32446a1df7b6bfc43/tiny.en-decoder.int8.onnx",
+          "sizeBytes": 89853865,
+          "sha256": "06c0e6ff6348d427e51839219d1c886c18cfdf411e629e33f5e1679bff9c1527"
+        },
+        "tokens": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny.en/resolve/d026532c022fa99fd789d6b32446a1df7b6bfc43/tiny.en-tokens.txt",
+          "sizeBytes": 835554,
+          "sha256": "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930"
+        }
+      }
     },
     {
       "id": "sherpa-moonshine-base-en-quantized-2026-02-27",
       "name": "Moonshine Base (English)",
       "description": "A noticeably more accurate English Moonshine model that remains efficient on-device.",
       "family": "moonshine",
-      "languages": ["en"],
+      "languages": [
+        "en"
+      ],
       "streaming": false,
       "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-base-en-quantized-2026-02-27.tar.bz2",
       "archiveSizeBytes": 111266225,
-      "revision": "2026-02-27",
+      "revision": "8f4d6c58c03d40bcea40043bb7120a878f2bbef6",
       "files": {
         "encoder": "encoder_model.ort",
         "decoder": "decoder_model_merged.ort",
         "tokens": "tokens.txt"
       },
-      "defaultConfig": { "language": "en", "numThreads": 2 }
+      "defaultConfig": {
+        "language": "en",
+        "numThreads": 2
+      },
+      "downloads": {
+        "encoder": {
+          "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-moonshine-base-en-quantized-2026-02-27/resolve/8f4d6c58c03d40bcea40043bb7120a878f2bbef6/encoder_model.ort",
+          "sizeBytes": 31326816,
+          "sha256": "7c66495948d0d08ec1af454cd4b5514862ae6511e94712a60e6d83eaec8dc8cf"
+        },
+        "decoder": {
+          "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-moonshine-base-en-quantized-2026-02-27/resolve/8f4d6c58c03d40bcea40043bb7120a878f2bbef6/decoder_model_merged.ort",
+          "sizeBytes": 109424400,
+          "sha256": "d9d7b333af34bc552580576ddcf248a1c6c839e0d3b43b09afb9376ed009899d"
+        },
+        "tokens": {
+          "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-moonshine-base-en-quantized-2026-02-27/resolve/8f4d6c58c03d40bcea40043bb7120a878f2bbef6/tokens.txt",
+          "sizeBytes": 549350,
+          "sha256": "2870d843e14c1e187bf1913a521562a63b53933814bd7f2145120468f494a049"
+        }
+      }
     },
     {
       "id": "sherpa-whisper-tiny-multilingual",
       "name": "Whisper Tiny (Multilingual)",
       "description": "Compact multilingual Whisper transcription model.",
       "family": "whisper",
-      "languages": ["multilingual"],
+      "languages": [
+        "multilingual"
+      ],
       "streaming": false,
       "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2",
       "archiveSizeBytes": 116204861,
-      "revision": "asr-models",
+      "revision": "65176e2deb88badc814a94058666cadccc29b61c",
       "files": {
         "encoder": "tiny-encoder.int8.onnx",
         "decoder": "tiny-decoder.int8.onnx",
         "tokens": "tiny-tokens.txt"
       },
-      "defaultConfig": { "language": "", "numThreads": 2 }
+      "defaultConfig": {
+        "language": "",
+        "numThreads": 2
+      },
+      "downloads": {
+        "encoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-encoder.int8.onnx",
+          "sizeBytes": 12937772,
+          "sha256": "d24fb083ae3b1041fc24e97971d60e280c9342201fbb67b0ab428a8b4a51a434"
+        },
+        "decoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-decoder.int8.onnx",
+          "sizeBytes": 89855401,
+          "sha256": "d2fece8dd42771f1df975c6c0445770d0c292bf7547c2cae04a6c0cc57540925"
+        },
+        "tokens": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-tokens.txt",
+          "sizeBytes": 816730,
+          "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126"
+        }
+      }
     },
     {
       "id": "sherpa-whisper-base-multilingual",
       "name": "Whisper Base (Multilingual)",
       "description": "More accurate multilingual Whisper model for faster devices.",
       "family": "whisper",
-      "languages": ["multilingual"],
+      "languages": [
+        "multilingual"
+      ],
       "streaming": false,
       "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2",
       "archiveSizeBytes": 207557382,
-      "revision": "asr-models",
+      "revision": "bb53ee204431c90d314c1cc08d28d23e5b7927cc",
       "files": {
         "encoder": "base-encoder.int8.onnx",
         "decoder": "base-decoder.int8.onnx",
         "tokens": "base-tokens.txt"
       },
-      "defaultConfig": { "language": "", "numThreads": 2 }
+      "defaultConfig": {
+        "language": "",
+        "numThreads": 2
+      },
+      "downloads": {
+        "encoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/bb53ee204431c90d314c1cc08d28d23e5b7927cc/base-encoder.int8.onnx",
+          "sizeBytes": 29120534,
+          "sha256": "0b8fb1304b6109976038efff5ace81720e00386f3ff6b54ee8c75291ca0a1e11"
+        },
+        "decoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/bb53ee204431c90d314c1cc08d28d23e5b7927cc/base-decoder.int8.onnx",
+          "sizeBytes": 130672026,
+          "sha256": "9759d217388a01b3a4c7c15533201067b48ae819c4daafc8624e64b9409dc02d"
+        },
+        "tokens": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/bb53ee204431c90d314c1cc08d28d23e5b7927cc/base-tokens.txt",
+          "sizeBytes": 816730,
+          "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126"
+        }
+      }
     },
     {
       "id": "sherpa-whisper-small-en",
       "name": "Whisper Small (English)",
       "description": "Higher-accuracy English Whisper model for devices with more storage and CPU headroom.",
       "family": "whisper",
-      "languages": ["en"],
+      "languages": [
+        "en"
+      ],
       "streaming": false,
       "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.en.tar.bz2",
       "archiveSizeBytes": 635693775,
-      "revision": "asr-models",
+      "revision": "d9533f69affd85061aee349af7fea5cb2996dbbe",
       "files": {
         "encoder": "small.en-encoder.int8.onnx",
         "decoder": "small.en-decoder.int8.onnx",
         "tokens": "small.en-tokens.txt"
       },
-      "defaultConfig": { "language": "en", "numThreads": 4 }
+      "defaultConfig": {
+        "language": "en",
+        "numThreads": 4
+      },
+      "downloads": {
+        "encoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small.en/resolve/d9533f69affd85061aee349af7fea5cb2996dbbe/small.en-encoder.int8.onnx",
+          "sizeBytes": 112442483,
+          "sha256": "8bdac288f369aa94ee2194059238c465ed82ea9d47ee8fa4a8c0a891873e462f"
+        },
+        "decoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small.en/resolve/d9533f69affd85061aee349af7fea5cb2996dbbe/small.en-decoder.int8.onnx",
+          "sizeBytes": 262223042,
+          "sha256": "710ccf890e10f3faa15f51ec346081a2723c9f3adb6e4da81c6573a5a6f877fb"
+        },
+        "tokens": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small.en/resolve/d9533f69affd85061aee349af7fea5cb2996dbbe/small.en-tokens.txt",
+          "sizeBytes": 835554,
+          "sha256": "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930"
+        }
+      }
     },
     {
       "id": "sherpa-whisper-small-multilingual",
       "name": "Whisper Small (Multilingual)",
       "description": "Higher-accuracy multilingual Whisper model for capable phones.",
       "family": "whisper",
-      "languages": ["multilingual"],
+      "languages": [
+        "multilingual"
+      ],
       "streaming": false,
       "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.tar.bz2",
       "archiveSizeBytes": 639387718,
-      "revision": "asr-models",
+      "revision": "8f3c18b358db4d1f2fc1eae49d75cd20989e4309",
       "files": {
         "encoder": "small-encoder.int8.onnx",
         "decoder": "small-decoder.int8.onnx",
         "tokens": "small-tokens.txt"
       },
-      "defaultConfig": { "language": "", "numThreads": 4 }
+      "defaultConfig": {
+        "language": "",
+        "numThreads": 4
+      },
+      "downloads": {
+        "encoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/8f3c18b358db4d1f2fc1eae49d75cd20989e4309/small-encoder.int8.onnx",
+          "sizeBytes": 112442483,
+          "sha256": "4cbe7b22fa9026b843b60a68640c747de05bafb1a11b57edc0e66c232d9f33a9"
+        },
+        "decoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/8f3c18b358db4d1f2fc1eae49d75cd20989e4309/small-decoder.int8.onnx",
+          "sizeBytes": 262226114,
+          "sha256": "acad50b5c782696e91b55914cc5ab4f756f1532f76e22aa6fc615f39fb69a8ee"
+        },
+        "tokens": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/8f3c18b358db4d1f2fc1eae49d75cd20989e4309/small-tokens.txt",
+          "sizeBytes": 816730,
+          "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126"
+        }
+      }
     },
     {
       "id": "sherpa-whisper-medium-multilingual",
       "name": "Whisper Medium (Multilingual)",
       "description": "Largest bundled choice: high-quality multilingual transcription for powerful devices.",
       "family": "whisper",
-      "languages": ["multilingual"],
+      "languages": [
+        "multilingual"
+      ],
       "streaming": false,
       "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-medium.tar.bz2",
       "archiveSizeBytes": 1931372882,
-      "revision": "asr-models",
+      "revision": "8c31d28503847560985df21f90e14f0c736e075e",
       "files": {
         "encoder": "medium-encoder.int8.onnx",
         "decoder": "medium-decoder.int8.onnx",
         "tokens": "medium-tokens.txt"
       },
-      "defaultConfig": { "language": "", "numThreads": 4 }
+      "defaultConfig": {
+        "language": "",
+        "numThreads": 4
+      },
+      "downloads": {
+        "encoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-medium/resolve/8c31d28503847560985df21f90e14f0c736e075e/medium-encoder.int8.onnx",
+          "sizeBytes": 374196283,
+          "sha256": "1c54582b4d829de0089f6cb63bbbdb3bf7555398bacaf855fbecf1a84dfd193e"
+        },
+        "decoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-medium/resolve/8c31d28503847560985df21f90e14f0c736e075e/medium-decoder.int8.onnx",
+          "sizeBytes": 571059257,
+          "sha256": "595d00a338a365a7bfa0ca7f296cabc639583bef770ab6130df90f49a6412747"
+        },
+        "tokens": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-medium/resolve/8c31d28503847560985df21f90e14f0c736e075e/medium-tokens.txt",
+          "sizeBytes": 816730,
+          "sha256": "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126"
+        }
+      }
     },
     {
       "id": "sherpa-sensevoice-int8-2025-09-09",
       "name": "SenseVoice INT8",
       "description": "Fast Chinese, Cantonese, English, Japanese, and Korean transcription.",
       "family": "sense_voice",
-      "languages": ["zh", "yue", "en", "ja", "ko"],
+      "languages": [
+        "zh",
+        "yue",
+        "en",
+        "ja",
+        "ko"
+      ],
       "streaming": false,
       "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2",
       "archiveSizeBytes": 165783878,
-      "revision": "2025-09-09",
+      "revision": "355f4d4884d8afd08aef04b9007a8556d7b463b2",
       "files": {
         "model": "model.int8.onnx",
         "tokens": "tokens.txt"
       },
-      "defaultConfig": { "language": "", "numThreads": 2, "useInverseTextNormalization": true }
+      "defaultConfig": {
+        "language": "",
+        "numThreads": 2,
+        "useInverseTextNormalization": true
+      },
+      "downloads": {
+        "model": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09/resolve/355f4d4884d8afd08aef04b9007a8556d7b463b2/model.int8.onnx",
+          "sizeBytes": 237115547,
+          "sha256": "12ca1a2ae7ecf3e0019ef2822307ee0b5cadc9196569e379b4c4026f8205276d"
+        },
+        "tokens": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09/resolve/355f4d4884d8afd08aef04b9007a8556d7b463b2/tokens.txt",
+          "sizeBytes": 315894,
+          "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc"
+        }
+      }
     },
     {
       "id": "sherpa-streaming-zipformer-en-2023-06-26",
       "name": "Streaming Zipformer (English)",
       "description": "True real-time English transcription with live partial results.",
       "family": "online_transducer",
-      "languages": ["en"],
+      "languages": [
+        "en"
+      ],
       "streaming": true,
       "onlineModelType": "zipformer2",
       "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2",
       "archiveSizeBytes": 310414022,
-      "revision": "2023-06-26",
+      "revision": "672fbf1b30579d6585301139bb363f42a0ad4a24",
       "files": {
         "encoder": "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
         "decoder": "decoder-epoch-99-avg-1-chunk-16-left-128.onnx",
         "joiner": "joiner-epoch-99-avg-1-chunk-16-left-128.onnx",
         "tokens": "tokens.txt"
       },
-      "defaultConfig": { "language": "en", "numThreads": 2 }
+      "defaultConfig": {
+        "language": "en",
+        "numThreads": 2
+      },
+      "downloads": {
+        "encoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/672fbf1b30579d6585301139bb363f42a0ad4a24/encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+          "sizeBytes": 71083163,
+          "sha256": "563fde436d16cf7607cf408cd6b30909819d03162652ef389c2450ced3f45ac1"
+        },
+        "decoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/672fbf1b30579d6585301139bb363f42a0ad4a24/decoder-epoch-99-avg-1-chunk-16-left-128.onnx",
+          "sizeBytes": 2092621,
+          "sha256": "7bf787f90b194b307e5a4ad6a34fadb4e748304c35f78a8d66358a05b13ee6ef"
+        },
+        "joiner": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/672fbf1b30579d6585301139bb363f42a0ad4a24/joiner-epoch-99-avg-1-chunk-16-left-128.onnx",
+          "sizeBytes": 1026405,
+          "sha256": "210591f72b3c56b8364f85f345dca240bc2b4c00632848f4aa923630d5639d3b"
+        },
+        "tokens": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/672fbf1b30579d6585301139bb363f42a0ad4a24/tokens.txt",
+          "sizeBytes": 5048,
+          "sha256": "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb"
+        }
+      }
     },
     {
       "id": "sherpa-streaming-zipformer-en-20m-2023-02-17",
       "name": "Streaming Zipformer 20M (English)",
       "description": "Smallest live English transcription option, tuned for low latency.",
       "family": "online_transducer",
-      "languages": ["en"],
+      "languages": [
+        "en"
+      ],
       "streaming": true,
       "onlineModelType": "zipformer",
       "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17.tar.bz2",
       "archiveSizeBytes": 127887156,
-      "revision": "2023-02-17",
+      "revision": "d42f2d9f7ca24806fb667456a18a9f1b60f70d16",
       "files": {
         "encoder": "encoder-epoch-99-avg-1.int8.onnx",
         "decoder": "decoder-epoch-99-avg-1.onnx",
         "joiner": "joiner-epoch-99-avg-1.int8.onnx",
         "tokens": "tokens.txt"
       },
-      "defaultConfig": { "language": "en", "numThreads": 2 }
+      "defaultConfig": {
+        "language": "en",
+        "numThreads": 2
+      },
+      "downloads": {
+        "encoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17/resolve/d42f2d9f7ca24806fb667456a18a9f1b60f70d16/encoder-epoch-99-avg-1.int8.onnx",
+          "sizeBytes": 42845182,
+          "sha256": "3810755ce7c3ab26b42a8bcf39d191308fa27fb0f53358823ba46141d03b7eb3"
+        },
+        "decoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17/resolve/d42f2d9f7ca24806fb667456a18a9f1b60f70d16/decoder-epoch-99-avg-1.onnx",
+          "sizeBytes": 2092272,
+          "sha256": "45a7f940ecfb53d89fa270ad11b88b961e53a317203eb24b1c8e95ed208b0f30"
+        },
+        "joiner": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17/resolve/d42f2d9f7ca24806fb667456a18a9f1b60f70d16/joiner-epoch-99-avg-1.int8.onnx",
+          "sizeBytes": 259572,
+          "sha256": "e085d73b593cf9b0707f370dbd656d58327d3fe36d80d849202ef81df02cb01e"
+        },
+        "tokens": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17/resolve/d42f2d9f7ca24806fb667456a18a9f1b60f70d16/tokens.txt",
+          "sizeBytes": 5048,
+          "sha256": "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb"
+        }
+      }
     },
     {
       "id": "sherpa-streaming-zipformer-bilingual-zh-en-2023-02-20",
       "name": "Streaming Zipformer (Chinese + English)",
       "description": "Live bilingual Chinese and English transcription, including mixed speech.",
       "family": "online_transducer",
-      "languages": ["zh", "en"],
+      "languages": [
+        "zh",
+        "en"
+      ],
       "streaming": true,
       "onlineModelType": "zipformer",
       "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2",
       "archiveSizeBytes": 511274346,
-      "revision": "2023-02-20",
+      "revision": "98590b7ed6443e77b714204da2757d75e1a642f4",
       "files": {
         "encoder": "encoder-epoch-99-avg-1.int8.onnx",
         "decoder": "decoder-epoch-99-avg-1.onnx",
         "joiner": "joiner-epoch-99-avg-1.int8.onnx",
         "tokens": "tokens.txt"
       },
-      "defaultConfig": { "language": "", "numThreads": 4 }
+      "defaultConfig": {
+        "language": "",
+        "numThreads": 4
+      },
+      "downloads": {
+        "encoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/98590b7ed6443e77b714204da2757d75e1a642f4/encoder-epoch-99-avg-1.int8.onnx",
+          "sizeBytes": 181895032,
+          "sha256": "8fa764187a261844f859d7143ebaa563af5d10adfece4c18a8f414c88cba2a9b"
+        },
+        "decoder": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/98590b7ed6443e77b714204da2757d75e1a642f4/decoder-epoch-99-avg-1.onnx",
+          "sizeBytes": 13876452,
+          "sha256": "2e3b5ec371f8899ee6acd829fd753ba45772df57a91bdf37cde3136354e7db7d"
+        },
+        "joiner": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/98590b7ed6443e77b714204da2757d75e1a642f4/joiner-epoch-99-avg-1.int8.onnx",
+          "sizeBytes": 3228404,
+          "sha256": "1ed689c5ed19dbaa725d9d191bb4822b5f4855a39e1ffd28cbc1f340d25b2ee0"
+        },
+        "tokens": {
+          "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/98590b7ed6443e77b714204da2757d75e1a642f4/tokens.txt",
+          "sizeBytes": 56317,
+          "sha256": "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3"
+        }
+      }
     }
   ]
 }

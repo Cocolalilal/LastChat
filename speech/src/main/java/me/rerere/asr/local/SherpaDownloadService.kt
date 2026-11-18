@@ -47,7 +47,7 @@ class SherpaDownloadService : Service() {
             }
             getSystemService(android.app.NotificationManager::class.java).notify(
                 NOTIFICATION_ID,
-                notification(title, percent, 100, installing.isNotEmpty() || total <= 0),
+                notification(title, percent, 100, total <= 0),
             )
         }.launchIn(scope)
     }

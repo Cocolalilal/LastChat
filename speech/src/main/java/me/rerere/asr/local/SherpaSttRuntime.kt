@@ -24,13 +24,13 @@ class SherpaSttRuntime {
 
     suspend fun transcribe(model: InstalledSherpaModel, samples: FloatArray): String =
         withContext(Dispatchers.Default) {
-            val recognizer = mutex.withLock {
-                when (val current = loaded) {
-                    is LoadedRecognizer.Offline -> if (current.modelId == model.id) current.recognizer else loadOffline(model)
+            // Own the recognizer for the entire decode; unload must not free a live native handle.
+            mutex.withLock {
+                val recognizer = when (val current = loaded) {
+                    is LoadedRecognizer.Offline -> if (current.matches(model)) current.recognizer else loadOffline(model)
                     else -> loadOffline(model)
                 }
-            }
-            recognizer.createStream().let { stream ->
+                val stream = recognizer.createStream()
                 try {
                     stream.acceptWaveform(samples, SAMPLE_RATE)
                     recognizer.decode(stream)
@@ -41,16 +41,28 @@ class SherpaSttRuntime {
             }
         }
 
-    suspend fun openOnlineSession(model: InstalledSherpaModel): OnlineSession =
-        withContext(Dispatchers.Default) {
-            val recognizer = mutex.withLock {
-                when (val current = loaded) {
-                    is LoadedRecognizer.Online -> if (current.modelId == model.id) current.recognizer else loadOnline(model)
-                    else -> loadOnline(model)
+    suspend fun openOnlineSession(model: InstalledSherpaModel): OnlineSession {
+        var opened: OnlineSession? = null
+        try {
+            return withContext(Dispatchers.Default) {
+                mutex.lock()
+                try {
+                    val recognizer = when (val current = loaded) {
+                        is LoadedRecognizer.Online -> if (current.matches(model)) current.recognizer else loadOnline(model)
+                        else -> loadOnline(model)
+                    }
+                    OnlineSession(recognizer, recognizer.createStream()) { mutex.unlock() }.also { opened = it }
+                } catch (error: Throwable) {
+                    mutex.unlock()
+                    throw error
                 }
             }
-            OnlineSession(recognizer, recognizer.createStream())
+        } catch (error: Throwable) {
+            // withContext can cancel after creating the resource but before delivering it.
+            opened?.close()
+            throw error
         }
+    }
 
     suspend fun unload() = mutex.withLock { disposeLocked() }
 
@@ -113,7 +125,7 @@ class SherpaSttRuntime {
                 decodingMethod = "greedy_search",
             )
         )
-        loaded = LoadedRecognizer.Offline(model.id, recognizer)
+        loaded = LoadedRecognizer.Offline(model, recognizer)
         return recognizer
     }
 
@@ -142,7 +154,7 @@ class SherpaSttRuntime {
                 decodingMethod = "greedy_search",
             ),
         )
-        loaded = LoadedRecognizer.Online(model.id, recognizer)
+        loaded = LoadedRecognizer.Online(model, recognizer)
         return recognizer
     }
 
@@ -165,33 +177,53 @@ class SherpaSttRuntime {
     }
 
     private sealed interface LoadedRecognizer {
-        val modelId: String
+        val model: InstalledSherpaModel
+        fun matches(other: InstalledSherpaModel): Boolean = model.id == other.id && model.config == other.config &&
+            model.revision == other.revision && model.files == other.files && model.family == other.family &&
+            model.onlineModelType == other.onlineModelType
 
-        data class Offline(override val modelId: String, val recognizer: OfflineRecognizer) : LoadedRecognizer
-        data class Online(override val modelId: String, val recognizer: OnlineRecognizer) : LoadedRecognizer
+        data class Offline(override val model: InstalledSherpaModel, val recognizer: OfflineRecognizer) : LoadedRecognizer
+        data class Online(override val model: InstalledSherpaModel, val recognizer: OnlineRecognizer) : LoadedRecognizer
     }
 
     class OnlineSession internal constructor(
         private val recognizer: OnlineRecognizer,
         private val stream: OnlineStream,
+        private val onClose: () -> Unit,
     ) {
-        fun accept(samples: FloatArray): String {
+        private var closed = false
+        fun accept(samples: FloatArray): String = synchronized(this) {
+            check(!closed) { "Speech session is closed" }
             stream.acceptWaveform(samples, SAMPLE_RATE)
             decodeReady()
-            return recognizer.getResult(stream).text.trim()
+            recognizer.getResult(stream).text.trim()
         }
 
-        fun isEndpoint(): Boolean = recognizer.isEndpoint(stream)
+        fun isEndpoint(): Boolean = synchronized(this) {
+            check(!closed) { "Speech session is closed" }
+            recognizer.isEndpoint(stream)
+        }
 
-        fun reset() = recognizer.reset(stream)
+        fun reset() = synchronized(this) {
+            check(!closed) { "Speech session is closed" }
+            recognizer.reset(stream)
+        }
 
-        fun finish(): String {
+        fun finish(): String = synchronized(this) {
+            check(!closed) { "Speech session is closed" }
+            // The online decoder needs a full final chunk to flush the last spoken words.
+            stream.acceptWaveform(FloatArray(SAMPLE_RATE * 8 / 10), SAMPLE_RATE)
             stream.inputFinished()
             decodeReady()
-            return recognizer.getResult(stream).text.trim()
+            recognizer.getResult(stream).text.trim()
         }
 
-        fun close() = stream.release()
+        fun close() = synchronized(this) {
+            if (!closed) {
+                closed = true
+                try { stream.release() } finally { onClose() }
+            }
+        }
 
         private fun decodeReady() {
             while (recognizer.isReady(stream)) recognizer.decode(stream)

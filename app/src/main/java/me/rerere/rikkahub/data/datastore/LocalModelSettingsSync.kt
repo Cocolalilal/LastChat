@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.data.datastore
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ContextLimitSource
@@ -7,6 +13,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.asr.local.InstalledSherpaModel
 import me.rerere.locallm.InstalledLocalModel
 import me.rerere.locallm.effectiveRuntimeContextLength
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
@@ -33,6 +40,66 @@ fun Settings.withSyncedLocalProviderModels(
             if (provider is ProviderSetting.LiteRtLocal) provider.copy(models = mergedModels) else provider
         }
     )
+}
+
+/** Reconciles only STT entries; all other models and provider edits come from this settings value. */
+internal fun Settings.withInstalledSherpaModels(
+    installed: List<InstalledSherpaModel>,
+    selectInstalledId: String? = null,
+): Settings {
+    val local = providers.filterIsInstance<ProviderSetting.LiteRtLocal>().firstOrNull()
+    if (local == null && installed.isEmpty()) return this
+    val existing = local?.models.orEmpty().filter { it.type == ModelType.STT }.associateBy { it.modelId }
+    val models = installed.map { model ->
+        (existing[model.id] ?: Model()).copy(
+            modelId = model.id,
+            displayName = model.displayName,
+            type = ModelType.STT,
+            inputModalities = listOf(Modality.AUDIO),
+            outputModalities = listOf(Modality.TEXT),
+            abilities = emptyList(),
+            customIconUri = model.customIconUri,
+        )
+    }
+    val removedSelection = existing.values.any { previous ->
+        previous.id == sttModelId && models.none { it.id == previous.id }
+    }
+    val selectedId = models.firstOrNull { it.modelId == selectInstalledId }?.id
+        ?: sttModelId.takeUnless { removedSelection }
+    return withSyncedLocalProviderModels(
+        llmAndEmbeddingModels = local?.models.orEmpty().filter { it.type != ModelType.STT },
+        sttModels = models,
+    ).copy(sttModelId = selectedId)
+}
+
+/** Publish completed speech installs even when the local-model settings screen is closed. */
+suspend fun syncInstalledSherpaModelsToSettings(
+    installed: List<InstalledSherpaModel>,
+    settingsStore: SettingsStore,
+    selectInstalledId: String? = null,
+) {
+    val settings = settingsStore.settingsFlow.first { !it.init }
+    if (settings.withInstalledSherpaModels(installed, selectInstalledId) == settings) return
+    settingsStore.update { latest -> latest.withInstalledSherpaModels(installed, selectInstalledId) }
+}
+
+/** App-lifetime registry publication, independent of any screen or ViewModel subscription. */
+internal suspend fun collectInstalledSherpaModelsToSettings(
+    installedModels: Flow<List<InstalledSherpaModel>>,
+    settingsStore: SettingsStore,
+    onFailure: (Throwable) -> Unit = {},
+) {
+    combine(installedModels, settingsStore.settingsFlow.filter { !it.init }) { installed, _ -> installed }
+        .conflate()
+        .collect { installed ->
+            try {
+                syncInstalledSherpaModelsToSettings(installed, settingsStore)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                onFailure(error)
+            }
+        }
 }
 
 /** Keeps LiteRT's selectable model metadata aligned with the context the runtime really loads. */

@@ -155,7 +155,7 @@ fun SherpaDownloadableModelCard(
                     )
                     Text(
                         text = listOf(
-                            formatBytes(model.archiveSizeBytes),
+                            formatBytes(model.downloadSizeBytes),
                             if (model.streaming) "Live transcription" else "Speech to text",
                         ).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
@@ -199,7 +199,7 @@ private fun SherpaDownloadStatus(
     when (state) {
         null -> Unit
         is SherpaDownload.Running -> {
-            if (state.progress.phase == SherpaDownloadPhase.INSTALLING) {
+            if (state.progress.totalBytes <= 0) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             } else {
                 LinearProgressIndicator(
@@ -214,7 +214,7 @@ private fun SherpaDownloadStatus(
             ) {
                 Text(
                     text = if (state.progress.phase == SherpaDownloadPhase.INSTALLING) {
-                        "Installing model…"
+                        "Installing model… ${state.progress.percent}%"
                     } else {
                         "Downloading ${formatBytes(state.progress.bytesDownloaded)} of ${formatBytes(state.progress.totalBytes)}"
                     },

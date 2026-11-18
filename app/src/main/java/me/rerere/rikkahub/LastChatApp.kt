@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.filter
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.syncInstalledLocalModelsToSettings
+import me.rerere.rikkahub.data.datastore.collectInstalledSherpaModelsToSettings
 import me.rerere.rikkahub.data.datastore.mergeSettingsEdit
 import me.rerere.rikkahub.data.datastore.withRecoveredAssistantsFromConversations
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
@@ -253,6 +254,22 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
                         )
                     }.onFailure { Log.w(TAG, "Local model live sync failed", it) }
                 }
+        }
+        // Speech downloads also outlive their settings screen. Recompute against the latest
+        // settings under the store lock, preserving concurrent LLM/provider edits and selection.
+        get<AppScope>().launch(Dispatchers.IO) {
+            val speechStore = get<me.rerere.asr.local.SherpaModelStore>()
+            val settingsStore = get<SettingsStore>()
+            try {
+                speechStore.reconcileWithCatalog(get<me.rerere.asr.local.SherpaCatalog>().catalog())
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Log.w(TAG, "Local speech model recovery failed", error)
+            }
+            collectInstalledSherpaModelsToSettings(speechStore.models, settingsStore) {
+                Log.w(TAG, "Local speech model live sync failed", it)
+            }
         }
     }
 

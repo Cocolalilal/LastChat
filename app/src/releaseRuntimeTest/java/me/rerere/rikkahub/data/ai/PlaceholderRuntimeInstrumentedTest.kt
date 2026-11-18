@@ -153,6 +153,77 @@ class PlaceholderRuntimeInstrumentedTest {
         assertFalse(prompt(java.util.Collections.emptySet()).contains("_CONTEXT"))
     }
 
+    @Test fun realLocalSpeechModelTranscribesRecordedAudioThroughTheShippedJniRuntime() = runBlocking {
+        val root = java.io.File(context.filesDir, "local-stt-smoke")
+        val files = java.util.LinkedHashMap<String, String>()
+        files.put("encoder", java.io.File(root, "encoder_model.ort").absolutePath)
+        files.put("decoder", java.io.File(root, "decoder_model_merged.ort").absolutePath)
+        files.put("tokens", java.io.File(root, "tokens.txt").absolutePath)
+        val model = me.rerere.asr.local.InstalledSherpaModel(
+            id = "runtime-moonshine", displayName = "Moonshine Tiny", family = me.rerere.asr.local.SherpaModelFamily.MOONSHINE,
+            languages = java.util.Collections.singletonList("en"), directoryPath = root.absolutePath,
+            sizeInBytes = 44243206, revision = "ci", files = files,
+        )
+        val audio = java.io.RandomAccessFile(java.io.File(root, "speech.wav"), "r")
+        val samples: FloatArray
+        try {
+            audio.seek(12)
+            var count = 0
+            while (audio.filePointer + 8 <= audio.length()) {
+                val chunk = audio.readInt()
+                val size = Integer.reverseBytes(audio.readInt())
+                if (chunk == 0x64617461) { count = size / 2; break }
+                audio.seek(audio.filePointer + size + (size and 1))
+            }
+            assertTrue("Missing PCM audio fixture", count > 0)
+            samples = FloatArray(count)
+            var index = 0
+            while (index < count) {
+                samples[index] = java.lang.Short.reverseBytes(audio.readShort()).toFloat() / 32768f
+                index++
+            }
+        } finally { audio.close() }
+        val runtime = me.rerere.asr.local.SherpaSttRuntime()
+        try {
+            val text = runtime.transcribe(model, samples)
+            System.out.println("Real local speech transcript: " + text)
+            assertTrue("Expected spoken English from the actual model: $text",
+                java.util.regex.Pattern.compile("[A-Za-z]+(?:[^A-Za-z]+[A-Za-z]+){2,}").matcher(text).find())
+            assertEquals("Cached recognizer must remain usable", text, runtime.transcribe(model, samples))
+        } finally { runtime.unload() }
+        val streamingRoot = java.io.File(root, "streaming")
+        val streamingFiles = java.util.LinkedHashMap<String, String>()
+        streamingFiles.put("encoder", java.io.File(streamingRoot, "encoder-epoch-99-avg-1.int8.onnx").absolutePath)
+        streamingFiles.put("decoder", java.io.File(streamingRoot, "decoder-epoch-99-avg-1.onnx").absolutePath)
+        streamingFiles.put("joiner", java.io.File(streamingRoot, "joiner-epoch-99-avg-1.int8.onnx").absolutePath)
+        streamingFiles.put("tokens", java.io.File(streamingRoot, "tokens.txt").absolutePath)
+        val streamingModel = me.rerere.asr.local.InstalledSherpaModel(
+            id = "runtime-zipformer", displayName = "Zipformer 20M",
+            family = me.rerere.asr.local.SherpaModelFamily.ONLINE_TRANSDUCER,
+            streaming = true, onlineModelType = "zipformer", directoryPath = streamingRoot.absolutePath,
+            sizeInBytes = 45202074, revision = "ci", files = streamingFiles,
+        )
+        val session = runtime.openOnlineSession(streamingModel)
+        try {
+            var offset = 0
+            while (offset < samples.size) {
+                val count = java.lang.Math.min(1600, samples.size - offset)
+                val chunk = FloatArray(count)
+                System.arraycopy(samples, offset, chunk, 0, count)
+                session.accept(chunk)
+                offset += count
+            }
+            val text = session.finish()
+            System.out.println("Real streaming speech transcript: " + text)
+            assertTrue("Expected streaming English from the actual model: $text",
+                java.util.regex.Pattern.compile("[A-Za-z]+(?:[^A-Za-z]+[A-Za-z]+){2,}").matcher(text).find())
+        } finally {
+            session.close()
+            session.close()
+            runtime.unload()
+        }
+    }
+
     @Test fun realProviderProtocolsCompleteAGenerationWithLiteralChatTags() = runBlocking {
         withTimeout(45_000) {
             val responses = listOf(

@@ -383,3 +383,10 @@
 -keep,allowoptimization class kotlin.coroutines.jvm.internal.SuspendLambda {
     <init>(...);
 }
+
+# Real STT runtime smoke test calls these app-owned APIs from the separate test APK.
+-keep,allowoptimization class me.rerere.asr.local.SherpaSttRuntime { public *; }
+-keep,allowoptimization,includedescriptorclasses class me.rerere.asr.local.InstalledSherpaModel { public *; }
+-keep,allowoptimization enum me.rerere.asr.local.SherpaModelFamily { public *; }
+
+-keep,allowoptimization class me.rerere.asr.local.SherpaSttRuntime$OnlineSession { public *; }

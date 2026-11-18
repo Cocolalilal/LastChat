@@ -66,4 +66,19 @@ class SherpaCatalogTest {
         assertEquals(ArchiveDownloadPlan.RESTART, archiveDownloadPlan(existingBytes = 101, expectedBytes = 100))
         assertEquals(ArchiveDownloadPlan.RESTART, archiveDownloadPlan(existingBytes = 0, expectedBytes = 100))
     }
+    @Test fun `every runtime file has a pinned verified direct source and accurate download size`() {
+        catalog.models.forEach { model ->
+            assertEquals(model.files.keys, model.downloads.keys)
+            assertEquals(model.revision.length, 40)
+            assertEquals(model.downloads.values.sumOf { it.sizeBytes }, model.downloadSizeBytes)
+            model.downloads.forEach { (role, source) ->
+                assertTrue(source.url.startsWith("https://huggingface.co/csukuangfj"))
+                assertTrue(source.url.contains("/resolve/${model.revision}/"))
+                assertTrue(source.url.endsWith("/${model.files.getValue(role)}"))
+                assertTrue(source.sha256.matches(Regex("[a-f0-9]{64}")))
+                assertTrue(source.sizeBytes > 0)
+            }
+        }
+    }
+
 }

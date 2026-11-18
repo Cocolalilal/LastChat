@@ -443,6 +443,8 @@ dependencies {
 
     // tests
     testImplementation(libs.junit)
+    testImplementation(libs.commons.compress)
+    testImplementation("com.squareup.okhttp3:mockwebserver:5.1.0")
     testImplementation(libs.androidx.ui.test.junit4)
     // Avatar render harness: Robolectric native-graphics screenshots of the mark.
     testImplementation("org.robolectric:robolectric:4.16")

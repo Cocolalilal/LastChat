@@ -41,6 +41,18 @@ data class SherpaModelMetadata(
     /** Runtime role to path relative to the archive's top-level model directory. */
     val files: Map<String, String>,
     val defaultConfig: SherpaModelConfig = SherpaModelConfig(),
+    /** Pinned, individually verified runtime files; older catalogs can still use the archive. */
+    val downloads: Map<String, SherpaModelFileDownload> = emptyMap(),
+) {
+    val downloadSizeBytes: Long
+        get() = if (downloads.isEmpty()) archiveSizeBytes else downloads.values.sumOf { it.sizeBytes }
+}
+
+@Serializable
+data class SherpaModelFileDownload(
+    val url: String,
+    val sizeBytes: Long,
+    val sha256: String,
 )
 
 @Serializable
