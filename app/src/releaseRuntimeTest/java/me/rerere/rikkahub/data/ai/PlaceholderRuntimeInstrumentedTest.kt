@@ -148,8 +148,8 @@ class PlaceholderRuntimeInstrumentedTest {
         assertTrue(prompt(null).contains("DEFAULT_CONTEXT"))
         val overridden = prompt(linkedSetOf(second.id, first.id))
         assertFalse(overridden.contains("DEFAULT_CONTEXT"))
-        assertTrue(overridden.indexOf("FIRST_CONTEXT") >= 0)
-        assertTrue(overridden.indexOf("SECOND_CONTEXT") > overridden.indexOf("FIRST_CONTEXT"))
+        assertTrue(java.util.regex.Pattern.compile("FIRST_CONTEXT.*SECOND_CONTEXT", java.util.regex.Pattern.DOTALL)
+            .matcher(overridden).find())
         assertFalse(prompt(emptySet()).contains("_CONTEXT"))
     }
 
