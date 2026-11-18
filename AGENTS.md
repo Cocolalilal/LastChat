@@ -166,7 +166,7 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 
 ## Database
 
-- Room v39. KSP (not kapt). `room.schemaLocation = "$projectDir/schemas"`.
+- Room v41. KSP (not kapt). `room.schemaLocation = "$projectDir/schemas"`.
 - **Adding a migration**:
   1. Bump `version = N` in `@Database`.
   2. Prefer `AutoMigration(from=N-1, to=N)` (no spec) → `AutoMigration(..., spec=...)` (@DeleteColumn/@RenameColumn/@RenameTable/@DeleteTable) → manual `val MIGRATION_X_Y = object : Migration(X, Y) { ... }` in companion object of `AppDatabase`.

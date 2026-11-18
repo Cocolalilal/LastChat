@@ -13,6 +13,7 @@ internal fun contextUsageSourceKey(
     settings: Settings,
     memoryRevision: Int = 0,
 ): Int = listOf(
+    assistant.id,
     conversation.currentMessages,
     conversation.truncateIndex,
     conversation.contextSummary,

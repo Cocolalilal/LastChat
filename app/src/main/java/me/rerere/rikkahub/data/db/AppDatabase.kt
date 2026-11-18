@@ -535,7 +535,15 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_39_41 = object : Migration(39, 41) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE ConversationEntity ADD COLUMN enabled_additional_context_ids TEXT NOT NULL DEFAULT ''")
+                val columns = db.query("PRAGMA table_info(`ConversationEntity`)").use { cursor ->
+                    buildSet {
+                        val nameIndex = cursor.getColumnIndexOrThrow("name")
+                        while (cursor.moveToNext()) add(cursor.getString(nameIndex))
+                    }
+                }
+                if ("enabled_additional_context_ids" !in columns) {
+                    db.execSQL("ALTER TABLE ConversationEntity ADD COLUMN enabled_additional_context_ids TEXT NOT NULL DEFAULT ''")
+                }
             }
         }
 

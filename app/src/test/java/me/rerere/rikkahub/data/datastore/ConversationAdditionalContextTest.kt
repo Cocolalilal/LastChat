@@ -25,7 +25,7 @@ class ConversationAdditionalContextTest {
         val relative = "schemas/me.rerere.rikkahub.data.db.AppDatabase/39.json"
         val schemaFile = File(relative).takeIf { it.exists() } ?: File("app/$relative")
         val schema = JsonInstant.parseToJsonElement(schemaFile.readText()).jsonObject.getValue("database").jsonObject
-        for (version in listOf(39, 40)) {
+        for ((version, alreadyHasColumn) in listOf(39 to false, 40 to false, 39 to true)) {
             val name = "context-migration-$version-${Uuid.random()}"
             val path = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
             val id = Uuid.random().toString()
@@ -41,6 +41,7 @@ class ConversationAdditionalContextTest {
                 schema.getValue("setupQueries").jsonArray.forEach { old.execSQL(it.jsonPrimitive.content) }
                 if (version == 40) old.execSQL("CREATE INDEX index_MemoryEntity_assistant_id ON MemoryEntity(assistant_id)")
                 old.execSQL("INSERT INTO ConversationEntity(id,title,nodes,create_at,update_at) VALUES(?, 'Keep this chat', '[]', 1, 2)", arrayOf(id))
+                if (alreadyHasColumn) old.execSQL("ALTER TABLE ConversationEntity ADD COLUMN enabled_additional_context_ids TEXT NOT NULL DEFAULT ''")
                 old.version = version
             }
             val db = Room.databaseBuilder(context, AppDatabase::class.java, name)

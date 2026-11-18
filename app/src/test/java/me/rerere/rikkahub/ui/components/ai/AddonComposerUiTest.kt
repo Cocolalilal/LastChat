@@ -333,4 +333,20 @@ class AddonComposerUiTest {
         assertEquals(snippets.reversed(), settings.additionalContexts)
     }
 
+    @Test fun pickerKeepsSavedSelectionsForTemporarilyDisabledEntries() {
+        var settings by mutableStateOf(Settings(additionalContexts = snippets.mapIndexed { index, snippet ->
+            if (index == 0) snippet.copy(enabled = false) else snippet
+        }))
+        var chat by mutableStateOf(me.rerere.rikkahub.data.model.Conversation.ofId(kotlin.uuid.Uuid.random(), assistant.id)
+            .copy(enabledAdditionalContextIds = snippets.map { it.id }.toSet()))
+        content { AdditionalContextPickerItem(settings, assistant, chat, { chat = it }, {}) }
+        compose.onNodeWithText("Additional context").performClick()
+        compose.onNodeWithContentDescription("Writing style").assertIsOn().assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Story setting").performClick()
+        assertEquals(setOf(snippets[0].id), chat.enabledAdditionalContextIds)
+        compose.runOnIdle { settings = settings.copy(additionalContexts = snippets) }
+        compose.onNodeWithContentDescription("Writing style").assertIsOn().assertIsEnabled()
+        assertEquals(setOf(snippets[0].id), chat.enabledAdditionalContextIds)
+    }
+
 }

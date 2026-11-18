@@ -374,7 +374,12 @@ internal fun AdditionalContextPickerSheet(
     val effectiveIds = resolveAdditionalContexts(settings.additionalContexts, assistant.id,
         conversation.enabledAdditionalContextIds).map { it.id }.toSet()
     var localIds by remember(conversation.id, conversation.enabledAdditionalContextIds,
-        assistant.id, settings.additionalContexts) { mutableStateOf(effectiveIds) }
+        assistant.id, settings.additionalContexts) {
+        // A globally disabled/empty entry remains selected for this chat, so restoring it
+        // later restores its selection. Only remove IDs whose entries were deleted.
+        val existingIds = settings.additionalContexts.map { it.id }.toSet()
+        mutableStateOf(conversation.enabledAdditionalContextIds?.intersect(existingIds) ?: effectiveIds)
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     ModalBottomSheet(

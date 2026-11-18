@@ -97,4 +97,16 @@ class AdditionalContextTest {
         assertEquals(live.messageNodes, merged.messageNodes)
     }
 
+    @Test fun `switching characters invalidates context usage when inherited assignments differ`() {
+        val first = me.rerere.rikkahub.data.model.Assistant()
+        val second = first.copy(id = Uuid.random())
+        val snippet = AdditionalContext(prompt = "Only the first character", assistantIds = setOf(first.id))
+        val settings = Settings(assistants = listOf(first, second), additionalContexts = listOf(snippet))
+        val chat = me.rerere.rikkahub.data.model.Conversation.ofId(Uuid.random(), first.id)
+        val model = me.rerere.ai.provider.Model()
+        org.junit.Assert.assertNotEquals(
+            me.rerere.rikkahub.data.ai.contextUsageSourceKey(chat, first, model, settings),
+            me.rerere.rikkahub.data.ai.contextUsageSourceKey(chat.copy(assistantId = second.id), second, model, settings))
+    }
+
 }
