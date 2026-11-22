@@ -35,4 +35,46 @@ interface MemoryDAO {
 
     @Query("DELETE FROM memoryentity WHERE assistant_id = :assistantId")
     suspend fun deleteMemoriesOfAssistant(assistantId: String)
+
+    @Query("DELETE FROM memoryentity WHERE assistant_id = :assistantId AND id = :id")
+    suspend fun deleteById(assistantId: String, id: Int)
+
+    @Query("UPDATE memoryentity SET content = :content WHERE assistant_id = :assistantId AND id = :id")
+    suspend fun updateContentById(assistantId: String, id: Int, content: String)
+
+    suspend fun getMemoriesByAssistant(assistantId: String): List<MemoryEntity> =
+        getMemoriesOfAssistant(assistantId)
+
+    suspend fun insert(memory: MemoryEntity): Long =
+        insertMemory(memory)
+
+    @Query(
+        """
+        SELECT * FROM memoryentity
+        WHERE assistant_id = :assistantId AND id IN (:ids)
+        ORDER BY created_at DESC
+        """
+    )
+    suspend fun getMemoriesByIds(assistantId: String, ids: List<Int>): List<MemoryEntity>
+
+    suspend fun getMemoriesByIdsScoped(assistantId: String, ids: List<Int>): List<MemoryEntity> =
+        getMemoriesByIds(assistantId, ids)
+
+    @Query("SELECT id FROM memoryentity WHERE assistant_id = :assistantId")
+    fun getMemoryIdsFlow(assistantId: String): Flow<List<Int>>
+
+    @Query("SELECT id FROM memoryentity WHERE assistant_id = :assistantId AND id IN (:ids)")
+    suspend fun getExistingIds(assistantId: String, ids: List<Int>): List<Int>
+
+    suspend fun filterValidMemoryIds(assistantId: String, ids: List<Int>): List<Int> =
+        getExistingIds(assistantId, ids)
+
+    @Query(
+        """
+        SELECT * FROM memoryentity
+        WHERE assistant_id = :assistantId AND created_at > :sinceTimestamp
+        ORDER BY created_at ASC
+        """
+    )
+    suspend fun getMemoriesCreatedAfter(assistantId: String, sinceTimestamp: Long): List<MemoryEntity>
 }

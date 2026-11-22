@@ -77,7 +77,7 @@ import kotlinx.serialization.json.put
         MemoryProjectionEntity::class,
         MemorySummaryEntity::class,
     ],
-    version = 41,
+    version = 42,
     autoMigrations = [
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 1, to = 2),
@@ -584,6 +584,17 @@ abstract class AppDatabase : RoomDatabase() {
                     """.trimIndent()
                 )
                 Log.i(TAG, "migrate: migrate from 40 to 41 success")
+            }
+        }
+
+        val MIGRATION_41_42 = object : Migration(41, 42) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 41 to 42")
+                db.execSQL("ALTER TABLE `memory_summary` ADD COLUMN `revision` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `memory_summary` ADD COLUMN `last_manual_edit_at` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `memory_summary` ADD COLUMN `dirty_since` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `memory_summary` ADD COLUMN `last_synced_at` INTEGER NOT NULL DEFAULT 0")
+                Log.i(TAG, "migrate: migrate from 41 to 42 success")
             }
         }
     }

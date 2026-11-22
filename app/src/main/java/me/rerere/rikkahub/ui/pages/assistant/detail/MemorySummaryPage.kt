@@ -1,563 +1,454 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.rounded.Adjust
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.Code
-import androidx.compose.material.icons.rounded.Devices
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Star
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.foundation.text.selection.SelectionContainer
-import me.rerere.rikkahub.utils.writeClipboardText
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.db.entity.MemorySummaryEntity
-import me.rerere.rikkahub.data.memory.DEFAULT_MEMORY_SUMMARY_SYSTEM_PROMPT
-import me.rerere.rikkahub.data.memory.DiveDeeperAction
-import me.rerere.rikkahub.data.memory.MemorySummaryData
+import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.memory.MemorySummaryMarkdownCodec
 import me.rerere.rikkahub.data.memory.MemorySummarySection
-import me.rerere.rikkahub.data.memory.parseMemorySummaryJson
-import me.rerere.rikkahub.data.memory.renderMemorySummaryToMarkdown
-import me.rerere.rikkahub.ui.context.LocalToaster
-import me.rerere.rikkahub.ui.hooks.HapticPattern
-import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import androidx.compose.ui.platform.LocalContext
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.rikkahub.utils.base64Encode
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MemorySummaryPage(
     assistantId: String,
     navBackStack: NavHostController,
     vm: AssistantDetailVM = koinViewModel(parameters = { parametersOf(assistantId) }),
 ) {
-    val context = LocalContext.current
-    val toaster = LocalToaster.current
-    val haptics = rememberPremiumHaptics()
-    val memorySummary: MemorySummaryEntity? by vm.memorySummary.collectAsStateWithLifecycle(null)
-    val isGenerating: Boolean by vm.isSummaryGenerating.collectAsStateWithLifecycle(false)
-    val summaryError: String? by vm.summaryError.collectAsStateWithLifecycle(null)
-    val settings: Settings by vm.settings.collectAsStateWithLifecycle(Settings.dummy())
-    val assistant = remember(settings, assistantId) {
-        settings.assistants.find { it.id.toString() == assistantId }
-    }
+    val uiState by vm.summaryUiState.collectAsStateWithLifecycle()
+    val snackbarMsg by vm.snackbarMessage.collectAsStateWithLifecycle()
 
-    val summaryData: MemorySummaryData? = remember(memorySummary) {
-        memorySummary?.summaryJson?.let { parseMemorySummaryJson(it) }
-    }
+    MemorySummaryPage(
+        assistantId = assistantId,
+        uiState = uiState,
+        snackbarMessage = snackbarMsg,
+        onClearSnackbarMessage = { vm.clearSnackbarMessage() },
+        onBack = { navBackStack.popBackStack() },
+        onRegenerate = { vm.regenerateMemorySummary() },
+        onAskOrUpdate = { prompt -> vm.askOrUpdateMemorySummary(prompt) },
+        onSaveManualEdit = { title, subtitle, markdown ->
+            vm.saveManualSummaryEdit(assistantId, title, subtitle, markdown)
+        },
+        onInspectReceipt = { memoryId -> vm.inspectMemoryReceipt(assistantId, memoryId) },
+        onDismissReceipt = { vm.dismissReceiptSheet() },
+        onSaveRawMemory = { id, content -> vm.updateRawMemoryFromReceipt(assistantId, id, content) },
+        onDeleteRawMemory = { id, prune -> vm.deleteRawMemoryFromReceipt(assistantId, id, prune) },
+        onRemoveStaleCitation = { id -> vm.removeStaleCitation(assistantId, id) },
+    )
+}
 
-    var showMenu by remember { mutableStateOf(false) }
-    var showPromptDialog by remember { mutableStateOf(false) }
-    var showBudgetDialog by remember { mutableStateOf(false) }
-    var askInputText by remember { mutableStateOf("") }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MemorySummaryPage(
+    assistantId: String,
+    uiState: MemorySummaryUiState,
+    snackbarMessage: String? = null,
+    onClearSnackbarMessage: () -> Unit = {},
+    onBack: () -> Unit,
+    onRegenerate: () -> Unit = {},
+    onAskOrUpdate: (String) -> Unit,
+    onSaveManualEdit: (title: String, subtitle: String, sectionsMarkdown: String) -> Unit,
+    onInspectReceipt: (Int) -> Unit,
+    onDismissReceipt: () -> Unit,
+    onSaveRawMemory: (Int, String) -> Unit,
+    onDeleteRawMemory: (Int, Boolean) -> Unit,
+    onRemoveStaleCitation: (Int) -> Unit,
+) {
+    var isEditMode by rememberSaveable { mutableStateOf(false) }
+    var showDiscardDialog by remember { mutableStateOf(false) }
+    var showOptionsMenu by remember { mutableStateOf(false) }
 
-    val isDark = LocalDarkMode.current
+    // Manual editor local draft state (preserved across configuration changes and tablet rotation)
+    var editTitle by rememberSaveable { mutableStateOf("") }
+    var editSubtitle by rememberSaveable { mutableStateOf("") }
+    var editMarkdown by rememberSaveable { mutableStateOf("") }
+    var initialMarkdown by rememberSaveable { mutableStateOf("") }
 
-    // Dialog for editing system prompt
-    if (showPromptDialog && assistant != null) {
-        var tempPrompt by remember {
-            mutableStateOf(assistant.customMemorySummaryPrompt ?: DEFAULT_MEMORY_SUMMARY_SYSTEM_PROMPT)
+    // Bottom ask bar state preserved across configuration changes and tablet rotation
+    var askInput by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+    val askFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(snackbarMessage) {
+        if (!snackbarMessage.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(snackbarMessage)
+            onClearSnackbarMessage()
         }
-        AlertDialog(
-            onDismissRequest = { showPromptDialog = false },
-            title = { Text("Summarizer System Prompt") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Customize the prompt that instructs the AI how to synthesize and organize your memories.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedTextField(
-                        value = tempPrompt,
-                        onValueChange = { tempPrompt = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(260.dp),
-                        maxLines = 12,
-                        textStyle = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        vm.update(
-                            assistant.copy(
-                                customMemorySummaryPrompt = tempPrompt.takeIf { it != DEFAULT_MEMORY_SUMMARY_SYSTEM_PROMPT }
-                            )
-                        )
-                        showPromptDialog = false
-                    }
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPromptDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
     }
 
-    // Dialog for adjusting token budget
-    if (showBudgetDialog && assistant != null) {
-        var tempBudget by remember { mutableFloatStateOf(assistant.memorySummaryTokenBudget.toFloat()) }
-        AlertDialog(
-            onDismissRequest = { showBudgetDialog = false },
-            title = { Text("Summary Token Budget") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = "Sets the target length of your synthesized summary. Larger budgets capture more nuances across vast memory sets.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Budget", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "${tempBudget.toInt()} tokens",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Slider(
-                        value = tempBudget,
-                        onValueChange = { tempBudget = it },
-                        valueRange = 200f..10000f,
-                        steps = 48,
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        vm.update(
-                            assistant.copy(
-                                memorySummaryTokenBudget = tempBudget.toInt().coerceIn(200, 10000)
-                            )
-                        )
-                        showBudgetDialog = false
-                    }
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showBudgetDialog = false }) {
-                    Text("Cancel")
-                }
-            }
+    val hasUnsavedEdits = isEditMode && (
+        editMarkdown != initialMarkdown ||
+            editTitle != uiState.summaryData.title ||
+            editSubtitle != uiState.summaryData.subtitle
         )
+
+    fun enterEditMode() {
+        val encoded = MemorySummaryMarkdownCodec.encodeSectionsToMarkdown(uiState.summaryData)
+        editTitle = uiState.summaryData.title
+        editSubtitle = uiState.summaryData.subtitle
+        editMarkdown = encoded
+        initialMarkdown = encoded
+        isEditMode = true
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            Column {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 TopAppBar(
-                    title = {
-                        Column {
-                            Text("Memory Summary", style = MaterialTheme.typography.titleLarge)
-                            val subtitleText = memorySummary?.let {
-                                formatRelativeAgo(it.updatedAt)
-                            } ?: "Not synthesized yet"
-                            Text(
-                                text = subtitleText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    },
                     navigationIcon = {
-                        IconButton(onClick = { navBackStack.popBackStack() }) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
-                        }
-                    },
-                    actions = {
-                        if (summaryData != null) {
+                        if (isEditMode) {
                             IconButton(
                                 onClick = {
-                                    val markdown = renderMemorySummaryToMarkdown(summaryData)
-                                    context.writeClipboardText(markdown)
-                                    toaster.show("Memory summary copied to clipboard")
+                                    if (hasUnsavedEdits) showDiscardDialog = true else isEditMode = false
                                 }
                             ) {
-                                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy summary")
+                                Icon(Icons.Rounded.Close, contentDescription = "Cancel editing")
                             }
-                        }
-                        IconButton(
-                            onClick = { vm.regenerateMemorySummary() },
-                            enabled = !isGenerating
-                        ) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = "Regenerate")
-                        }
-                        Box {
-                            IconButton(onClick = { showMenu = true }) {
-                                Icon(Icons.Rounded.MoreVert, contentDescription = "More options")
-                            }
-                            DropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Regenerate summary") },
-                                    leadingIcon = { Icon(Icons.Rounded.Refresh, null) },
-                                    onClick = {
-                                        showMenu = false
-                                        vm.regenerateMemorySummary()
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("System prompt") },
-                                    leadingIcon = { Icon(Icons.Rounded.Edit, null) },
-                                    onClick = {
-                                        showMenu = false
-                                        showPromptDialog = true
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Token budget") },
-                                    leadingIcon = { Icon(Icons.Rounded.Tune, null) },
-                                    onClick = {
-                                        showMenu = false
-                                        showBudgetDialog = true
-                                    }
-                                )
+                        } else {
+                            IconButton(onClick = onBack) {
+                                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
                             }
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                    )
+                    title = {
+                        Text(
+                            text = if (isEditMode) "Edit Summary" else uiState.summaryData.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    actions = {
+                        if (isEditMode) {
+                            TextButton(
+                                enabled = hasUnsavedEdits && editMarkdown.isNotBlank(),
+                                onClick = {
+                                    onSaveManualEdit(editTitle, editSubtitle, editMarkdown)
+                                    isEditMode = false
+                                }
+                            ) {
+                                Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Save")
+                            }
+                        } else {
+                            IconButton(
+                                enabled = !uiState.isGenerating,
+                                onClick = ::enterEditMode,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Edit,
+                                    contentDescription = "Edit summary manually",
+                                )
+                            }
+                            Box {
+                                IconButton(onClick = { showOptionsMenu = true }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.MoreVert,
+                                        contentDescription = "More options",
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = showOptionsMenu,
+                                    onDismissRequest = { showOptionsMenu = false },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Regenerate Summary") },
+                                        leadingIcon = {
+                                            Icon(Icons.Rounded.Refresh, contentDescription = null)
+                                        },
+                                        enabled = !uiState.isGenerating,
+                                        onClick = {
+                                            showOptionsMenu = false
+                                            onRegenerate()
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    },
                 )
-                AnimatedVisibility(visible = isGenerating) {
+                if (uiState.isGenerating) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
             }
         },
         bottomBar = {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .imePadding()
-                    .navigationBarsPadding(),
-                color = MaterialTheme.colorScheme.surface,
-            ) {
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .clip(RoundedCornerShape(28.dp))
-                        .background(
-                            if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh
-                            else MaterialTheme.colorScheme.surfaceContainerHighest
-                        )
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextField(
-                        value = askInputText,
-                        onValueChange = { askInputText = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = {
-                            Text(
-                                "Ask or update",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            )
-                        },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            disabledContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                        ),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = {
-                            if (askInputText.isNotBlank() && !isGenerating) {
-                                val text = askInputText.trim()
-                                askInputText = ""
-                                vm.askOrUpdateMemorySummary(text)
-                            }
-                        })
-                    )
-                    IconButton(
-                        onClick = {
-                            if (askInputText.isNotBlank() && !isGenerating) {
-                                val text = askInputText.trim()
-                                askInputText = ""
-                                vm.askOrUpdateMemorySummary(text)
-                            }
-                        },
-                        enabled = askInputText.isNotBlank() && !isGenerating,
+            if (!isEditMode) {
+                MemorySummaryAskBar(
+                    inputValue = askInput,
+                    onValueChange = { askInput = it },
+                    isGenerating = uiState.isGenerating,
+                    enabled = true,
+                    focusRequester = askFocusRequester,
+                    onSubmit = {
+                        val prompt = askInput.text.trim()
+                        if (prompt.isNotEmpty() && !uiState.isGenerating) {
+                            askInput = TextFieldValue("")
+                            onAskOrUpdate(prompt)
+                        }
+                    },
+                )
+            }
+        },
+    ) { innerPadding ->
+        AnimatedContent(
+            targetState = isEditMode,
+            label = "summary_mode_transition",
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) { editing ->
+            if (editing) {
+                MemorySummaryManualEditor(
+                    title = editTitle,
+                    onTitleChange = { editTitle = it },
+                    subtitle = editSubtitle,
+                    onSubtitleChange = { editSubtitle = it },
+                    markdown = editMarkdown,
+                    onMarkdownChange = { editMarkdown = it },
+                    onInsertSectionTemplate = {
+                        val suffix = if (editMarkdown.endsWith("\n") || editMarkdown.isEmpty()) "" else "\n\n"
+                        editMarkdown += "${suffix}## New Section\n- "
+                    },
+                )
+            } else {
+                if (uiState.summaryData.sections.isEmpty() && !uiState.isGenerating) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        if (isGenerating) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.primary,
                             )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (askInputText.isNotBlank()) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.surfaceContainerHighest
-                                    ),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    Icons.Rounded.ArrowUpward,
-                                    contentDescription = "Send",
-                                    tint = if (askInputText.isNotBlank()) MaterialTheme.colorScheme.onPrimary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
+                            Text(
+                                text = "No summary generated yet",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = "Generate a baseline summary from your memories or write one manually.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = onRegenerate) {
+                                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Synthesize")
+                                }
+                                TextButton(onClick = ::enterEditMode) {
+                                    Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Edit Manually")
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        if (uiState.summaryData.subtitle.isNotBlank()) {
+                            item(key = "_summary_subtitle") {
+                                Text(
+                                    text = uiState.summaryData.subtitle,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                                 )
                             }
+                        }
+                        items(
+                            items = uiState.summaryData.sections,
+                            key = { it.normalizedKey() },
+                        ) { section ->
+                            MemorySummarySectionCard(
+                                section = section,
+                                validMemoryIds = uiState.validMemoryIds,
+                                onPointerClick = onInspectReceipt,
+                                onQuoteText = { cleanQuote ->
+                                    val prefix = if (askInput.text.isNotEmpty() && !askInput.text.endsWith("\n")) "\n" else ""
+                                    val compactQuote = cleanQuote.replace(Regex("\\s+"), " ").trim()
+                                    val next = "${askInput.text}$prefix> \"$compactQuote\"\n"
+                                    askInput = TextFieldValue(next, TextRange(next.length))
+                                    askFocusRequester.requestFocus()
+                                    keyboardController?.show()
+                                },
+                                onNoReceiptFound = {
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar("No memory pointer found for the selected text.")
+                                    }
+                                },
+                            )
                         }
                     }
                 }
             }
         }
-    ) { innerPadding ->
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text("Discard unsaved edits?") },
+            text = { Text("Your manual changes to the memory summary have not been saved.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardDialog = false
+                        isEditMode = false
+                    }
+                ) {
+                    Text("Discard")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text("Keep Editing")
+                }
+            },
+        )
+    }
+
+    uiState.inspectedMemoryId?.let { inspectedId ->
+        MemoryReceiptBottomSheet(
+            memoryId = inspectedId,
+            memory = uiState.inspectedMemory,
+            isLoading = uiState.isLoadingReceipt,
+            onDismiss = onDismissReceipt,
+            onSaveEdit = onSaveRawMemory,
+            onDeleteMemory = onDeleteRawMemory,
+            onRemoveStaleCitation = onRemoveStaleCitation,
+        )
+    }
+}
+
+@Composable
+private fun MemorySummarySectionCard(
+    section: MemorySummarySection,
+    validMemoryIds: Set<Int>,
+    onPointerClick: (Int) -> Unit,
+    onQuoteText: (String) -> Unit,
+    onNoReceiptFound: () -> Unit,
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+    ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // Error banner if any
-            if (summaryError != null) {
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = summaryError.orEmpty(),
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(16.dp)
+            Text(
+                text = section.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            ProvideMemorySelectionToolbar(
+                sectionContent = section.content,
+                sectionHasCitations = section.citedMemoryIds.isNotEmpty(),
+                onQuoteText = onQuoteText,
+                onInspectReceipt = onPointerClick,
+                onNoReceiptFound = onNoReceiptFound,
+            ) {
+                SelectionContainer {
+                    MemoryPointerText(
+                        content = section.content,
+                        validMemoryIds = validMemoryIds,
+                        onPointerClick = onPointerClick,
                     )
-                }
-            }
-
-            if (summaryData == null && !isGenerating) {
-                // Empty state card
-                Surface(
-                    color = if (isDark) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                Icons.Rounded.Psychology,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(28.dp),
-                            )
-                        }
-                        Text(
-                            text = "No Memory Summary Yet",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = "Synthesize all of your stored memories into a cohesive, high-level profile that gets referenced on every turn.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Button(
-                            onClick = { vm.regenerateMemorySummary() },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Generate Memory Summary")
-                        }
-                    }
-                }
-            } else if (summaryData != null) {
-                // Main Summary Container Card (M3 Expressive)
-                Surface(
-                    color = if (isDark) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    SelectionContainer {
-                        Column(
-                            modifier = Modifier.padding(20.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                        ) {
-                            // Header: Avatar / "Your Summary"
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primaryContainer),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        Icons.Rounded.Person,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                }
-                                Column {
-                                    Text(
-                                        text = summaryData.title.ifBlank { "Your Summary" },
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                    if (summaryData.subtitle.isNotBlank()) {
-                                        Text(
-                                            text = summaryData.subtitle,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Dynamic sections with tinted icon tags
-                            summaryData.sections.forEachIndexed { index, section ->
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                                    thickness = 0.5.dp,
-                                )
-                                MemorySummarySectionItem(section = section, index = index)
-                            }
-                        }
-                    }
-                }
-
-                // "Dive Deeper" exploration cards
-                if (summaryData.diveDeeper.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Column {
-                            Text(
-                                text = "Dive Deeper",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                text = "Explore specific areas of your memory in more detail.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        summaryData.diveDeeper.forEach { action ->
-                            DiveDeeperCard(
-                                action = action,
-                                onClick = {
-                                    vm.switchToAssistant(assistantId)
-                                    navBackStack.navigate(
-                                        Screen.Chat(
-                                            id = java.util.UUID.randomUUID().toString(),
-                                            text = action.prompt.base64Encode(),
-                                        )
-                                    )
-                                }
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -565,166 +456,144 @@ fun MemorySummaryPage(
 }
 
 @Composable
-private fun MemorySummarySectionItem(
-    section: MemorySummarySection,
-    index: Int,
+private fun MemorySummaryManualEditor(
+    title: String,
+    onTitleChange: (String) -> Unit,
+    subtitle: String,
+    onSubtitleChange: (String) -> Unit,
+    markdown: String,
+    onMarkdownChange: (String) -> Unit,
+    onInsertSectionTemplate: () -> Unit,
 ) {
-    val icon = remember(section.icon) { resolveSectionIcon(section.icon) }
-    val context = LocalContext.current
-    val toaster = LocalToaster.current
-    val haptics = rememberPremiumHaptics()
-    val tintColor = when (index % 4) {
-        0 -> MaterialTheme.colorScheme.primary
-        1 -> MaterialTheme.colorScheme.secondary
-        2 -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.primary
-    }
-    val containerColor = when (index % 4) {
-        0 -> MaterialTheme.colorScheme.primaryContainer
-        1 -> MaterialTheme.colorScheme.secondaryContainer
-        2 -> MaterialTheme.colorScheme.tertiaryContainer
-        else -> MaterialTheme.colorScheme.primaryContainer
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        OutlinedTextField(
+            value = title,
+            onValueChange = onTitleChange,
+            label = { Text("Summary Title") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = subtitle,
+            onValueChange = onSubtitleChange,
+            label = { Text("Subtitle") },
+            maxLines = 2,
+            modifier = Modifier.fillMaxWidth(),
+        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(containerColor.copy(alpha = 0.6f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = tintColor,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                Text(
-                    text = section.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-
-            IconButton(
-                onClick = {
-                    haptics.perform(HapticPattern.Tick)
-                    val sectionText = "${section.title}\n\n${section.content}"
-                    context.writeClipboardText(sectionText)
-                    toaster.show("${section.title} copied")
-                },
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.ContentCopy,
-                    contentDescription = "Copy section",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-        }
-        SelectionContainer {
             Text(
-                text = section.content,
-                style = MaterialTheme.typography.bodyMedium,
+                text = "Sections (Markdown with ## Headings and [#ID] tags)",
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = MaterialTheme.typography.bodyMedium.lineHeight,
             )
+            TextButton(onClick = onInsertSectionTemplate) {
+                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add Section")
+            }
         }
+        OutlinedTextField(
+            value = markdown,
+            onValueChange = onMarkdownChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 320.dp),
+            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+            placeholder = { Text("## Hardware & Workflow\n- Uses Lenovo Tab M9 [#79]") },
+        )
     }
 }
 
 @Composable
-private fun DiveDeeperCard(
-    action: DiveDeeperAction,
-    onClick: () -> Unit,
+private fun MemorySummaryAskBar(
+    inputValue: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    isGenerating: Boolean,
+    enabled: Boolean,
+    focusRequester: FocusRequester,
+    onSubmit: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val isDark = LocalDarkMode.current
-    val icon = remember(action.icon) { resolveSectionIcon(action.icon) }
+    val canSend = enabled && !isGenerating && inputValue.text.isNotBlank()
 
     Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        color = if (isDark) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .imePadding(),
+        tonalElevation = 3.dp,
+        shadowElevation = 2.dp,
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .animateContentSize(),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Box(
+            TextField(
+                value = inputValue,
+                onValueChange = onValueChange,
+                enabled = enabled && !isGenerating,
                 modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = action.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (action.subtitle.isNotBlank()) {
+                    .weight(1f)
+                    .focusRequester(focusRequester),
+                placeholder = {
                     Text(
-                        text = action.subtitle,
-                        style = MaterialTheme.typography.bodySmall,
+                        text = "Ask about or update your summary...",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                singleLine = false,
+                minLines = 1,
+                maxLines = 5,
+                shape = RoundedCornerShape(22.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent,
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences,
+                    imeAction = ImeAction.Default,
+                ),
+            )
+
+            FilledIconButton(
+                onClick = onSubmit,
+                enabled = canSend,
+                modifier = Modifier
+                    .padding(bottom = 4.dp)
+                    .size(44.dp),
+            ) {
+                if (isGenerating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.ArrowUpward,
+                        contentDescription = "Send update request",
                     )
                 }
             }
-            Icon(
-                Icons.AutoMirrored.Rounded.ArrowForward,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
-            )
         }
-    }
-}
-
-private fun resolveSectionIcon(tag: String): ImageVector {
-    val lower = tag.lowercase()
-    return when {
-        "device" in lower || "tablet" in lower || "hardware" in lower -> Icons.Rounded.Devices
-        "code" in lower || "tech" in lower || "dev" in lower -> Icons.Rounded.Code
-        "heart" in lower || "interest" in lower || "like" in lower -> Icons.Rounded.Favorite
-        "target" in lower || "goal" in lower || "context" in lower -> Icons.Rounded.Adjust
-        "star" in lower || "pref" in lower -> Icons.Rounded.Star
-        else -> Icons.Rounded.AutoAwesome
-    }
-}
-
-private fun formatRelativeAgo(timestamp: Long): String {
-    val diff = System.currentTimeMillis() - timestamp
-    val seconds = (diff / 1000).coerceAtLeast(0)
-    val minutes = seconds / 60
-    val hours = minutes / 60
-    val days = hours / 24
-    return when {
-        minutes < 1 -> "Updated just now"
-        minutes < 60 -> "Updated $minutes min. ago"
-        hours < 24 -> "Updated $hours hr. ago"
-        else -> "Updated $days d. ago"
     }
 }

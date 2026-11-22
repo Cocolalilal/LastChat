@@ -17,11 +17,18 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException
 import me.rerere.rikkahub.data.ai.rag.EmbeddingAvailability
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
+import androidx.compose.runtime.Immutable
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
+import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
+import me.rerere.rikkahub.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Avatar
@@ -30,6 +37,8 @@ import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.ai.MemorySummaryService
 import me.rerere.rikkahub.data.db.entity.MemorySummaryEntity
+import me.rerere.rikkahub.data.memory.MemoryChangeType
+import me.rerere.rikkahub.data.memory.MemorySummaryData
 import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"
@@ -47,6 +56,19 @@ data class MemoryRetrievalDebugState(
     val error: String? = null,
 )
 
+@Immutable
+data class MemorySummaryUiState(
+    val summaryData: MemorySummaryData = MemorySummaryData(),
+    val validMemoryIds: Set<Int> = emptySet(),
+    val revision: Long = 0L,
+    val tokenCount: Int = 0,
+    val isGenerating: Boolean = false,
+    val statusMessage: String? = null,
+    val inspectedMemoryId: Int? = null,
+    val inspectedMemory: MemoryEntity? = null,
+    val isLoadingReceipt: Boolean = false,
+)
+
 class AssistantDetailVM(
     private val id: String,
     private val settingsStore: SettingsStore,
@@ -58,6 +80,7 @@ class AssistantDetailVM(
     private val appStorageRepository: AppStorageRepository,
     private val embeddingService: EmbeddingService,
     private val memorySummaryService: MemorySummaryService,
+    private val memoryDAO: MemoryDAO? = null,
 ) : ViewModel() {
     private val assistantId = runCatching { Uuid.parse(id) }
         .onFailure { Log.w(TAG, "Invalid assistant id route parameter: $id", it) }
@@ -106,6 +129,123 @@ class AssistantDetailVM(
                 }
             _isSummaryGenerating.value = false
         }
+    }
+
+    private val _inspectedMemoryId = MutableStateFlow<Int?>(null)
+    private val _inspectedMemory = MutableStateFlow<MemoryEntity?>(null)
+    private val _isLoadingReceipt = MutableStateFlow(false)
+
+    val summaryUiState: StateFlow<MemorySummaryUiState> = combine(
+        memoryRepository.getMemorySummaryFlow(assistantId.toString()),
+        memoryDAO?.getMemoryIdsFlow(assistantId.toString()) ?: flowOf(emptyList()),
+        _isSummaryGenerating,
+        _summaryError,
+        _inspectedMemoryId,
+        _inspectedMemory,
+        _isLoadingReceipt,
+    ) { args: Array<Any?> ->
+        val summaryEntity = args[0] as? MemorySummaryEntity
+        @Suppress("UNCHECKED_CAST")
+        val memoryIds = args[1] as? List<Int> ?: emptyList()
+        val isGenerating = args[2] as Boolean
+        val summaryError = args[3] as? String
+        val inspectedId = args[4] as? Int
+        val inspectedRow = args[5] as? MemoryEntity
+        val loadingReceipt = args[6] as Boolean
+
+        val parsedData = summaryEntity?.let { memorySummaryService.decodeSummaryEntity(it) } ?: MemorySummaryData()
+        MemorySummaryUiState(
+            summaryData = parsedData,
+            validMemoryIds = memoryIds.toSet(),
+            revision = summaryEntity?.revision ?: 0L,
+            tokenCount = summaryEntity?.tokenCount ?: 0,
+            isGenerating = isGenerating,
+            statusMessage = summaryError,
+            inspectedMemoryId = inspectedId,
+            inspectedMemory = inspectedRow,
+            isLoadingReceipt = loadingReceipt,
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Lazily,
+        initialValue = MemorySummaryUiState(),
+    )
+
+    fun saveManualSummaryEdit(
+        assistantId: String,
+        editedTitle: String,
+        editedSubtitle: String,
+        editedSectionsMarkdown: String,
+    ) {
+        viewModelScope.launch {
+            try {
+                memorySummaryService.saveManualEdit(
+                    assistantId = assistantId,
+                    editedMarkdown = editedSectionsMarkdown,
+                    editedTitle = editedTitle,
+                    editedSubtitle = editedSubtitle,
+                )
+                emitSnackbar("Summary saved.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed to save summary: ${e.message ?: "unknown error"}")
+            }
+        }
+    }
+
+    fun inspectMemoryReceipt(assistantId: String, memoryId: Int) {
+        _inspectedMemoryId.value = memoryId
+        _inspectedMemory.value = null
+        _isLoadingReceipt.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            val row = memoryDAO?.getMemoriesByIds(assistantId, listOf(memoryId))?.firstOrNull()
+            if (_inspectedMemoryId.value == memoryId) {
+                _inspectedMemory.value = row
+                _isLoadingReceipt.value = false
+            }
+        }
+    }
+
+    fun dismissReceiptSheet() {
+        _inspectedMemoryId.value = null
+        _inspectedMemory.value = null
+        _isLoadingReceipt.value = false
+    }
+
+    fun updateRawMemoryFromReceipt(assistantId: String, memoryId: Int, newContent: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            memoryDAO?.updateContentById(assistantId, memoryId, newContent)
+            memorySummaryService.onMemoryChanged(assistantId, MemoryChangeType.UPDATED, newContent)
+            val updated = memoryDAO?.getMemoriesByIds(assistantId, listOf(memoryId))?.firstOrNull()
+            if (_inspectedMemoryId.value == memoryId) {
+                _inspectedMemory.value = updated
+            }
+            emitSnackbar("Memory #$memoryId updated.")
+        }
+    }
+
+    fun deleteRawMemoryFromReceipt(assistantId: String, memoryId: Int, pruneCitation: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            memoryDAO?.deleteById(assistantId, memoryId)
+            if (pruneCitation) {
+                memorySummaryService.removeStaleCitation(assistantId, memoryId)
+            } else {
+                memorySummaryService.onMemoryChanged(assistantId, MemoryChangeType.DELETED, "Deleted #$memoryId")
+            }
+            emitSnackbar("Memory #$memoryId deleted.")
+        }
+    }
+
+    fun removeStaleCitation(assistantId: String, memoryId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            memorySummaryService.removeStaleCitation(assistantId, memoryId)
+            emitSnackbar("Removed stale reference #$memoryId.")
+        }
+    }
+
+    private fun emitSnackbar(message: String) {
+        _snackbarMessage.value = message
     }
 
     fun switchToAssistant(id: String) {

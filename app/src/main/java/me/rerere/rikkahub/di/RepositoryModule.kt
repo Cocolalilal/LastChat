@@ -2,8 +2,11 @@ package me.rerere.rikkahub.di
 
 import android.content.Context
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
+import me.rerere.rikkahub.data.ai.DefaultSummaryLlmExecutor
 import me.rerere.rikkahub.data.ai.MemorySearchService
 import me.rerere.rikkahub.data.ai.MemorySummaryService
+import me.rerere.rikkahub.data.ai.SummaryLlmExecutor
+import me.rerere.rikkahub.data.worker.MemorySummaryScheduler
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -54,13 +57,28 @@ val repositoryModule = module {
     }
 
     single {
-        val memoryRepo = get<MemoryRepository>()
-        val summaryService = MemorySummaryService(
+        MemorySummaryScheduler(
+            context = get(),
+        )
+    }
+
+    single<SummaryLlmExecutor> {
+        DefaultSummaryLlmExecutor(
             settingsStore = get(),
-            memoryRepository = memoryRepo,
-            memorySummaryDao = get(),
             providerManager = get(),
             secretKeyManager = get(),
+        )
+    }
+
+    single {
+        val memoryRepo = get<MemoryRepository>()
+        val summaryService = MemorySummaryService(
+            database = get(),
+            memoryDAO = get(),
+            memorySummaryDao = get(),
+            settingsStore = get(),
+            scheduler = get(),
+            llmExecutor = get(),
         )
         memoryRepo.onMemoryChange = { assistantId, changeType, content ->
             summaryService.onMemoryChanged(assistantId, changeType, content)

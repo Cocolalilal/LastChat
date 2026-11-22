@@ -24,4 +24,16 @@ data class MemorySummaryEntity(
 
     @ColumnInfo(name = "source_hash")
     val sourceHash: String? = null,
+
+    @ColumnInfo(name = "revision", defaultValue = "0")
+    val revision: Long = 0L,
+
+    @ColumnInfo(name = "last_manual_edit_at", defaultValue = "0")
+    val lastManualEditAt: Long = 0L,
+
+    @ColumnInfo(name = "dirty_since", defaultValue = "0")
+    val dirtySince: Long = 0L,
+
+    @ColumnInfo(name = "last_synced_at", defaultValue = "0")
+    val lastSyncedAt: Long = 0L,
 )

@@ -10,18 +10,24 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
+import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
@@ -93,6 +99,8 @@ import kotlin.uuid.Uuid
 private const val TAG = "GenerationHandler"
 private const val SKILL_MANAGEMENT_TOOL_NAME = "manage_skills"
 internal const val MEMORY_SEARCH_TOOL_NAME = "search_memory"
+private const val MAX_POINTER_BATCH_SIZE = 25
+private const val MAX_POINTER_RESPONSE_CHARS = 16_000
 
 private val SMART_CONTEXT_PROTECTED_BODY_KEYS = setOf(
     "messages",
@@ -647,6 +655,8 @@ class GenerationHandler(
     private val memorySearchService: MemorySearchService,
     private val secretKeyManager: SecretKeyManager,
     private val runtimeInfo: GenerationRuntimeInfo = AndroidGenerationRuntimeInfo(),
+    private val memoryDAO: MemoryDAO? = null,
+    private val memorySummaryService: MemorySummaryService? = null,
 ) {
     fun generateText(
         settings: Settings,
@@ -702,7 +712,12 @@ class GenerationHandler(
                 Log.i(TAG, "generateInternal: build tools($assistant)")
                 // Add memory tools if memory is enabled for this assistant
                 if (assistant.enableMemory) {
+                    val enableSummaryTools = assistant.enableMemorySummary && memoryDAO != null && memorySummaryService != null
                     buildMemoryTools(
+                        assistantId = assistant.id.toString(),
+                        enableSummaryTools = enableSummaryTools,
+                        memoryDAO = memoryDAO,
+                        memorySummaryService = memorySummaryService,
                         onCreation = { content ->
                             memoryRepo.addMemory(assistant.id.toString(), content)
                         },
@@ -2208,6 +2223,10 @@ class GenerationHandler(
     }
 
     private fun buildMemoryTools(
+        assistantId: String,
+        enableSummaryTools: Boolean,
+        memoryDAO: MemoryDAO?,
+        memorySummaryService: MemorySummaryService?,
         onCreation: suspend (String) -> AssistantMemory,
         onUpdate: suspend (Int, String) -> AssistantMemory,
         onDelete: suspend (Int) -> Unit,
@@ -2307,6 +2326,10 @@ class GenerationHandler(
                 }
             }
         ))
+        if (enableSummaryTools && memoryDAO != null && memorySummaryService != null) {
+            add(buildGetMemoriesTool(assistantId, memoryDAO))
+            add(buildManageMemorySummaryTool(assistantId, memorySummaryService))
+        }
         if (onSearch != null) {
             add(Tool(
                 name = MEMORY_SEARCH_TOOL_NAME,
@@ -2354,6 +2377,294 @@ class GenerationHandler(
             ))
         }
     }
+
+    private fun parseFlexibleMemoryIds(rawElement: JsonElement?): Pair<List<Int>, List<String>> {
+        val array = rawElement as? JsonArray ?: return emptyList<Int>() to listOf("ids must be a JSON array")
+        val validIds = LinkedHashSet<Int>()
+        val invalidTokens = mutableListOf<String>()
+
+        for (item in array) {
+            val primitive = item as? JsonPrimitive
+            val parsed = primitive?.intOrNull
+                ?: primitive?.contentOrNull?.trim()?.removePrefix("#")?.toIntOrNull()
+            if (parsed != null && parsed > 0) {
+                validIds.add(parsed)
+            } else {
+                invalidTokens.add(item.toString())
+            }
+        }
+        return validIds.toList() to invalidTokens
+    }
+
+    private fun formatIsoTimestamp(epochMs: Long): String {
+        if (epochMs <= 0L) return ""
+        return java.time.Instant.ofEpochMilli(epochMs).toString()
+    }
+
+    private fun toolError(message: String): JsonObject = buildJsonObject {
+        put("ok", false)
+        put("error", message)
+    }
+
+    private fun buildGetMemoriesTool(
+        assistantId: String,
+        memoryDAO: MemoryDAO,
+    ): Tool = Tool(
+        name = "get_memories",
+        description = "Fetch exact verbatim raw memory records by their numeric [#ID] pointers from the Memory Summary index. Use this when exact wording, timestamps, or full details are needed. Batch multiple IDs into one call.",
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    putJsonObject("ids") {
+                        put("type", "array")
+                        put("description", "List of positive integer memory IDs (max $MAX_POINTER_BATCH_SIZE), e.g., [79, 182].")
+                        putJsonObject("items") {
+                            put("type", "integer")
+                        }
+                    }
+                },
+                required = listOf("ids"),
+            )
+        },
+        execute = { args ->
+            val obj = args as? JsonObject ?: return@Tool buildJsonObject {
+                put("ok", false)
+                put("error", "Invalid arguments: expected JSON object with 'ids' array.")
+            }
+
+            val (parsedIds, invalidTokens) = parseFlexibleMemoryIds(obj["ids"])
+            if (parsedIds.isEmpty()) {
+                return@Tool buildJsonObject {
+                    put("ok", false)
+                    put("error", "No valid positive integer memory IDs provided.")
+                    if (invalidTokens.isNotEmpty()) {
+                        putJsonArray("invalid_inputs") { invalidTokens.forEach { add(JsonPrimitive(it)) } }
+                    }
+                }
+            }
+
+            val truncated = parsedIds.size > MAX_POINTER_BATCH_SIZE
+            val boundedIds = if (truncated) parsedIds.take(MAX_POINTER_BATCH_SIZE) else parsedIds
+
+            val rows = try {
+                withContext(Dispatchers.IO) {
+                    memoryDAO.getMemoriesByIds(assistantId = assistantId, ids = boundedIds)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return@Tool buildJsonObject {
+                    put("ok", false)
+                    put("error", "Database query failed: ${e.message ?: "unknown error"}")
+                }
+            }
+
+            val byId = rows.associateBy { it.id }
+            val missingIds = boundedIds.filter { it !in byId }
+
+            var budgetUsed = 0
+            var responseTrimmed = false
+
+            buildJsonObject {
+                put("ok", true)
+                put("requested_count", boundedIds.size)
+                put("found_count", rows.size)
+                if (truncated) {
+                    put("batch_truncated", true)
+                    put("max_batch_size", MAX_POINTER_BATCH_SIZE)
+                }
+                putJsonArray("memories") {
+                    for (id in boundedIds) {
+                        val entity = byId[id] ?: continue
+                        val content = entity.content
+                        if (budgetUsed + content.length > MAX_POINTER_RESPONSE_CHARS && budgetUsed > 0) {
+                            responseTrimmed = true
+                            break
+                        }
+                        budgetUsed += content.length
+                        add(
+                            buildJsonObject {
+                                put("id", entity.id)
+                                put("content", content)
+                                put("type", entity.type)
+                                put("created_at_ms", entity.createdAt)
+                                put("created_at_iso", formatIsoTimestamp(entity.createdAt))
+                            }
+                        )
+                    }
+                }
+                if (missingIds.isNotEmpty()) {
+                    putJsonArray("missing_ids") { missingIds.forEach { add(JsonPrimitive(it)) } }
+                    put(
+                        "missing_note",
+                        "Missing IDs were deleted or do not belong to this assistant. Do not fabricate details for them."
+                    )
+                }
+                if (invalidTokens.isNotEmpty()) {
+                    putJsonArray("ignored_invalid_inputs") { invalidTokens.forEach { add(JsonPrimitive(it)) } }
+                }
+                if (responseTrimmed) {
+                    put("response_trimmed_for_budget", true)
+                }
+            }
+        }
+    )
+
+    private fun buildManageMemorySummaryTool(
+        assistantId: String,
+        memorySummaryService: MemorySummaryService,
+    ): Tool = Tool(
+        name = "manage_memory_summary",
+        description = "Inspect or surgically update the user's structured Memory Summary. Prefer 'update_section' with find_text/replace_text or targeted content over 'replace_summary'.",
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    putJsonObject("action") {
+                        put("type", "string")
+                        putJsonArray("enum") {
+                            add(JsonPrimitive("read"))
+                            add(JsonPrimitive("update_section"))
+                            add(JsonPrimitive("add_section"))
+                            add(JsonPrimitive("delete_section"))
+                            add(JsonPrimitive("replace_summary"))
+                        }
+                        put("description", "Operation to execute on the memory summary.")
+                    }
+                    putJsonObject("section_title") {
+                        put("type", "string")
+                        put("description", "Target section title for update_section, add_section, or delete_section.")
+                    }
+                    putJsonObject("new_title") {
+                        put("type", "string")
+                        put("description", "Optional renamed title when using update_section.")
+                    }
+                    putJsonObject("icon") {
+                        put("type", "string")
+                        put("description", "Optional icon name: star, heart, code, target, devices, sparkles, profile, book, music.")
+                    }
+                    putJsonObject("find_text") {
+                        put("type", "string")
+                        put("description", "Exact substring or bullet line inside section_title to replace (surgical block patch).")
+                    }
+                    putJsonObject("replace_text") {
+                        put("type", "string")
+                        put("description", "Replacement text for find_text (or appended line if find_text is omitted and append_line is true).")
+                    }
+                    putJsonObject("append_line") {
+                        put("type", "boolean")
+                        put("description", "If true with replace_text, appends a new bullet to section_title without rewriting existing lines.")
+                    }
+                    putJsonObject("content") {
+                        put("type", "string")
+                        put("description", "Full section markdown content (preserve existing [#ID] pointers) for update_section or add_section.")
+                    }
+                    putJsonObject("full_summary_markdown") {
+                        put("type", "string")
+                        put("description", "Complete replacement markdown (with ## Section headings and [#ID] citations). Only used for replace_summary.")
+                    }
+                    putJsonObject("confirm_full_replace") {
+                        put("type", "boolean")
+                        put("description", "Must be true when action is replace_summary.")
+                    }
+                },
+                required = listOf("action"),
+            )
+        },
+        execute = { args ->
+            val obj = args as? JsonObject ?: return@Tool buildJsonObject {
+                put("ok", false)
+                put("error", "Expected JSON object arguments.")
+            }
+
+            val action = obj["action"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase()
+                ?: return@Tool buildJsonObject {
+                    put("ok", false)
+                    put("error", "Missing required parameter 'action'.")
+                }
+
+            try {
+                when (action) {
+                    "read" -> {
+                        val snapshot = memorySummaryService.readSummarySnapshot(assistantId)
+                        buildJsonObject {
+                            put("ok", true)
+                            put("revision", snapshot.revision)
+                            put("token_count", snapshot.tokenCount)
+                            put("title", snapshot.data.title)
+                            put("subtitle", snapshot.data.subtitle)
+                            putJsonArray("sections") {
+                                snapshot.data.sections.forEach { sec ->
+                                    add(
+                                        buildJsonObject {
+                                            put("title", sec.title)
+                                            put("icon", sec.icon)
+                                            put("content", sec.content)
+                                            putJsonArray("cited_memory_ids") {
+                                                sec.citedMemoryIds.forEach { add(JsonPrimitive(it)) }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    "update_section" -> {
+                        val sectionTitle = obj["section_title"]?.jsonPrimitive?.contentOrNull?.trim()
+                            ?: return@Tool toolError("Missing 'section_title' for update_section.")
+                        val result = memorySummaryService.agentUpdateSection(
+                            assistantId = assistantId,
+                            sectionTitle = sectionTitle,
+                            newTitle = obj["new_title"]?.jsonPrimitive?.contentOrNull,
+                            icon = obj["icon"]?.jsonPrimitive?.contentOrNull,
+                            findText = obj["find_text"]?.jsonPrimitive?.contentOrNull,
+                            replaceText = obj["replace_text"]?.jsonPrimitive?.contentOrNull,
+                            appendLine = obj["append_line"]?.jsonPrimitive?.booleanOrNull == true,
+                            fullSectionContent = obj["content"]?.jsonPrimitive?.contentOrNull,
+                        )
+                        result.toJsonObject()
+                    }
+
+                    "add_section" -> {
+                        val sectionTitle = obj["section_title"]?.jsonPrimitive?.contentOrNull?.trim()
+                            ?: return@Tool toolError("Missing 'section_title' for add_section.")
+                        val content = obj["content"]?.jsonPrimitive?.contentOrNull?.trim()
+                            ?: return@Tool toolError("Missing 'content' for add_section.")
+                        val icon = obj["icon"]?.jsonPrimitive?.contentOrNull ?: "star"
+                        memorySummaryService.agentAddSection(assistantId, sectionTitle, icon, content)
+                            .toJsonObject()
+                    }
+
+                    "delete_section" -> {
+                        val sectionTitle = obj["section_title"]?.jsonPrimitive?.contentOrNull?.trim()
+                            ?: return@Tool toolError("Missing 'section_title' for delete_section.")
+                        memorySummaryService.agentDeleteSection(assistantId, sectionTitle)
+                            .toJsonObject()
+                    }
+
+                    "replace_summary" -> {
+                        val confirmed = obj["confirm_full_replace"]?.jsonPrimitive?.booleanOrNull == true
+                        val markdown = obj["full_summary_markdown"]?.jsonPrimitive?.contentOrNull?.trim()
+                        if (!confirmed) {
+                            return@Tool toolError(
+                                "replace_summary rejected: set confirm_full_replace=true only when a full rewrite is strictly necessary; prefer update_section."
+                            )
+                        }
+                        if (markdown.isNullOrBlank()) {
+                            return@Tool toolError("Missing 'full_summary_markdown' for replace_summary.")
+                        }
+                        memorySummaryService.agentReplaceSummary(assistantId, markdown).toJsonObject()
+                    }
+
+                    else -> toolError("Unsupported action '$action'.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                toolError("manage_memory_summary failed: ${e.message ?: "unknown error"}")
+            }
+        }
+    )
 
 
     fun translateText(

@@ -29,10 +29,24 @@ data class MemorySummaryData(
 
 @Serializable
 data class MemorySummarySection(
+    val id: String = "",
     val icon: String = "star",
     val title: String,
     val content: String,
-)
+    @SerialName("cited_memory_ids")
+    val citedMemoryIds: List<Int> = emptyList(),
+) {
+    /** Stable key used for surgical matching even if casing or spacing shifts slightly. */
+    fun normalizedKey(): String =
+        (id.ifBlank { title })
+            .lowercase()
+            .replace(NON_ALNUM_REGEX, "_")
+            .trim('_')
+
+    companion object {
+        private val NON_ALNUM_REGEX = Regex("[^a-z0-9]+")
+    }
+}
 
 @Serializable
 data class DiveDeeperAction(
@@ -81,6 +95,7 @@ enum class MemoryChangeType {
 @Serializable
 data class RawMemoryAction(
     val action: String = "create", // "create", "update", "delete"
+    val id: Int? = null,
     val search: String? = null,
     val content: String? = null,
 )
@@ -97,17 +112,48 @@ data class MemorySummaryWithUpdates(
 )
 
 @Serializable
-data class MemorySectionPatch(
-    val action: String = "update_section", // "update_section", "add_section", "delete_section", "full_rewrite"
+data class SectionLineEdit(
+    val op: String, // "replace", "append", "remove"
+    val find: String? = null,
+    val replace: String? = null,
+)
+
+@Serializable
+data class SummaryPatchOperation(
+    val action: String, // "update_section", "add_section", "delete_section"
     @SerialName("target_section")
     val targetSection: String? = null,
     val section: MemorySummarySection? = null,
+    @SerialName("line_edits")
+    val lineEdits: List<SectionLineEdit> = emptyList(),
+)
+
+/**
+ * Backward-compatible delta patch envelope.
+ * Supports multi-section surgical operations via [operations], single-section legacy fields,
+ * and read-only question replies via action = "no_op".
+ */
+@Serializable
+data class MemorySectionPatch(
+    val action: String = "update_section", // "no_op", "patch_operations", "update_section", "add_section", "delete_section", "full_rewrite"
+    @SerialName("assistant_reply")
+    val assistantReply: String? = null,
+    val operations: List<SummaryPatchOperation> = emptyList(),
+    @SerialName("target_section")
+    val targetSection: String? = null,
+    val section: MemorySummarySection? = null,
+    @SerialName("line_edits")
+    val lineEdits: List<SectionLineEdit> = emptyList(),
     @SerialName("raw_memory_updates")
     val rawMemoryUpdates: List<RawMemoryAction> = emptyList(),
     @SerialName("dive_deeper")
     val diveDeeper: List<DiveDeeperAction>? = null,
     @SerialName("full_summary")
     val fullSummary: MemorySummaryData? = null,
+)
+
+val ALLOWED_SUMMARY_ICONS = setOf(
+    "star", "heart", "code", "target", "devices", "sparkles", "profile", "book", "music"
 )
 
 /**
@@ -285,10 +331,11 @@ fun parseRawMemoryActions(element: JsonElement?): List<RawMemoryAction> {
         when (item) {
             is JsonObject -> {
                 val action = item["action"]?.jsonPrimitive?.contentOrNull ?: "create"
+                val id = item["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
                 val search = item["search"]?.jsonPrimitive?.contentOrNull
                 val content = item["content"]?.jsonPrimitive?.contentOrNull
-                if (!content.isNullOrBlank() || !search.isNullOrBlank()) {
-                    RawMemoryAction(action = action, search = search, content = content)
+                if (!content.isNullOrBlank() || !search.isNullOrBlank() || id != null) {
+                    RawMemoryAction(action = action, id = id, search = search, content = content)
                 } else null
             }
             is JsonPrimitive -> {
@@ -317,7 +364,52 @@ fun parseSectionFromElement(
         ?: "Category"
     val icon = element["icon"]?.jsonPrimitive?.contentOrNull?.trim()
         ?: guessIconForTitle(title)
-    return MemorySummarySection(icon = icon, title = title, content = content)
+    val id = element["id"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+    val safeIcon = if (icon in ALLOWED_SUMMARY_ICONS) icon else guessIconForTitle(title)
+    return MemorySummarySection(
+        id = id,
+        icon = safeIcon,
+        title = title,
+        content = content,
+        citedMemoryIds = MemoryPointerParser.extractIds(content),
+    )
+}
+
+/**
+ * Parses line edit operations from a JSON array element.
+ */
+fun parseLineEdits(element: JsonElement?): List<SectionLineEdit> {
+    if (element !is JsonArray) return emptyList()
+    return element.mapNotNull { item ->
+        if (item is JsonObject) {
+            val op = item["op"]?.jsonPrimitive?.contentOrNull ?: "replace"
+            val find = item["find"]?.jsonPrimitive?.contentOrNull
+            val replace = item["replace"]?.jsonPrimitive?.contentOrNull
+            SectionLineEdit(op = op, find = find, replace = replace)
+        } else null
+    }
+}
+
+/**
+ * Parses summary patch operations from a JSON array element.
+ */
+fun parsePatchOperations(element: JsonElement?): List<SummaryPatchOperation> {
+    if (element !is JsonArray) return emptyList()
+    return element.mapNotNull { item ->
+        if (item is JsonObject) {
+            val opAction = item["action"]?.jsonPrimitive?.contentOrNull ?: "update_section"
+            val opTarget = item["target_section"]?.jsonPrimitive?.contentOrNull
+                ?: item["target"]?.jsonPrimitive?.contentOrNull
+            val opSec = parseSectionFromElement(item["section"] as? JsonObject, defaultTitle = opTarget)
+            val opLineEdits = parseLineEdits(item["line_edits"] ?: item["lineEdits"])
+            SummaryPatchOperation(
+                action = opAction,
+                targetSection = opTarget,
+                section = opSec,
+                lineEdits = opLineEdits,
+            )
+        } else null
+    }
 }
 
 /**
@@ -327,60 +419,7 @@ fun applySectionPatch(
     current: MemorySummaryData,
     patch: MemorySectionPatch,
 ): MemorySummaryData {
-    if (patch.fullSummary != null && patch.fullSummary.sections.isNotEmpty()) {
-        return sanitizeMemorySummaryData(patch.fullSummary)
-    }
-
-    val updatedSections = current.sections.map { sanitizeMemorySummarySection(it) }.toMutableList()
-    val action = patch.action.lowercase().trim()
-    val newSection = patch.section?.let { sanitizeMemorySummarySection(it) }
-
-    when {
-        action in listOf("add_section", "create_section", "create", "add", "new_section", "new", "insert") -> {
-            if (newSection != null) {
-                val existingIndex = updatedSections.indexOfFirst {
-                    it.title.equals(newSection.title, ignoreCase = true)
-                }
-                if (existingIndex >= 0) {
-                    updatedSections[existingIndex] = newSection
-                } else {
-                    updatedSections.add(newSection)
-                }
-            }
-        }
-        action in listOf("delete_section", "remove_section", "delete", "remove", "drop") -> {
-            val target = patch.targetSection ?: newSection?.title
-            if (!target.isNullOrBlank()) {
-                updatedSections.removeAll {
-                    it.title.equals(target, ignoreCase = true) ||
-                    it.title.contains(target, ignoreCase = true) ||
-                    target.contains(it.title, ignoreCase = true)
-                }
-            }
-        }
-        else -> {
-            // Default: update_section, edit, modify, or unspecified
-            if (newSection != null) {
-                val target = patch.targetSection ?: newSection.title
-                val index = updatedSections.indexOfFirst {
-                    it.title.equals(target, ignoreCase = true) ||
-                    it.title.contains(target, ignoreCase = true) ||
-                    target.contains(it.title, ignoreCase = true)
-                }
-                if (index >= 0) {
-                    updatedSections[index] = newSection
-                } else {
-                    updatedSections.add(newSection)
-                }
-            }
-        }
-    }
-
-    val updatedDiveDeeper = patch.diveDeeper ?: current.diveDeeper
-    return current.copy(
-        sections = updatedSections,
-        diveDeeper = updatedDiveDeeper,
-    )
+    return SummaryPatchEngine.applyPatch(current, patch, allowFullRewrite = false).updated
 }
 
 /**
@@ -405,6 +444,33 @@ fun parseAskOrUpdateResponse(
 
             val rawUpdates = parseRawMemoryActions(element["raw_memory_updates"] ?: element["rawMemoryUpdates"])
             val diveDeeper = parseDiveDeeperActions(element["dive_deeper"] ?: element["diveDeeper"])
+
+            if (action.equals("no_op", ignoreCase = true)) {
+                return currentSummary to rawUpdates
+            }
+
+            val operations = parsePatchOperations(element["operations"])
+            if (operations.isNotEmpty()) {
+                val patch = MemorySectionPatch(
+                    action = "patch_operations",
+                    operations = operations,
+                    rawMemoryUpdates = rawUpdates,
+                    diveDeeper = diveDeeper.ifEmpty { null },
+                )
+                return applySectionPatch(currentSummary, patch) to rawUpdates
+            }
+
+            val lineEdits = parseLineEdits(element["line_edits"] ?: element["lineEdits"])
+            if (lineEdits.isNotEmpty()) {
+                val patch = MemorySectionPatch(
+                    action = action,
+                    targetSection = targetSection,
+                    lineEdits = lineEdits,
+                    rawMemoryUpdates = rawUpdates,
+                    diveDeeper = diveDeeper.ifEmpty { null },
+                )
+                return applySectionPatch(currentSummary, patch) to rawUpdates
+            }
 
             // Check if full summary with "sections"
             val sectionsEl = element["sections"]
@@ -467,7 +533,7 @@ fun parseAskOrUpdateResponse(
     // Stage 2: Try decoding directly as MemorySectionPatch
     try {
         val patch = memorySummaryJsonFormat.decodeFromString<MemorySectionPatch>(sanitized)
-        if (patch.action.isNotBlank() && (patch.section != null || patch.targetSection != null || patch.fullSummary != null)) {
+        if (patch.action.isNotBlank() && (patch.section != null || patch.targetSection != null || patch.fullSummary != null || patch.operations.isNotEmpty() || patch.lineEdits.isNotEmpty() || patch.action.equals("no_op", ignoreCase = true))) {
             val updatedSummary = applySectionPatch(currentSummary, patch)
             return updatedSummary to patch.rawMemoryUpdates
         }
@@ -752,14 +818,27 @@ fun guessIconForTitle(title: String): String {
  * Default system prompt for full memory synthesis.
  */
 val DEFAULT_MEMORY_SUMMARY_SYSTEM_PROMPT = """
-You are the Memory Synthesizer. Your job is to analyze the user's recorded memories and produce a cohesive, structured baseline profile.
+You are the Memory Synthesizer for LastChat. Your job is to synthesize the user's raw memories into a compact, structured Hierarchical Pointer Index.
 
 CORE PRINCIPLES:
-1. JUSTICE TO ALL MEMORIES: Do not ignore or discard memories. Synthesize all provided information comprehensively into coherent sections. Preserve specific details, hardware specs, preferences, quirks, entertainment choices, and boundaries.
-2. DYNAMIC SECTIONS: Do NOT impose rigid, predefined categories. Create section titles that naturally fit this specific user's life (e.g. Devices, Preferences, Entertainment, Technical Stack, Current Context, Communication Style). If a category is not present in memories, do not generate it.
-3. ICON ASSIGNMENTS: For each section, assign an appropriate icon tag from: "star", "heart", "code", "target", "devices", "sparkles", "profile", "book", "music".
-4. DIVE DEEPER: Provide 2 to 4 interactive prompts in 'dive_deeper' that allow exploring specific threads or facets of their profile in conversation.
-5. JSON OUTPUT: Respond ONLY with a valid JSON object matching the requested schema. No conversational filler or markdown explanations outside the JSON.
+1. PROVENANCE POINTERS (MANDATORY):
+   - Every input memory is prefixed with its integer database ID, e.g., [#79].
+   - Every distilled bullet or factual statement in your summary MUST end with its backing provenance pointer(s) using exact bracket notation:
+     - Single source: `- Uses a Lenovo Tab M9 tablet for mobile-only development [#79]`
+     - Multiple sources: `- Prefers dry, deadpan humor and dislikes corporate jargon [#182, #240]`
+   - NEVER invent, guess, alter, or extrapolate IDs. Only cite numeric IDs present in the provided input memories.
+   - Do not merge unrelated facts into a single vague claim if it obscures which pointer backs which detail.
+2. COMPACT INDEX, NOT VERBATIM DUMP:
+   - Summarize concisely using Markdown bullet points (`- `). Preserve exact names, hardware specs, preferences, and hard boundaries, while leaving verbose anecdotes in raw storage for on-demand lookup via [#ID].
+3. DYNAMIC SECTIONS:
+   - Create section titles that fit this specific user organically. Do not force empty categories.
+4. ICON ASSIGNMENTS:
+   - Assign `icon` strictly from: "star", "heart", "code", "target", "devices", "sparkles", "profile", "book", "music".
+   - NEVER use emoji characters anywhere in titles, subtitles, bullets, or dive_deeper prompts.
+5. DIVE DEEPER:
+   - Provide 2 to 4 concise follow-up prompts in `dive_deeper` without emojis.
+6. JSON OUTPUT:
+   - Respond ONLY with a valid JSON object matching the requested schema. No markdown fences or prose outside JSON.
 """.trimIndent()
 
 /**
@@ -871,14 +950,22 @@ fun buildAskOrUpdatePrompt(
         appendLine("INSTRUCTIONS (BLOCK-LEVEL DELTA EFFICIENCY):")
         appendLine("Do NOT rewrite the entire summary document. Respond with a JSON delta affecting ONLY the relevant section:")
         appendLine("- To update/expand an existing section: {\"action\": \"update_section\", \"target_section\": \"Section Name\", \"section\": {\"icon\": \"icon_name\", \"title\": \"Section Name\", \"content\": \"Updated or elaborated content...\"}}")
+        appendLine("  Alternatively, use surgical line_edits for 1-3 bullet modifications:")
+        appendLine("  {\"action\": \"update_section\", \"target_section\": \"Section Name\", \"line_edits\": [{\"op\": \"replace\", \"find\": \"old bullet\", \"replace\": \"new bullet [#ID]\"}]}")
         appendLine("- To add a new category: {\"action\": \"add_section\", \"section\": {\"icon\": \"icon_name\", \"title\": \"New Category Name\", \"content\": \"New category content...\"}}")
         appendLine("- To delete a category: {\"action\": \"delete_section\", \"target_section\": \"Section Name\"}")
+        appendLine("- To answer a user question without modifying the summary: {\"action\": \"no_op\", \"assistant_reply\": \"Concise answer here.\"}")
+        appendLine("- For multi-section edits: {\"action\": \"patch_operations\", \"operations\": [...]}")
+        appendLine()
+        appendLine("PROVENANCE RULES:")
+        appendLine("Preserve existing [#ID] citations verbatim. Never invent new IDs.")
+        appendLine("Zero emoji characters anywhere in output.")
         appendLine()
         appendLine("If the user instruction alters, creates, or deletes a durable factual detail (e.g. favorite color, school, project, location), also include 'raw_memory_updates' to synchronize the SQLite database:")
         appendLine("  \"raw_memory_updates\": [")
         appendLine("    {\"action\": \"create\", \"content\": \"User's favorite color is purple\"},")
-        appendLine("    {\"action\": \"update\", \"search\": \"favorite color\", \"content\": \"User's favorite color is purple\"},")
-        appendLine("    {\"action\": \"delete\", \"search\": \"old note to remove\"}")
+        appendLine("    {\"action\": \"update\", \"id\": 79, \"search\": \"favorite color\", \"content\": \"User's favorite color is purple\"},")
+        appendLine("    {\"action\": \"delete\", \"id\": 82, \"search\": \"old note to remove\"}")
         appendLine("  ]")
         appendLine()
         appendLine("Respond ONLY with the JSON object.")

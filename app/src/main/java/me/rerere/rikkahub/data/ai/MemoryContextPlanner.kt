@@ -5,8 +5,45 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.limitContext
+import me.rerere.rikkahub.data.db.entity.MemorySummaryEntity
+import me.rerere.rikkahub.data.memory.MemorySummaryData
+import me.rerere.rikkahub.data.memory.MemorySummaryMarkdownCodec
+import me.rerere.rikkahub.data.memory.TokenEstimator
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.ContextPriority
+
+object MemoryContextPlanner {
+    private const val MAX_SUMMARY_CONTEXT_TOKENS = 3_500
+
+    fun buildHierarchicalSummarySystemBlock(
+        summaryEntity: MemorySummaryEntity,
+        parsedSummary: MemorySummaryData?,
+    ): String {
+        val rawText = when {
+            parsedSummary != null && parsedSummary.sections.isNotEmpty() ->
+                MemorySummaryMarkdownCodec.encodeFullDocument(parsedSummary)
+            summaryEntity.rawMarkdown.isNotBlank() ->
+                summaryEntity.rawMarkdown
+            else -> return ""
+        }
+
+        val boundedSummary = TokenEstimator.truncateToTokenBudget(rawText, MAX_SUMMARY_CONTEXT_TOKENS)
+
+        return buildString {
+            appendLine("<memory_summary_index>")
+            appendLine(boundedSummary)
+            appendLine("</memory_summary_index>")
+            appendLine()
+            appendLine("<memory_pointer_protocol>")
+            appendLine("1. The <memory_summary_index> above is a compact overview of the user's persistent memories. Inline tags such as [#79] or [#182, #240] are database pointers to verbatim raw memory records.")
+            appendLine("2. Do NOT show raw [#ID] tags in your normal reply to the user unless they explicitly ask for memory IDs or sources.")
+            appendLine("3. ON-DEMAND RETRIEVAL: Call `get_memories(ids=[...])` ONLY when you need exact quotes, timestamps, technical details, or full context behind a summarized item to answer accurately. Combine multiple IDs into a single batched call.")
+            appendLine("4. ANTI-HALLUCINATION: Never guess details omitted from the summary or fabricate facts for IDs reported in `missing_ids`.")
+            appendLine("5. SUMMARY MAINTENANCE: When the user asks to inspect, amend, or reorganize their memory summary during chat, use `manage_memory_summary` (prefer `update_section` over `replace_summary`). When storing a brand-new persistent fact, continue using `create_memory` first so it receives a database ID.")
+            appendLine("</memory_pointer_protocol>")
+        }.trim()
+    }
+}
 
 internal data class MemoryContextSelection(
     val memories: List<AssistantMemory>,
