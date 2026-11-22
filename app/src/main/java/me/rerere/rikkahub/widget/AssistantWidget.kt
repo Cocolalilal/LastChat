@@ -13,6 +13,7 @@ import android.net.Uri
 import android.util.Log
 import android.widget.RemoteViews
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -112,25 +113,20 @@ class AssistantWidget : GlanceAppWidget(errorUiLayout = R.layout.widget_assistan
         provideContent {
             // Read state using Glance's currentState - this will be updated automatically
             val prefs = currentState<Preferences>()
-            val hasValidWidgetId = appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID
+            // Active Glance sessions must observe our canonical snapshot too: an update event
+            // alone does not recompose when Glance's own persisted preferences are unchanged.
+            val savedConfig by remember(context, appWidgetId) {
+                WidgetPrefs.configFlow(context, appWidgetId)
+            }.collectAsState(initial = WidgetPrefs.getConfig(context, appWidgetId))
+            val config = savedConfig ?: resolveWidgetConfig(context, appWidgetId, prefs)
+            val assistantIdStr = config.assistantId
+            val assistantName = config.assistantName
+            val avatarType = config.avatarType
+            val avatarData = config.avatarData
+            val presetId = config.presetId
+            val seed = config.seed
+            val variant = config.variant
 
-            val assistantIdStr = prefs[ASSISTANT_ID_KEY]
-                ?: if (hasValidWidgetId) WidgetPrefs.getAssistantId(context, appWidgetId) else null
-            val assistantName = prefs[ASSISTANT_NAME_KEY]
-                ?: if (hasValidWidgetId) WidgetPrefs.getAssistantName(context, appWidgetId) else "Assistant"
-            val avatarType = prefs[AVATAR_TYPE_KEY]
-                ?: if (hasValidWidgetId) WidgetPrefs.getAvatarType(context, appWidgetId) else "dummy"
-            val avatarData = prefs[AVATAR_DATA_KEY]
-                ?: if (hasValidWidgetId) WidgetPrefs.getAvatarData(context, appWidgetId) else ""
-            val presetId = if (hasValidWidgetId) WidgetPrefs.getPresetId(context, appWidgetId)
-                else prefs[AVATAR_PRESET_KEY]
-            val prefSeed = prefs[AVATAR_SEED_KEY]
-            val prefVariant = prefs[AVATAR_VARIANT_KEY]
-            val seed = if (hasValidWidgetId) WidgetPrefs.getSeed(context, appWidgetId) else (prefSeed ?: 0)
-            val variant = if (hasValidWidgetId) WidgetPrefs.getVariant(context, appWidgetId) else (prefVariant ?: 0)
-            
-            Log.d(TAG, "State from prefs: id=$assistantIdStr, name=$assistantName, type=$avatarType, seed=$seed, variant=$variant")
-            
             val assistantId = assistantIdStr?.let { 
                 try { Uuid.parse(it) } catch (e: Exception) { null }
             }
@@ -138,6 +134,8 @@ class AssistantWidget : GlanceAppWidget(errorUiLayout = R.layout.widget_assistan
             GlanceTheme {
                 WidgetContent(
                     context = context,
+                    appWidgetId = appWidgetId,
+                    config = config,
                     assistantId = assistantId,
                     assistantName = assistantName,
                     avatarType = avatarType,
@@ -153,6 +151,8 @@ class AssistantWidget : GlanceAppWidget(errorUiLayout = R.layout.widget_assistan
     @Composable
     private fun WidgetContent(
         context: Context,
+        appWidgetId: Int,
+        config: WidgetConfig,
         assistantId: Uuid?,
         assistantName: String,
         avatarType: String,
@@ -172,19 +172,29 @@ class AssistantWidget : GlanceAppWidget(errorUiLayout = R.layout.widget_assistan
             WidgetAvatarRenderer.DEFAULT_BITMAP_PX
         }
 
-        // Never block the Glance composition thread on network or bitmap rendering.
-        // The native avatar is already available while the selected image is prepared.
         val request = WidgetAvatarRequest(avatarType, avatarData, assistantName, seed, variant, sizePx, presetId)
-        val placeholder = remember(context) {
-            val source = BitmapFactory.decodeResource(context.resources, R.drawable.default_generical_pfp)
-            if (source != null) makeCircular(source).also { source.recycle() } else createTextBitmap("LastChat")
+        // Local frames are ready in the first composition. Never publish an unrelated avatar
+        // while produceState loads an image: launchers can retain that frame after process death.
+        val initial = remember(request, appWidgetId) {
+            WidgetAvatarCache.read(context, appWidgetId, config)
+                ?: createLocalAvatarBitmap(context, avatarType, avatarData, assistantName, seed, variant, sizePx, presetId)
+                ?: createTextBitmap(assistantName)
         }
-        val avatarBitmap by produceState(placeholder, request) {
-            value = withContext(Dispatchers.IO) {
-                createAvatarBitmap(context, request.avatarType, request.avatarData, request.fallbackName,
-                    request.seed, request.variant, request.sizePx, request.presetId)
+        val avatarBitmap = if (avatarType == "image") {
+            // A new request gets its own state immediately, even within an existing Glance session.
+            androidx.compose.runtime.key(request) {
+                val loaded by produceState(initial, request) {
+                    withContext(Dispatchers.IO) {
+                        val bitmap = loadImageBitmap(context, avatarData)
+                        if (bitmap != null) {
+                            WidgetAvatarCache.write(context, appWidgetId, config, bitmap)
+                            value = bitmap
+                        }
+                    }
+                }
+                loaded
             }
-        }
+        } else initial
         val image = ImageProvider(avatarBitmap)
 
         Box(
@@ -213,6 +223,21 @@ class AssistantWidget : GlanceAppWidget(errorUiLayout = R.layout.widget_assistan
         sizePx: Int = WidgetAvatarRenderer.DEFAULT_BITMAP_PX,
         presetId: String? = null,
     ): Bitmap {
+        return if (avatarType == "image") loadImageBitmap(context, avatarData) ?: createTextBitmap(fallbackName)
+        else createLocalAvatarBitmap(context, avatarType, avatarData, fallbackName, seed, variant, sizePx, presetId)
+            ?: createTextBitmap(fallbackName)
+    }
+
+    internal fun createLocalAvatarBitmap(
+        context: Context,
+        avatarType: String,
+        avatarData: String,
+        fallbackName: String,
+        seed: Int = 0,
+        variant: Int = 0,
+        sizePx: Int = WidgetAvatarRenderer.DEFAULT_BITMAP_PX,
+        presetId: String? = null,
+    ): Bitmap? {
         return when (avatarType) {
             "animated" -> {
                 try {
@@ -231,10 +256,12 @@ class AssistantWidget : GlanceAppWidget(errorUiLayout = R.layout.widget_assistan
                 }
             }
             "emoji" -> createEmojiBitmap(avatarData)
-            "image" -> loadImageBitmap(context, avatarData) ?: createTextBitmap(fallbackName)
+            "image" -> null
             "resource" -> {
                 try {
-                    val resId = avatarData.toIntOrNull() ?: R.drawable.default_generical_pfp
+                    val resId = avatarData.toIntOrNull()
+                        ?: context.resources.getIdentifier(avatarData, "drawable", context.packageName)
+                    if (resId == 0) return createTextBitmap(fallbackName)
                     val sourceBitmap = BitmapFactory.decodeResource(context.resources, resId)
                     if (sourceBitmap != null) {
                         makeCircular(sourceBitmap).also { sourceBitmap.recycle() }
@@ -402,12 +429,35 @@ internal fun widgetLaunchIntent(context: Context, assistantId: String?): Intent 
     }
 }
 
+internal fun resolveWidgetConfig(context: Context, appWidgetId: Int, prefs: Preferences): WidgetConfig =
+    WidgetPrefs.getConfig(context, appWidgetId) ?: WidgetConfig(
+        assistantId = prefs[AssistantWidget.ASSISTANT_ID_KEY],
+        assistantName = prefs[AssistantWidget.ASSISTANT_NAME_KEY] ?: "Assistant",
+        avatarType = prefs[AssistantWidget.AVATAR_TYPE_KEY] ?: "dummy",
+        avatarData = prefs[AssistantWidget.AVATAR_DATA_KEY] ?: "",
+        seed = prefs[AssistantWidget.AVATAR_SEED_KEY] ?: 0,
+        variant = prefs[AssistantWidget.AVATAR_VARIANT_KEY] ?: 0,
+        presetId = prefs[AssistantWidget.AVATAR_PRESET_KEY],
+    ).migrateStockAvatar()
+
 internal fun widgetFallbackViews(context: Context, appWidgetId: Int): RemoteViews =
     RemoteViews(context.packageName, R.layout.widget_assistant_loading).apply {
+        val config = WidgetPrefs.getConfig(context, appWidgetId)
+        if (config != null) {
+            val bitmap = WidgetAvatarCache.read(context, appWidgetId, config)
+                ?: AssistantWidget().createLocalAvatarBitmap(
+                    context, config.avatarType, config.avatarData, config.assistantName,
+                    config.seed, config.variant, presetId = config.presetId,
+                )
+            val fallback = bitmap ?: AssistantWidget().createLocalAvatarBitmap(
+                context, "dummy", "", config.assistantName,
+            )
+            setImageViewBitmap(R.id.assistant_widget_avatar, fallback)
+        }
         setOnClickPendingIntent(
             R.id.assistant_widget_avatar,
             PendingIntent.getActivity(context, appWidgetId,
-                widgetLaunchIntent(context, WidgetPrefs.getAssistantId(context, appWidgetId)),
+                widgetLaunchIntent(context, config?.assistantId),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE),
         )
     }

@@ -2,6 +2,52 @@ package me.rerere.rikkahub.widget
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID
+import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.utils.JsonInstant
+
+internal data class WidgetConfig(
+    val assistantId: String?,
+    val assistantName: String = "Assistant",
+    val avatarType: String = "dummy",
+    val avatarData: String = "",
+    val seed: Int = 0,
+    val variant: Int = 0,
+    val presetId: String? = null,
+) {
+    fun migrateStockAvatar(): WidgetConfig {
+        if (assistantId != DEFAULT_ASSISTANT_ID.toString()) return this
+        val legacyResource = avatarType == "resource" &&
+            (avatarData == R.drawable.default_generical_pfp.toString() ||
+                // Verified stock resource ID in the shipped stable 1.4.9 APKs. Numeric IDs
+                // can change after an upgrade; new widget configurations store resource names.
+                avatarData == 0x7f080099.toString() || avatarData == "default_generical_pfp")
+        val oldMark = if (avatarType == "animated") runCatching {
+            JsonInstant.decodeFromString(Avatar.Animated.serializer(), avatarData)
+        }.getOrNull() else null
+        val stockMarks = listOf(
+            Avatar.Animated(colorHex = "#7C5CFF", colorPreset = "indigo"),
+            Avatar.Animated(
+                colorHex = Avatar.Animated.GENERICAL_BLUE_HEX,
+                colorPreset = Avatar.Animated.GENERICAL_BLUE_PRESET,
+            ),
+            Avatar.Animated(
+                colorHex = Avatar.Animated.GENERICAL_BLUE_HEX,
+                colorPreset = Avatar.Animated.GENERICAL_BLUE_PRESET,
+                stockColorVersion = 1,
+            ),
+        )
+        return if (legacyResource || oldMark in stockMarks) copy(
+            avatarType = "animated",
+            avatarData = JsonInstant.encodeToString(Avatar.Animated.serializer(), Avatar.Animated.defaultGenerical()),
+        ) else this
+    }
+}
 
 /**
  * Simple SharedPreferences-based storage for widget configuration.
@@ -16,6 +62,33 @@ object WidgetPrefs {
         return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
     
+    internal fun configFlow(context: Context, widgetId: Int): Flow<WidgetConfig?> = callbackFlow {
+        val preferences = prefs(context)
+        val prefix = "widget_${widgetId}_"
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == null || key.startsWith(prefix)) trySend(getConfig(context, widgetId))
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        trySend(getConfig(context, widgetId))
+        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
+
+    // Read one committed snapshot: never combine different configurations during reconfiguration.
+    internal fun getConfig(context: Context, widgetId: Int): WidgetConfig? {
+        val values = prefs(context).all
+        val prefix = "widget_${widgetId}_"
+        val id = values[prefix + "id"] as? String ?: return null
+        return WidgetConfig(
+            assistantId = id,
+            assistantName = values[prefix + "name"] as? String ?: "Assistant",
+            avatarType = values[prefix + "avatar_type"] as? String ?: "dummy",
+            avatarData = values[prefix + "avatar_data"] as? String ?: "",
+            seed = values[prefix + "seed"] as? Int ?: defaultSeedFor(widgetId),
+            variant = values[prefix + "variant"] as? Int ?: 0,
+            presetId = values[prefix + "preset"] as? String,
+        ).migrateStockAvatar()
+    }
+
     fun defaultSeedFor(widgetId: Int): Int {
         val mixed = (widgetId * 1_103_515_245) xor 0x3C6EF35F
         return if (mixed != 0) mixed else 0x5A5A5A5A
@@ -127,6 +200,7 @@ object WidgetPrefs {
             .remove("widget_${widgetId}_seed")
             .remove("widget_${widgetId}_variant")
             .remove("widget_${widgetId}_face_index")
-            .apply()
+            .commit()
+        WidgetAvatarCache.delete(context, widgetId)
     }
 }

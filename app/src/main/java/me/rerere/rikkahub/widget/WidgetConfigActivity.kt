@@ -225,7 +225,7 @@ class WidgetConfigActivity : ComponentActivity() {
             is Avatar.Dummy -> "dummy" to ""
             is Avatar.Emoji -> "emoji" to avatar.content
             is Avatar.Image -> "image" to avatar.url
-            is Avatar.Resource -> "resource" to avatar.id.toString()
+            is Avatar.Resource -> "resource" to resources.getResourceEntryName(avatar.id)
             is Avatar.Animated -> "animated" to JsonInstant.encodeToString(
                 Avatar.Animated.serializer(),
                 avatar
