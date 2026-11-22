@@ -18,9 +18,7 @@ import kotlinx.coroutines.CancellationException
 import me.rerere.rikkahub.data.ai.rag.EmbeddingAvailability
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
 import androidx.compose.runtime.Immutable
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -137,7 +135,7 @@ class AssistantDetailVM(
 
     val summaryUiState: StateFlow<MemorySummaryUiState> = combine(
         memoryRepository.getMemorySummaryFlow(assistantId.toString()),
-        memoryDAO?.getMemoryIdsFlow(assistantId.toString()) ?: flowOf(emptyList()),
+        memoryDAO?.getMemoryIdsFlow(assistantId.toString()) ?: flowOf(emptyList<Int>()),
         _isSummaryGenerating,
         _summaryError,
         _inspectedMemoryId,
