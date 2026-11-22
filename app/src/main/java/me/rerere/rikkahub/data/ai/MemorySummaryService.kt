@@ -88,6 +88,7 @@ interface SummaryLlmExecutor {
         assistantId: String,
         systemPrompt: String,
         userPrompt: String,
+        onProgress: ((stage: String, reasoning: String, delta: String) -> Unit)? = null,
     ): String
 }
 
@@ -100,6 +101,7 @@ class DefaultSummaryLlmExecutor(
         assistantId: String,
         systemPrompt: String,
         userPrompt: String,
+        onProgress: ((stage: String, reasoning: String, delta: String) -> Unit)?,
     ): String {
         val settings = settingsStore.settingsFlow.first()
         val assistant = settings.getAssistantById(assistantId)
@@ -118,20 +120,43 @@ class DefaultSummaryLlmExecutor(
         )
 
         val responseBuilder = StringBuilder()
+        val reasoningBuilder = StringBuilder()
+        onProgress?.invoke("Connecting to ${model.displayName}...", "", "")
+
         providerHandler.streamText(
             providerSetting = provider,
             messages = messages,
             params = params,
         ).collect { chunk ->
-            // Streaming integrity: Never call .trim() or .toContentText() on chunk deltas
-            val delta = chunk.choices.firstOrNull()?.delta?.parts
-                ?.filterIsInstance<UIMessagePart.Text>()?.joinToString("") { it.text }.orEmpty()
-            if (delta.isNotEmpty()) {
-                responseBuilder.append(delta)
+            var updatedReasoning = false
+            var updatedText = false
+            chunk.choices.firstOrNull()?.delta?.parts?.forEach { part ->
+                when (part) {
+                    is UIMessagePart.Reasoning -> {
+                        reasoningBuilder.append(part.reasoning)
+                        updatedReasoning = true
+                    }
+                    is UIMessagePart.Thinking -> {
+                        reasoningBuilder.append(part.thinking)
+                        updatedReasoning = true
+                    }
+                    is UIMessagePart.Text -> {
+                        responseBuilder.append(part.text)
+                        updatedText = true
+                    }
+                    else -> {}
+                }
+            }
+            if (updatedReasoning || updatedText) {
+                val stage = if (responseBuilder.isNotEmpty()) "Synthesizing summary sections..." else "Thinking & analyzing memories..."
+                onProgress?.invoke(stage, reasoningBuilder.toString(), responseBuilder.toString())
             }
         }
         val rawResponse = responseBuilder.toString()
         if (rawResponse.isBlank()) {
+            if (reasoningBuilder.isNotBlank()) {
+                throw IllegalStateException("Model generated reasoning thoughts but no structured JSON content.")
+            }
             throw IllegalStateException("Empty response received from model for assistant $assistantId")
         }
         return rawResponse
@@ -141,14 +166,25 @@ class DefaultSummaryLlmExecutor(
         settings: Settings,
         assistant: Assistant,
     ): Pair<Model, ProviderSetting>? {
-        val model = settings.findModelById(settings.summarizerModelId)
-            ?: settings.findModelById(assistant.backgroundModelId)
-            ?: settings.findModelById(assistant.chatModelId)
-            ?: settings.findModelById(settings.chatModelId)
-            ?: return null
-        val rawProvider = model.findProvider(settings.providers) ?: return null
-        val populatedProvider = secretKeyManager.populateProviderSecrets(rawProvider)
-        return model to populatedProvider
+        val candidates = listOfNotNull(
+            assistant.backgroundModelId,
+            assistant.chatModelId,
+            settings.summarizerModelId,
+            settings.chatModelId,
+        )
+        for (candidateId in candidates) {
+            val model = settings.findModelById(candidateId) ?: continue
+            val rawProv = model.findProvider(settings.providers) ?: continue
+            val populated = secretKeyManager.populateProviderSecrets(rawProv)
+            return model to populated
+        }
+        for (prov in settings.providers) {
+            if (!prov.enabled) continue
+            val populated = secretKeyManager.populateProviderSecrets(prov)
+            val model = prov.models.firstOrNull() ?: continue
+            return model to populated
+        }
+        return null
     }
 }
 
@@ -247,6 +283,7 @@ class MemorySummaryService(
     suspend fun askOrUpdate(
         assistantId: String,
         userInstruction: String,
+        onProgress: ((stage: String, reasoning: String, delta: String) -> Unit)? = null,
     ): Result<Pair<String, Boolean>> = runCatching {
         val snapshot = readSummarySnapshot(assistantId)
         val memories = withContext(Dispatchers.IO) { memoryDAO.getMemoriesByAssistant(assistantId) }
@@ -257,60 +294,74 @@ class MemorySummaryService(
             instruction = userInstruction,
         )
 
-        // Accumulate streaming chunks verbatim inside llmExecutor; never .trim() deltas.
+        onProgress?.invoke("Processing instruction with assistant model...", "", "")
         val rawResponse = llmExecutor.completeJson(
             assistantId = assistantId,
             systemPrompt = DELTA_PATCH_SYSTEM_PROMPT,
             userPrompt = userPrompt,
+            onProgress = onProgress,
         )
 
-        val patch = parsePatchJson(rawResponse)
-        val allowFullRewrite = SummaryPatchEngine.userExplicitlyRequestedFullRewrite(userInstruction)
+        // 1. Try parsing as a structured patch
+        val patch = runCatching { parsePatchJson(rawResponse) }.getOrNull()
+        if (patch != null && (patch.operations.isNotEmpty() || patch.rawMemoryUpdates.isNotEmpty() || patch.action.isNotBlank())) {
+            val allowFullRewrite = SummaryPatchEngine.userExplicitlyRequestedFullRewrite(userInstruction)
 
-        if (patch.action.equals("no_op", ignoreCase = true) && patch.rawMemoryUpdates.isEmpty()) {
-            return@runCatching (patch.assistantReply ?: "No changes were required.") to false
-        }
+            if (patch.action.equals("no_op", ignoreCase = true) && patch.rawMemoryUpdates.isEmpty()) {
+                return@runCatching (patch.assistantReply ?: "No changes were required.") to false
+            }
 
-        // Apply surgical patch atomically; re-verify revision inside lock
-        mutexFor(assistantId).withLock {
-            database.withTransaction {
-                val latestEntity = memorySummaryDao.getSummaryOnce(assistantId)
-                val latestData = latestEntity?.let(::decodeSummaryEntity) ?: snapshot.data
-                val baseRevision = latestEntity?.revision ?: 0L
+            return@runCatching mutexFor(assistantId).withLock {
+                database.withTransaction {
+                    val latestEntity = memorySummaryDao.getSummaryOnce(assistantId)
+                    val latestData = latestEntity?.let(::decodeSummaryEntity) ?: snapshot.data
+                    val baseRevision = latestEntity?.revision ?: 0L
 
-                // Apply any raw memory updates first without triggering recursive scheduling
-                val deletedIds = applyRawMemoryUpdates(assistantId, patch.rawMemoryUpdates)
+                    val deletedIds = applyRawMemoryUpdates(assistantId, patch.rawMemoryUpdates)
 
-                var applyResult = SummaryPatchEngine.applyPatch(
-                    current = latestData,
-                    patch = patch,
-                    allowFullRewrite = allowFullRewrite,
-                )
-
-                if (deletedIds.isNotEmpty()) {
-                    applyResult = applyResult.copy(
-                        updated = prunePointerIdsFromSummary(applyResult.updated, deletedIds)
+                    var applyResult = SummaryPatchEngine.applyPatch(
+                        current = latestData,
+                        patch = patch,
+                        allowFullRewrite = allowFullRewrite,
                     )
-                }
 
-                if (applyResult.modifiedSectionKeys.isNotEmpty() || deletedIds.isNotEmpty()) {
-                    commitSummaryLocked(
-                        assistantId = assistantId,
-                        data = applyResult.updated,
-                        expectedRevision = baseRevision,
-                        isManualEdit = false,
-                    )
-                }
-
-                val reply = patch.assistantReply?.takeIf { it.isNotBlank() }
-                    ?: if (applyResult.modifiedSectionKeys.isNotEmpty()) {
-                        "Updated ${applyResult.modifiedSectionKeys.size} section(s)."
-                    } else {
-                        "Summary is already up to date."
+                    if (deletedIds.isNotEmpty()) {
+                        applyResult = applyResult.copy(
+                            updated = prunePointerIdsFromSummary(applyResult.updated, deletedIds)
+                        )
                     }
-                reply to (applyResult.modifiedSectionKeys.isNotEmpty() || deletedIds.isNotEmpty())
+
+                    if (applyResult.modifiedSectionKeys.isNotEmpty() || deletedIds.isNotEmpty()) {
+                        commitSummaryLocked(
+                            assistantId = assistantId,
+                            data = applyResult.updated,
+                            expectedRevision = baseRevision,
+                            isManualEdit = false,
+                        )
+                    }
+
+                    val reply = patch.assistantReply?.takeIf { it.isNotBlank() }
+                        ?: if (applyResult.modifiedSectionKeys.isNotEmpty()) {
+                            "Updated ${applyResult.modifiedSectionKeys.size} section(s)."
+                        } else {
+                            "Summary is already up to date."
+                        }
+                    reply to (applyResult.modifiedSectionKeys.isNotEmpty() || deletedIds.isNotEmpty())
+                }
             }
         }
+
+        // 2. Try parsing as full replacement MemorySummaryData
+        val fullData = runCatching { parseSummaryJson(rawResponse) }.getOrNull()
+        if (fullData != null && fullData.sections.isNotEmpty()) {
+            val nextRev = updateSummaryInteractive(assistantId, fullData, snapshot.revision)
+            return@runCatching "Updated ${fullData.sections.size} section(s) in summary (rev $nextRev)." to true
+        }
+
+        // 3. Conversational answer to user question
+        val answer = rawResponse.trim()
+            .removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        answer to false
     }
 
     /**
@@ -509,7 +560,10 @@ class MemorySummaryService(
     /**
      * Re-synthesizes the entire memory baseline from all currently stored memories.
      */
-    suspend fun fullRegenerate(assistantId: String): Result<MemorySummaryData> = runCatching {
+    suspend fun fullRegenerate(
+        assistantId: String,
+        onProgress: ((stage: String, reasoning: String, delta: String) -> Unit)? = null,
+    ): Result<MemorySummaryData> = runCatching {
         val memories = withContext(Dispatchers.IO) { memoryDAO.getMemoriesByAssistant(assistantId) }
         if (memories.isEmpty()) {
             val emptyData = MemorySummaryData(
@@ -532,11 +586,14 @@ class MemorySummaryService(
             return@runCatching emptyData
         }
 
+        onProgress?.invoke("Preparing ${memories.size} raw memories for synthesis...", "", "")
         val rawFull = llmExecutor.completeJson(
             assistantId = assistantId,
             systemPrompt = DEFAULT_MEMORY_SUMMARY_SYSTEM_PROMPT,
             userPrompt = buildFullSynthesisPrompt(memories),
+            onProgress = onProgress,
         )
+        onProgress?.invoke("Structuring sections and verifying provenance pointers...", "", "")
         val parsed = parseSummaryJson(rawFull)
         val hydrated = MemoryPointerParser.hydrateProvenance(parsed)
 
@@ -726,7 +783,36 @@ class MemorySummaryService(
             appendLine(MemoryPointerParser.formatForIngestion(m.id, m.content, iso))
         }
         appendLine("</memories>")
-        appendLine("Synthesize the JSON MemorySummaryData with mandatory [#ID] citations on every claim.")
+        appendLine(
+            """
+            Synthesize the user's raw memories into a structured Hierarchical Pointer Index JSON object.
+            Requirements:
+            1. Every factual statement or bullet MUST end with its backing citation pointer: [#ID] or [#ID1, #ID2].
+            2. Assign each section an icon strictly from: "star", "heart", "code", "target", "devices", "sparkles", "profile", "book", "music".
+               - Use 'heart' for passions, hobbies, relationships, entertainment.
+               - Use 'devices' for hardware, gadgets, specs.
+               - Use 'code' for programming, tools, dev environment.
+               - Use 'star' for core identity, life goals.
+            3. Respond ONLY with valid JSON matching this schema:
+            {
+              "title": "Your Summary",
+              "subtitle": "Brief overview of what I know about you.",
+              "sections": [
+                {
+                  "icon": "heart",
+                  "title": "Interests & Passions",
+                  "content": "- Enjoys science fiction and classical literature [#12]\n- Passionate about open-source mobile tools [#15]"
+                }
+              ],
+              "dive_deeper": [
+                {
+                  "prompt": "What are my current goals?",
+                  "context": "Goals"
+                }
+              ]
+            }
+            """.trimIndent()
+        )
     }
 
     private fun buildDeltaPrompt(
@@ -750,6 +836,17 @@ class MemorySummaryService(
         appendLine("<instruction>")
         appendLine(instruction)
         appendLine("</instruction>")
+        appendLine(
+            """
+            Respond ONLY with a JSON object. You may return:
+            1. An updated MemorySummaryData object:
+               {"title": "...", "subtitle": "...", "sections": [{"icon": "heart", "title": "...", "content": "..."}], "dive_deeper": [...]}
+            OR
+            2. A MemorySectionPatch object:
+               {"operations": [...], "dive_deeper": [...]}
+            Ensure all cited claims retain or add exact [#ID] pointers.
+            """.trimIndent()
+        )
     }
 
     fun decodeSummaryEntity(entity: MemorySummaryEntity): MemorySummaryData {
@@ -764,8 +861,13 @@ class MemorySummaryService(
     private fun parsePatchJson(raw: String): MemorySectionPatch =
         json.decodeFromString(extractJsonObject(raw))
 
-    private fun parseSummaryJson(raw: String): MemorySummaryData =
-        json.decodeFromString(extractJsonObject(raw))
+    private fun parseSummaryJson(raw: String): MemorySummaryData {
+        val cleaned = extractJsonObject(raw)
+        return parseMemorySummaryJson(cleaned)
+            ?: parseMemorySummaryJson(raw)
+            ?: runCatching { json.decodeFromString<MemorySummaryData>(cleaned) }.getOrNull()
+            ?: MemorySummaryMarkdownCodec.decodeSectionsFromMarkdown(raw, MemorySummaryData())
+    }
 
     private fun extractJsonObject(raw: String): String {
         val cleaned = raw.trim()

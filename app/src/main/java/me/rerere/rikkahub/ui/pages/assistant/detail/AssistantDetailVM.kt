@@ -55,13 +55,27 @@ data class MemoryRetrievalDebugState(
 )
 
 @Immutable
+data class MemorySummaryAgentState(
+    val isWorking: Boolean = false,
+    val stage: String = "",
+    val reasoning: String = "",
+    val liveDelta: String = "",
+    val answer: String? = null,
+    val error: String? = null,
+)
+
+@Immutable
 data class MemorySummaryUiState(
     val summaryData: MemorySummaryData = MemorySummaryData(),
     val validMemoryIds: Set<Int> = emptySet(),
     val revision: Long = 0L,
+    val lastSyncedAt: Long = 0L,
+    val lastManualEditAt: Long = 0L,
     val tokenCount: Int = 0,
     val isGenerating: Boolean = false,
     val statusMessage: String? = null,
+    val error: String? = null,
+    val agentState: MemorySummaryAgentState = MemorySummaryAgentState(),
     val inspectedMemoryId: Int? = null,
     val inspectedMemory: MemoryEntity? = null,
     val isLoadingReceipt: Boolean = false,
@@ -104,14 +118,44 @@ class AssistantDetailVM(
     private val _summaryError = MutableStateFlow<String?>(null)
     val summaryError: StateFlow<String?> = _summaryError.asStateFlow()
 
+    private val _agentState = MutableStateFlow(MemorySummaryAgentState())
+    val agentState: StateFlow<MemorySummaryAgentState> = _agentState.asStateFlow()
+
+    fun clearAgentState() {
+        _agentState.value = MemorySummaryAgentState()
+    }
+
     fun regenerateMemorySummary() {
         viewModelScope.launch {
             _isSummaryGenerating.value = true
             _summaryError.value = null
-            memorySummaryService.fullRegenerate(assistantId.toString())
-                .onFailure {
-                    _summaryError.value = it.message ?: "Failed to generate summary"
+            _agentState.value = MemorySummaryAgentState(
+                isWorking = true,
+                stage = "Analyzing memories and preparing synthesis...",
+            )
+            memorySummaryService.fullRegenerate(
+                assistantId = assistantId.toString(),
+                onProgress = { stage, reasoning, delta ->
+                    _agentState.value = MemorySummaryAgentState(
+                        isWorking = true,
+                        stage = stage,
+                        reasoning = reasoning,
+                        liveDelta = delta,
+                    )
                 }
+            ).onSuccess {
+                _agentState.value = MemorySummaryAgentState(
+                    isWorking = false,
+                    stage = "Summary synthesized successfully",
+                )
+            }.onFailure { e ->
+                val errorMsg = e.message ?: "Failed to generate summary"
+                _summaryError.value = errorMsg
+                _agentState.value = MemorySummaryAgentState(
+                    isWorking = false,
+                    error = errorMsg,
+                )
+            }
             _isSummaryGenerating.value = false
         }
     }
@@ -121,10 +165,35 @@ class AssistantDetailVM(
         viewModelScope.launch {
             _isSummaryGenerating.value = true
             _summaryError.value = null
-            memorySummaryService.askOrUpdate(assistantId.toString(), instruction)
-                .onFailure {
-                    _summaryError.value = it.message ?: "Failed to update summary"
+            _agentState.value = MemorySummaryAgentState(
+                isWorking = true,
+                stage = "Processing instruction...",
+            )
+            memorySummaryService.askOrUpdate(
+                assistantId = assistantId.toString(),
+                userInstruction = instruction,
+                onProgress = { stage, reasoning, delta ->
+                    _agentState.value = MemorySummaryAgentState(
+                        isWorking = true,
+                        stage = stage,
+                        reasoning = reasoning,
+                        liveDelta = delta,
+                    )
                 }
+            ).onSuccess { (reply, wasUpdated) ->
+                _agentState.value = MemorySummaryAgentState(
+                    isWorking = false,
+                    stage = if (wasUpdated) "Summary updated" else "Response ready",
+                    answer = reply,
+                )
+            }.onFailure { e ->
+                val errorMsg = e.message ?: "Failed to update summary"
+                _summaryError.value = errorMsg
+                _agentState.value = MemorySummaryAgentState(
+                    isWorking = false,
+                    error = errorMsg,
+                )
+            }
             _isSummaryGenerating.value = false
         }
     }
@@ -138,6 +207,7 @@ class AssistantDetailVM(
         memoryDAO?.getMemoryIdsFlow(assistantId.toString()) ?: flowOf(emptyList<Int>()),
         _isSummaryGenerating,
         _summaryError,
+        _agentState,
         _inspectedMemoryId,
         _inspectedMemory,
         _isLoadingReceipt,
@@ -147,18 +217,23 @@ class AssistantDetailVM(
         val memoryIds = args[1] as? List<Int> ?: emptyList()
         val isGenerating = args[2] as Boolean
         val summaryError = args[3] as? String
-        val inspectedId = args[4] as? Int
-        val inspectedRow = args[5] as? MemoryEntity
-        val loadingReceipt = args[6] as Boolean
+        val curAgentState = args[4] as? MemorySummaryAgentState ?: MemorySummaryAgentState()
+        val inspectedId = args[5] as? Int
+        val inspectedRow = args[6] as? MemoryEntity
+        val loadingReceipt = args[7] as Boolean
 
         val parsedData = summaryEntity?.let { memorySummaryService.decodeSummaryEntity(it) } ?: MemorySummaryData()
         MemorySummaryUiState(
             summaryData = parsedData,
             validMemoryIds = memoryIds.toSet(),
             revision = summaryEntity?.revision ?: 0L,
+            lastSyncedAt = summaryEntity?.lastSyncedAt ?: 0L,
+            lastManualEditAt = summaryEntity?.lastManualEditAt ?: 0L,
             tokenCount = summaryEntity?.tokenCount ?: 0,
             isGenerating = isGenerating,
             statusMessage = summaryError,
+            error = summaryError ?: curAgentState.error,
+            agentState = curAgentState,
             inspectedMemoryId = inspectedId,
             inspectedMemory = inspectedRow,
             isLoadingReceipt = loadingReceipt,

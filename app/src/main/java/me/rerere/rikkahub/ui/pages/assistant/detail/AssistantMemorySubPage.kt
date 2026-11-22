@@ -1422,58 +1422,67 @@ private fun MemoryItem(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Show type and embedding badges only when needed
+                // Always show ID badge, plus type/embedding badges when needed
                 val isModelMismatch = useRagMemoryRetrieval && memory.hasEmbedding &&
                     memory.embeddingModelId != null && memory.embeddingModelId != currentEmbeddingModelId
                 val isMissingEmbedding = useRagMemoryRetrieval && !memory.hasEmbedding
-                val showBadges = showType || isMissingEmbedding || isModelMismatch
-                ExpandableContent(visible = showBadges) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = MaterialTheme.shapes.extraSmall,
                     ) {
-                        if (showType) {
-                            Surface(
-                                color = if (memory.type == 0) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
-                                shape = MaterialTheme.shapes.extraSmall
-                            ) {
-                                Text(
-                                    text = if (memory.type == 0) {
-                                        stringResource(R.string.assistant_memory_type_core)
-                                    } else {
-                                        stringResource(R.string.assistant_memory_type_episodic)
-                                    },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                                    color = if (memory.type == 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
+                        Text(
+                            text = "#${memory.id}",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    if (showType) {
+                        Surface(
+                            color = if (memory.type == 0) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                            shape = MaterialTheme.shapes.extraSmall
+                        ) {
+                            Text(
+                                text = if (memory.type == 0) {
+                                    stringResource(R.string.assistant_memory_type_core)
+                                } else {
+                                    stringResource(R.string.assistant_memory_type_episodic)
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                color = if (memory.type == 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                            )
                         }
-                        
-                        if (isMissingEmbedding) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.error,
-                                shape = MaterialTheme.shapes.extraSmall
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.assistant_memory_no_embedding),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                                    color = MaterialTheme.colorScheme.onError
-                                )
-                            }
-                        } else if (isModelMismatch) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.tertiary,
-                                shape = MaterialTheme.shapes.extraSmall
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.assistant_memory_outdated_embedding),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                                    color = MaterialTheme.colorScheme.onTertiary
-                                )
-                            }
+                    }
+                    
+                    if (isMissingEmbedding) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.error,
+                            shape = MaterialTheme.shapes.extraSmall
+                        ) {
+                            Text(
+                                text = stringResource(R.string.assistant_memory_no_embedding),
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                color = MaterialTheme.colorScheme.onError
+                            )
+                        }
+                    } else if (isModelMismatch) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.tertiary,
+                            shape = MaterialTheme.shapes.extraSmall
+                        ) {
+                            Text(
+                                text = stringResource(R.string.assistant_memory_outdated_embedding),
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                color = MaterialTheme.colorScheme.onTertiary
+                            )
                         }
                     }
                 }

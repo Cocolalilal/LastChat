@@ -1,7 +1,9 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
+import android.text.format.DateUtils
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,11 +33,24 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.TrackChanges
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -46,6 +61,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -56,6 +72,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,6 +83,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -103,6 +121,7 @@ fun MemorySummaryPage(
         onBack = { navBackStack.popBackStack() },
         onRegenerate = { vm.regenerateMemorySummary() },
         onAskOrUpdate = { prompt -> vm.askOrUpdateMemorySummary(prompt) },
+        onClearAgentState = { vm.clearAgentState() },
         onSaveManualEdit = { title, subtitle, markdown ->
             vm.saveManualSummaryEdit(assistantId, title, subtitle, markdown)
         },
@@ -124,6 +143,7 @@ fun MemorySummaryPage(
     onBack: () -> Unit,
     onRegenerate: () -> Unit = {},
     onAskOrUpdate: (String) -> Unit,
+    onClearAgentState: () -> Unit = {},
     onSaveManualEdit: (title: String, subtitle: String, sectionsMarkdown: String) -> Unit,
     onInspectReceipt: (Int) -> Unit,
     onDismissReceipt: () -> Unit,
@@ -134,6 +154,7 @@ fun MemorySummaryPage(
     var isEditMode by rememberSaveable { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
     var showOptionsMenu by remember { mutableStateOf(false) }
+    var showAgentInspector by remember { mutableStateOf(false) }
 
     // Manual editor local draft state (preserved across configuration changes and tablet rotation)
     var editTitle by rememberSaveable { mutableStateOf("") }
@@ -212,6 +233,15 @@ fun MemorySummaryPage(
                             }
                         } else {
                             IconButton(
+                                onClick = { showAgentInspector = true },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Psychology,
+                                    contentDescription = "Agent reasoning & live activity",
+                                    tint = if (uiState.agentState.isWorking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            IconButton(
                                 enabled = !uiState.isGenerating,
                                 onClick = ::enterEditMode,
                             ) {
@@ -240,6 +270,16 @@ fun MemorySummaryPage(
                                         onClick = {
                                             showOptionsMenu = false
                                             onRegenerate()
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Live Agent Stream") },
+                                        leadingIcon = {
+                                            Icon(Icons.Rounded.Psychology, contentDescription = null)
+                                        },
+                                        onClick = {
+                                            showOptionsMenu = false
+                                            showAgentInspector = true
                                         },
                                     )
                                 }
@@ -301,8 +341,17 @@ fun MemorySummaryPage(
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
+                            if (uiState.agentState.error != null || uiState.agentState.stage.isNotBlank()) {
+                                AgentActivityBannerCard(
+                                    agentState = uiState.agentState,
+                                    onDismiss = onClearAgentState,
+                                    onRetry = onRegenerate,
+                                    onOpenInspector = { showAgentInspector = true },
+                                )
+                            }
                             Icon(
                                 imageVector = Icons.Rounded.AutoAwesome,
                                 contentDescription = null,
@@ -315,7 +364,7 @@ fun MemorySummaryPage(
                                 fontWeight = FontWeight.SemiBold,
                             )
                             Text(
-                                text = "Generate a baseline summary from your memories or write one manually.",
+                                text = "Synthesize a baseline understanding of your profile and memories, or write one manually.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -340,6 +389,82 @@ fun MemorySummaryPage(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
+                        // 1. Live Agent Activity Banner (visible whenever agent is working, errored, or has live answer)
+                        if (uiState.agentState.isWorking || uiState.agentState.error != null || uiState.agentState.answer != null) {
+                            item(key = "_summary_agent_activity") {
+                                AgentActivityBannerCard(
+                                    agentState = uiState.agentState,
+                                    onDismiss = onClearAgentState,
+                                    onRetry = onRegenerate,
+                                    onOpenInspector = { showAgentInspector = true },
+                                )
+                            }
+                        }
+
+                        // 2. Metadata & Last Upgraded Header
+                        item(key = "_summary_metadata_header") {
+                            val lastUpdatedMs = maxOf(uiState.lastSyncedAt, uiState.lastManualEditAt)
+                            val relativeTime = if (lastUpdatedMs > 0L) {
+                                DateUtils.getRelativeTimeSpanString(lastUpdatedMs, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
+                            } else "Not yet synchronized"
+
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Schedule,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Text(
+                                            text = "Updated $relativeTime",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        ) {
+                                            Text(
+                                                text = "Rev ${uiState.revision}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                            )
+                                        }
+                                        if (uiState.tokenCount > 0) {
+                                            Text(
+                                                text = "~${uiState.tokenCount} tokens",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. Subtitle if present
                         if (uiState.summaryData.subtitle.isNotBlank()) {
                             item(key = "_summary_subtitle") {
                                 Text(
@@ -350,6 +475,8 @@ fun MemorySummaryPage(
                                 )
                             }
                         }
+
+                        // 4. Section cards with beautiful icons and citations
                         items(
                             items = uiState.summaryData.sections,
                             key = { it.normalizedKey() },
@@ -377,6 +504,14 @@ fun MemorySummaryPage(
                 }
             }
         }
+    }
+
+    if (showAgentInspector) {
+        MemoryAgentActivitySheet(
+            agentState = uiState.agentState,
+            onDismiss = { showAgentInspector = false },
+            onRetry = onRegenerate,
+        )
     }
 
     if (showDiscardDialog) {
@@ -416,6 +551,40 @@ fun MemorySummaryPage(
 }
 
 @Composable
+private fun SectionIconBox(
+    iconName: String,
+    modifier: Modifier = Modifier,
+) {
+    val (vector, tint, bg) = when (iconName.lowercase().trim()) {
+        "heart" -> Triple(Icons.Rounded.Favorite, MaterialTheme.colorScheme.error, MaterialTheme.colorScheme.errorContainer)
+        "star" -> Triple(Icons.Rounded.Star, Color(0xFFE6A23C), Color(0xFFE6A23C).copy(alpha = 0.18f))
+        "code" -> Triple(Icons.Rounded.Code, MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.tertiaryContainer)
+        "target" -> Triple(Icons.Rounded.TrackChanges, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primaryContainer)
+        "devices" -> Triple(Icons.Rounded.Devices, MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.secondaryContainer)
+        "sparkles" -> Triple(Icons.Rounded.AutoAwesome, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primaryContainer)
+        "profile" -> Triple(Icons.Rounded.Person, MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.secondaryContainer)
+        "book" -> Triple(Icons.Rounded.MenuBook, MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.tertiaryContainer)
+        "music" -> Triple(Icons.Rounded.MusicNote, Color(0xFF9C27B0), Color(0xFF9C27B0).copy(alpha = 0.18f))
+        else -> Triple(Icons.Rounded.AutoAwesome, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primaryContainer)
+    }
+
+    Box(
+        modifier = modifier
+            .size(38.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(bg),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = vector,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+@Composable
 private fun MemorySummarySectionCard(
     section: MemorySummarySection,
     validMemoryIds: Set<Int>,
@@ -425,17 +594,26 @@ private fun MemorySummarySectionCard(
 ) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(18.dp),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(
-                text = section.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                SectionIconBox(iconName = section.icon)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = section.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
             ProvideMemorySelectionToolbar(
                 sectionContent = section.content,
                 sectionHasCitations = section.citedMemoryIds.isNotEmpty(),
@@ -451,6 +629,321 @@ private fun MemorySummarySectionCard(
                     )
                 }
             }
+            // Display citation source chips at the bottom of the section card
+            if (section.citedMemoryIds.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Link,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    )
+                    Text(
+                        text = "Sources:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    section.citedMemoryIds.forEach { memId ->
+                        val isValid = memId in validMemoryIds
+                        Surface(
+                            onClick = { onPointerClick(memId) },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isValid) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                        ) {
+                            Text(
+                                text = "#$memId",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isValid) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgentActivityBannerCard(
+    agentState: MemorySummaryAgentState,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit,
+    onOpenInspector: () -> Unit,
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = if (agentState.error != null) {
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f)
+            } else {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+            }
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (agentState.isWorking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else if (agentState.error != null) {
+                    Icon(
+                        imageVector = Icons.Rounded.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp),
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                Text(
+                    text = if (agentState.error != null) "Operation Failed" else agentState.stage.ifBlank { "Agent Active" },
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = if (agentState.error != null) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onOpenInspector) {
+                    Text("Details", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+
+            if (agentState.error != null) {
+                Text(
+                    text = agentState.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.End,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Dismiss")
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    Button(onClick = onRetry) {
+                        Text("Retry")
+                    }
+                }
+            } else if (agentState.answer != null) {
+                Text(
+                    text = agentState.answer,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            } else if (agentState.reasoning.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = "Reasoning: " + agentState.reasoning.takeLast(200),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(8.dp),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MemoryAgentActivitySheet(
+    agentState: MemorySummaryAgentState,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Psychology,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Memory Agent Activity",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = if (agentState.isWorking) "Active Generation & Reasoning" else if (agentState.error != null) "Encountered Error" else "Idle",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (agentState.isWorking) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                }
+            }
+
+            if (agentState.stage.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = "Stage: ${agentState.stage}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+            }
+
+            if (agentState.error != null) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = "Error Details",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Text(
+                            text = agentState.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                onRetry()
+                            },
+                            modifier = Modifier.align(Alignment.End),
+                        ) {
+                            Text("Retry Operation")
+                        }
+                    }
+                }
+            }
+
+            if (agentState.reasoning.isNotBlank()) {
+                Text(
+                    text = "Live Reasoning Stream",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = agentState.reasoning,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+            }
+
+            if (agentState.liveDelta.isNotBlank()) {
+                Text(
+                    text = "Synthesized Stream Content",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = agentState.liveDelta,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+            }
+
+            if (agentState.answer != null) {
+                Text(
+                    text = "Agent Response",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = agentState.answer,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
@@ -552,7 +1045,7 @@ private fun MemorySummaryAskBar(
                     .focusRequester(focusRequester),
                 placeholder = {
                     Text(
-                        text = "Ask about or update your summary...",
+                        text = "Ask or instruct your assistant about memories...",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

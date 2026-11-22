@@ -2523,16 +2523,17 @@ class GenerationHandler(
                         put("type", "string")
                         putJsonArray("enum") {
                             add(JsonPrimitive("read"))
+                            add(JsonPrimitive("list_sections"))
                             add(JsonPrimitive("update_section"))
                             add(JsonPrimitive("add_section"))
                             add(JsonPrimitive("delete_section"))
                             add(JsonPrimitive("replace_summary"))
                         }
-                        put("description", "Operation to execute on the memory summary.")
+                        put("description", "Operation to execute: 'read' (full or by section_title), 'list_sections' (overview index), 'update_section', 'add_section', 'delete_section', or 'replace_summary'.")
                     }
                     putJsonObject("section_title") {
                         put("type", "string")
-                        put("description", "Target section title for update_section, add_section, or delete_section.")
+                        put("description", "Target section title for read (to fetch one section only), update_section, add_section, or delete_section.")
                     }
                     putJsonObject("new_title") {
                         put("type", "string")
@@ -2585,20 +2586,74 @@ class GenerationHandler(
             try {
                 when (action) {
                     "read" -> {
+                        val sectionFilter = obj["section_title"]?.jsonPrimitive?.contentOrNull?.trim()
+                        val snapshot = memorySummaryService.readSummarySnapshot(assistantId)
+                        if (!sectionFilter.isNullOrBlank()) {
+                            val matched = snapshot.data.sections.find {
+                                it.title.equals(sectionFilter, ignoreCase = true) ||
+                                it.title.contains(sectionFilter, ignoreCase = true)
+                            }
+                            if (matched != null) {
+                                buildJsonObject {
+                                    put("ok", true)
+                                    put("revision", snapshot.revision)
+                                    put("title", snapshot.data.title)
+                                    put("matched_section", buildJsonObject {
+                                        put("title", matched.title)
+                                        put("icon", matched.icon)
+                                        put("content", matched.content)
+                                        putJsonArray("cited_memory_ids") {
+                                            matched.citedMemoryIds.forEach { add(JsonPrimitive(it)) }
+                                        }
+                                    })
+                                }
+                            } else {
+                                buildJsonObject {
+                                    put("ok", false)
+                                    put("error", "Section '$sectionFilter' not found in memory summary.")
+                                    putJsonArray("available_sections") {
+                                        snapshot.data.sections.forEach { add(JsonPrimitive(it.title)) }
+                                    }
+                                }
+                            }
+                        } else {
+                            buildJsonObject {
+                                put("ok", true)
+                                put("revision", snapshot.revision)
+                                put("token_count", snapshot.tokenCount)
+                                put("title", snapshot.data.title)
+                                put("subtitle", snapshot.data.subtitle)
+                                putJsonArray("sections") {
+                                    snapshot.data.sections.forEach { sec ->
+                                        add(
+                                            buildJsonObject {
+                                                put("title", sec.title)
+                                                put("icon", sec.icon)
+                                                put("content", sec.content)
+                                                putJsonArray("cited_memory_ids") {
+                                                    sec.citedMemoryIds.forEach { add(JsonPrimitive(it)) }
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    "list_sections" -> {
                         val snapshot = memorySummaryService.readSummarySnapshot(assistantId)
                         buildJsonObject {
                             put("ok", true)
                             put("revision", snapshot.revision)
-                            put("token_count", snapshot.tokenCount)
-                            put("title", snapshot.data.title)
-                            put("subtitle", snapshot.data.subtitle)
+                            put("section_count", snapshot.data.sections.size)
                             putJsonArray("sections") {
                                 snapshot.data.sections.forEach { sec ->
                                     add(
                                         buildJsonObject {
                                             put("title", sec.title)
                                             put("icon", sec.icon)
-                                            put("content", sec.content)
+                                            put("cited_count", sec.citedMemoryIds.size)
                                             putJsonArray("cited_memory_ids") {
                                                 sec.citedMemoryIds.forEach { add(JsonPrimitive(it)) }
                                             }
