@@ -678,6 +678,72 @@ The AI assistant in LastChat now has 5 specialized tools for complete autonomous
 - **Live Count Subtitle:** Summarizes active components (e.g., *"1 instructions • 2 skills • 1 lorebooks"*).
 - **Interactive Multi-Tab Sheet:** Tapping opens `ExtensionsPickerSheet` with 3 tabs (Instructions, Skills, Lorebooks) for rapid per-chat toggling and direct shortcut to settings management.
 
+---
+
+## 20. Architecture: Hierarchical Pointer Memory System, Citation Receipts, Live Activity Inspector & Post-Mortem
+
+### 1. Pointer Citation Schema & Interactive Material 3 Chips
+- **Citation Syntax:** Summary text citations are strictly formatted as `[#123]`.
+- **Hydration & Provenance (`MemoryPointerParser.kt`, `MemoryPointerText.kt`):**
+  - Synthesized summary JSON contains `citedMemoryIds` lists and embedded `[#ID]` tokens.
+  - Citations are hydrated against the local SQLite database (`AppDatabase` / `MemoryDAO`).
+  - Valid citations render inline as clickable Material 3 tonal chips (`Surface` with `primaryContainer`).
+  - Missing or deleted citation references are styled with strikethrough text and an alert badge, alerting the user to orphaned provenance.
+  - Text selection and copying via `stripPointers` strips brackets and raw ID tags, guaranteeing clean text for clipboard sharing.
+
+### 2. Memory Receipt Bottom Sheet (`MemoryReceiptBottomSheet.kt`)
+- **Inspection Modal:** Clicking any inline citation chip or citation sources row opens a dedicated modal bottom sheet displaying:
+  - Exact SQLite Memory ID, creation timestamp, and raw text.
+  - One-tap copy to clipboard.
+  - Inline editing of the underlying raw memory entity with immediate DB persistence.
+  - Safe deletion with confirmation dialog.
+  - **Orphan Auto-Purge (`removeStaleCitation`):** If a cited memory was deleted or is missing, a "Remove Stale Citation" action surgically cleanses the reference from the summary document and recalculates token counts.
+
+### 3. Section-Based Memory Hierarchy & 9 Rich Icons (`SectionIconBox`, `MemorySummaryPage.kt`)
+- Memory summaries are organized into logical sections (`MemorySummarySection`) with distinct title, content, icon, and cited IDs.
+- **Icon Specifications:** Strictly mapped across 9 rich icons:
+  - `heart` -> `Icons.Rounded.Favorite`
+  - `star` -> `Icons.Rounded.Star`
+  - `code` -> `Icons.Rounded.Code`
+  - `target` -> `Icons.Rounded.TrackChanges`
+  - `devices` -> `Icons.Rounded.Devices`
+  - `sparkles` -> `Icons.Rounded.AutoAwesome`
+  - `profile` -> `Icons.Rounded.Person`
+  - `book` -> `Icons.Rounded.MenuBook`
+  - `music` -> `Icons.Rounded.MusicNote`
+- Rendered via `SectionIconBox` with dedicated container background colors and tonal tinting.
+
+### 4. Metadata Header & Last Upgraded Tracking
+- `MemorySummaryUiState` exposes `lastSyncedAt`, `lastManualEditAt`, `revision`, and `tokenCount`.
+- Rendered as a prominent header pill above the section cards: `"Updated <relativeTime> • Rev ${revision} • ~${tokenCount} tokens"`.
+
+### 5. Section-Level Agent Retrieval Tool (`GenerationHandler.kt`)
+- Updated `manage_memory_summary` tool with fine-grained queries:
+  - `action = "read"` with optional `section_title`: returns only the targeted section, saving LLM context tokens.
+  - `action = "list_sections"`: returns a lightweight table of contents with section titles, icons, and citation counts without full content payloads.
+  - Direct mutations: `update_section`, `add_section`, `delete_section`, and `replace_summary`.
+
+### 6. Live Agent Reasoning Inspector & Error Handling (`AssistantDetailVM.kt`, `MemorySummaryPage.kt`)
+- **Reactive Agent State:** ViewModel tracks `MemorySummaryAgentState(isWorking, stage, reasoning, liveDelta, answer, error)`.
+- **Agent Activity Banner Card:** Displayed at the top of `MemorySummaryPage` whenever the agent is working, errored, or produced an answer.
+- **Memory Agent Activity Sheet:** Accessible via the top bar brain icon (`Icons.Rounded.Psychology`) or banner button. Shows live thinking/reasoning stream tokens, live delta output, and full error details with a "Retry Operation" button.
+
+### 7. Critical Incident Post-Mortem & Hard-Won Lessons
+1. **Model & Keyed Provider Resolution Trap:**
+   - *Bug:* Resolving candidate models solely from the catalog picked models whose provider had no active API key configured, causing immediate crash.
+   - *Rule:* Always iterate candidates and verify that `SecretKeyManager` has an active API key for that provider (`findProvider(model.provider)?.let { keyManager.hasKey(it) }`). Fall back to any enabled, keyed provider.
+2. **Streaming Thinking / Reasoning Collisions:**
+   - *Bug:* Thinking models (DeepSeek R1, Gemini Flash Thinking, Claude) stream reasoning chunks as `UIMessagePart.Thinking` and `UIMessagePart.Reasoning`. Filtering solely for `UIMessagePart.Text` caused empty text buffers or broken JSON parsing.
+   - *Rule:* Accumulate reasoning parts separately and dispatch via `onProgress` callbacks.
+3. **Multi-Tier Fallback Serialization Engine:**
+   - *Bug:* Asking questions in the Memory Ask Bar caused models to emit conversational text rather than `MemorySectionPatch` JSON, throwing unhandled `SerializationException`.
+   - *Rule:* Use multi-tier parsing: Patch JSON -> Full Summary JSON -> Markdown Codec -> Conversational Direct Text.
+4. **Leading Whitespace Trimming Rule:**
+   - *Rule:* Never call `.trim()` on streaming token chunks; words will weld together.
+5. **Optimistic Revision Locking & Mutex Concurrency:**
+   - *Rule:* Every summary mutation must lock the assistant mutex (`mutexFor(assistantId).withLock`) and execute inside `database.withTransaction` calling `commitSummaryLocked` with expected revision checking.
+
+
 
 
 
