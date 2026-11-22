@@ -680,8 +680,12 @@ class MemorySummaryService(
                     "create" -> item.content?.takeIf { it.isNotBlank() }?.let { content ->
                         memoryDAO.insert(MemoryEntity(assistantId = assistantId, content = content))
                     }
-                    "update" -> if (item.id != null && !item.content.isNullOrBlank()) {
-                        memoryDAO.updateContentById(assistantId, item.id, item.content)
+                    "update" -> {
+                        val id = item.id
+                        val content = item.content
+                        if (id != null && !content.isNullOrBlank()) {
+                            memoryDAO.updateContentById(assistantId, id, content)
+                        }
                     }
                     "delete" -> item.id?.let { id ->
                         memoryDAO.deleteById(assistantId, id)
