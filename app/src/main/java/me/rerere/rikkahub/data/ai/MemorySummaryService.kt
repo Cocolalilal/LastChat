@@ -48,6 +48,7 @@ import me.rerere.rikkahub.data.memory.RawMemoryAction
 import me.rerere.rikkahub.data.memory.SectionLineEdit
 import me.rerere.rikkahub.data.memory.SummaryPatchEngine
 import me.rerere.rikkahub.data.memory.TokenEstimator
+import me.rerere.rikkahub.data.memory.parseMemorySummaryJson
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.worker.MemorySummaryScheduler
 import java.time.Instant
@@ -354,7 +355,18 @@ class MemorySummaryService(
         // 2. Try parsing as full replacement MemorySummaryData
         val fullData = runCatching { parseSummaryJson(rawResponse) }.getOrNull()
         if (fullData != null && fullData.sections.isNotEmpty()) {
-            val nextRev = updateSummaryInteractive(assistantId, fullData, snapshot.revision)
+            val nextRev = mutexFor(assistantId).withLock {
+                database.withTransaction {
+                    val latestEntity = memorySummaryDao.getSummaryOnce(assistantId)
+                    val baseRevision = latestEntity?.revision ?: snapshot.revision
+                    commitSummaryLocked(
+                        assistantId = assistantId,
+                        data = fullData,
+                        expectedRevision = baseRevision,
+                        isManualEdit = false,
+                    )
+                }
+            }
             return@runCatching "Updated ${fullData.sections.size} section(s) in summary (rev $nextRev)." to true
         }
 
