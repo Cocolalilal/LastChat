@@ -1,6 +1,6 @@
 package me.rerere.tts.controller
 
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import me.rerere.tts.model.AudioChunk
@@ -15,12 +15,13 @@ import me.rerere.tts.provider.ttsIoDispatcher
  * Bridge TTS provider flow to a single audio buffer.
  */
 class TtsSynthesizer(
-    private val ttsManager: TtsSpeechGenerator
+    private val ttsManager: TtsSpeechGenerator,
+    private val dispatcher: CoroutineDispatcher = ttsIoDispatcher,
 ) {
     suspend fun synthesize(
         setting: TTSProviderSetting,
         chunk: TtsChunk
-    ): TTSResponse = withContext(ttsIoDispatcher) {
+    ): TTSResponse = withContext(dispatcher) {
         collectToResponse(
             ttsManager.generateSpeech(setting, TTSRequest(text = chunk.text))
         )
@@ -31,16 +32,27 @@ class TtsSynthesizer(
         var sampleRate: Int? = null
         val buffers = mutableListOf<ByteArray>()
         var totalSize = 0
+        var metadata: Map<String, String> = emptyMap()
         flow.collect { chunk ->
-            if (format == null) format = chunk.format
+            if (chunk.data.isEmpty()) return@collect
+            require(format == null || format == chunk.format) { "TTS audio format changed during synthesis" }
+            require(sampleRate == null || chunk.sampleRate == null || sampleRate == chunk.sampleRate) {
+                "TTS sample rate changed during synthesis"
+            }
+            if (format == null) {
+                format = chunk.format
+                metadata = chunk.metadata
+            }
             if (sampleRate == null) sampleRate = chunk.sampleRate
             buffers += chunk.data
             totalSize += chunk.data.size
         }
+        check(totalSize > 0) { "TTS returned no playable audio" }
         return TTSResponse(
             audioData = buffers.concatToByteArray(totalSize),
             format = format ?: AudioFormat.MP3,
-            sampleRate = sampleRate
+            sampleRate = sampleRate,
+            metadata = metadata
         )
     }
 

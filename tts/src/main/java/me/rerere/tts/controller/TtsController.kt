@@ -1,6 +1,7 @@
 package me.rerere.tts.controller
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -34,17 +35,20 @@ private const val TAG = "TtsController"
 class TtsController(
     private val ttsManager: TtsSpeechGenerator,
     private val audio: TtsAudioPlayer,
+    synthesisDispatcher: CoroutineDispatcher = ttsIoDispatcher,
 ) {
     // 协程作用域
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     // 组件
     private val chunker = TextChunker(maxChunkLength = 360)
-    private val synthesizer = TtsSynthesizer(ttsManager)
+    private val synthesizer = TtsSynthesizer(ttsManager, synthesisDispatcher)
 
     // Provider & 作业
     private var currentProvider: TTSProviderSetting? = null
     private var workerJob: Job? = null
+    private var workerProvider: TTSProviderSetting? = null
+    private val synthesisDispatcher = synthesisDispatcher
     private var isPaused = false
 
     // 队列与缓存（基于稳定 ID）
@@ -212,6 +216,10 @@ class TtsController(
     /** 恢复播放 */
     fun resume() {
         isPaused = false
+        _error.update { null }
+        if (workerJob?.isActive != true && queue.isNotEmpty()) {
+            (workerProvider ?: currentProvider)?.let { startWorkerWithProvider(it) }
+        }
         audio.resume()
         _playbackState.update { it.copy(status = PlaybackStatus.Playing) }
     }
@@ -228,11 +236,8 @@ class TtsController(
 
     /** 跳过下一段（不打断当前正在播放） */
     fun skipNext() {
-        if (queue.isNotEmpty()) {
-            queue.removeFirstOrNull()
-            _totalChunks.update { allChunks.size }
-            audio.setTotalChunks(allChunks.size)
-        }
+        // The playlist owns the current/next playable item. Removing an unsynthesized
+        // queue head as well would discard a second, unrelated paragraph.
         audio.skipNext()
     }
 
@@ -271,6 +276,7 @@ class TtsController(
     }
 
     private fun startWorkerWithProvider(provider: TTSProviderSetting) {
+        workerProvider = provider
         workerJob = scope.launch {
             _isSpeaking.update { true }
             try {
@@ -324,14 +330,18 @@ class TtsController(
                     }
 
                     if (response == null) {
-                        continue
+                        // Retain the failed paragraph and stop here. Resume retries it instead
+                        // of silently advancing to later text.
+                        queue.addFirst(chunk)
+                        return@launch
                     }
 
                     // Enqueue into gapless playlist
                     audio.enqueue(chunk.index, allChunks.size, response)
                 }
             } finally {
-                if (queue.isEmpty() && audio.playbackState.value.status == PlaybackStatus.Ended) {
+                if (audio.playbackState.value.status != PlaybackStatus.Playing &&
+                    audio.playbackState.value.status != PlaybackStatus.Buffering) {
                     _isSpeaking.update { false }
                 }
             }
@@ -345,7 +355,7 @@ class TtsController(
 
     private fun prefetchFromWithProvider(startIndex: Int, provider: TTSProviderSetting) {
         val begin = startIndex.coerceAtLeast(lastPrefetchedIndex + 1)
-        val endExclusive = (begin + prefetchCount).coerceAtMost(allChunks.size)
+        val endExclusive = (startIndex + prefetchCount).coerceAtMost(allChunks.size)
         if (begin >= endExclusive) return
 
         for (i in begin until endExclusive) {
@@ -357,7 +367,13 @@ class TtsController(
 
     private suspend fun awaitOrCreate(chunk: TtsChunk, provider: TTSProviderSetting): TTSResponse {
         val deferred = getOrCreateCachedSynthesis(chunk, provider)
-        return deferred.await()
+        return try {
+            deferred.await()
+        } catch (error: Exception) {
+            val key = TtsCacheKey(chunk.text, provider)
+            if (cache[key] === deferred) cache.remove(key)
+            throw error
+        }
     }
 
     private fun getOrCreateCachedSynthesis(
@@ -365,7 +381,7 @@ class TtsController(
         provider: TTSProviderSetting,
     ): Deferred<TTSResponse> {
         return cache.getOrPut(TtsCacheKey(chunk.text, provider)) {
-            scope.async(ttsIoDispatcher) { synthesizer.synthesize(provider, chunk) }
+            scope.async(synthesisDispatcher) { synthesizer.synthesize(provider, chunk) }
         }
     }
     // endregion

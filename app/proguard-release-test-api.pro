@@ -390,3 +390,8 @@
 -keep,allowoptimization enum me.rerere.asr.local.SherpaModelFamily { public *; }
 
 -keep,allowoptimization class me.rerere.asr.local.SherpaSttRuntime$OnlineSession { public *; }
+
+# Gemini speech transport is exercised from the separate release instrumentation APK.
+-keep,allowoptimization,includedescriptorclasses class me.rerere.tts.provider.providers.GeminiTTSProvider { public *; }
+-keep,allowoptimization,includedescriptorclasses class me.rerere.tts.provider.TTSProviderSetting$Gemini { public *; }
+-keep,allowoptimization,includedescriptorclasses class me.rerere.tts.model.** { public *; }

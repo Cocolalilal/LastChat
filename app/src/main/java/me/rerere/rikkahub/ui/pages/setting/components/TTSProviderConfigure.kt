@@ -24,6 +24,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -34,6 +36,7 @@ import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.tts.provider.GeminiTtsCatalog
 import me.rerere.tts.provider.TTSProviderSetting
 import me.rerere.tts.provider.android.LocalTtsVoice
 import me.rerere.tts.provider.android.discoverLocalTtsVoices
@@ -545,37 +548,87 @@ private fun GeminiTTSConfiguration(
         )
     }
 
-    // Model
-    FormItem(
-        label = { Text(stringResource(R.string.setting_tts_page_model)) },
-        description = { Text(stringResource(R.string.setting_tts_page_model_description)) }
-    ) {
-        OutlinedTextField(
-            value = setting.model,
-            onValueChange = { newModel ->
-                onValueChange(setting.copy(model = newModel))
-            },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.setting_tts_page_model_placeholder_gemini)) },
-            shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
-        )
-    }
+    var fetchingModels by remember(setting.id, setting.baseUrl, setting.apiKey) { mutableStateOf(false) }
+    var discoveredModels by remember(setting.id, setting.baseUrl, setting.apiKey) { mutableStateOf(emptyList<String>()) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val ttsManager = koinInject<TTSManager>()
+    GeminiTtsChoiceField(
+        value = setting.model,
+        options = GeminiTtsCatalog.modelOptions(setting.model, discoveredModels),
+        label = stringResource(R.string.setting_tts_page_model),
+        placeholder = stringResource(R.string.setting_tts_page_model_placeholder_gemini),
+        fetching = fetchingModels,
+        onFetch = {
+            scope.launch {
+                fetchingModels = true
+                try {
+                    discoveredModels = ttsManager.listModels(setting).map { it.id }
+                } finally {
+                    fetchingModels = false
+                }
+            }
+        },
+        onValueChange = { onValueChange(setting.copy(model = it)) },
+    )
 
     if (showVoiceFields) {
-        // Voice Name
-        FormItem(
-            label = { Text(stringResource(R.string.setting_tts_page_voice_name)) },
-            description = { Text(stringResource(R.string.setting_tts_page_voice_name_description)) }
-        ) {
+        GeminiTtsChoiceField(
+            value = setting.voiceName,
+            options = GeminiTtsCatalog.voices,
+            label = stringResource(R.string.setting_tts_page_voice_name),
+            placeholder = stringResource(R.string.setting_tts_page_voice_name_placeholder),
+            onValueChange = { onValueChange(setting.copy(voiceName = it)) },
+        )
+    }
+}
+
+/** Editable dropdown, matching the adjacent OpenAI configuration while keeping custom proxy IDs. */
+@Composable
+internal fun GeminiTtsChoiceField(
+    value: String,
+    options: List<String>,
+    label: String,
+    placeholder: String,
+    fetching: Boolean = false,
+    onFetch: (() -> Unit)? = null,
+    onValueChange: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    FormItem(label = { Text(label) }) {
+        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
             OutlinedTextField(
-                value = setting.voiceName,
-                onValueChange = { newVoiceName ->
-                    onValueChange(setting.copy(voiceName = newVoiceName))
-                },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(stringResource(R.string.setting_tts_page_voice_name_placeholder)) },
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
+                    .semantics { contentDescription = label },
+                placeholder = { Text(placeholder) },
+                singleLine = true,
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                trailingIcon = {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        if (onFetch != null) {
+                            if (fetching) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                TextButton(onClick = onFetch) { Text("Fetch") }
+                            }
+                        }
+                        ExposedDropdownMenuDefaults.TrailingIcon(
+                            expanded = expanded,
+                            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.SecondaryEditable),
+                        )
+                    }
+                },
             )
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { option ->
+                    DropdownMenuItem(text = { Text(option) }, onClick = {
+                        expanded = false
+                        onValueChange(option)
+                    })
+                }
+            }
         }
     }
 }

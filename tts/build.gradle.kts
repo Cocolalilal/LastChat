@@ -53,7 +53,10 @@ kotlin {
         }
         androidUnitTest {
             kotlin.srcDir("src/test/java")
-            dependencies { implementation(libs.junit) }
+            dependencies {
+                implementation(libs.junit)
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${libs.versions.kotlin.coroutines.core.get()}")
+            }
         }
     }
 }

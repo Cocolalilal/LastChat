@@ -37,7 +37,7 @@ class PortableCloudTtsPayloadTest {
 
     @Test
     fun geminiPayloadPreservesNestedSpeechConfig() = runBlocking {
-        val response = """{"candidates":[{"content":{"parts":[{"inlineData":{"data":"AA==","mimeType":"audio/pcm"}}]}}]}"""
+        val response = """{"candidates":[{"content":{"parts":[{"inlineData":{"data":"AAA=","mimeType":"audio/pcm"}}]}}]}"""
         val client = CapturingHttpClient(response.encodeToByteArray())
         GeminiTTSProvider(client).generateSpeech(
             TTSProviderSetting.Gemini(model = "gemini-tts", voiceName = "Kore"),

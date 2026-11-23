@@ -132,14 +132,11 @@ import org.intellij.markdown.MarkdownTokenTypes
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.LeafASTNode
 import org.intellij.markdown.flavours.gfm.GFMElementTypes
-import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 import org.intellij.markdown.parser.MarkdownParser
 
 private val flavour by lazy {
-    GFMFlavourDescriptor(
-        makeHttpsAutoLinks = true, useSafeLinks = true
-    )
+    ChatMarkdownFlavour()
 }
 
 private val parser by lazy {
@@ -177,7 +174,7 @@ private fun parseMarkdownCached(content: String): Pair<String, ASTNode> {
     // Parsing a large edited message must not hold the cache lock while another
     // message animates on the UI thread. Each parse owns its parser state.
     val preprocessed = preProcess(content)
-    val astTree = MarkdownParser(GFMFlavourDescriptor(makeHttpsAutoLinks = true, useSafeLinks = true))
+    val astTree = MarkdownParser(ChatMarkdownFlavour())
         .buildMarkdownTreeFromString(preprocessed)
     val result = preprocessed to astTree
     if (content.length > MARKDOWN_AST_CACHE_MAX_ENTRY_LENGTH) return result

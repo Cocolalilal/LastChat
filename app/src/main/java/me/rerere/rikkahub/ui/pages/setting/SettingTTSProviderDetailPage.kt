@@ -102,6 +102,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.pages.setting.components.TTSProviderConfigure
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.tts.provider.GeminiTtsCatalog
 import me.rerere.tts.provider.TTSProviderSetting
 import me.rerere.rikkahub.ui.pages.setting.components.TTSProviderIcon
 import me.rerere.tts.provider.TTSVoice
@@ -636,13 +637,39 @@ private fun VoiceEditorSheet(
                 )
             }
             item {
-                OutlinedTextField(
-                    value = current.model.orEmpty(),
-                    onValueChange = { current = current.copy(model = it.takeIf(String::isNotBlank)) },
-                    label = { Text("Model override") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = AppShapes.InputField,
-                )
+                if (provider is TTSProviderSetting.Gemini) {
+                    var expanded by remember(current.id) { mutableStateOf(false) }
+                    androidx.compose.material3.ExposedDropdownMenuBox(
+                        expanded = expanded, onExpandedChange = { expanded = it },
+                    ) {
+                        OutlinedTextField(
+                            value = current.model.orEmpty(),
+                            onValueChange = { current = current.copy(model = it.takeIf(String::isNotBlank)) },
+                            label = { Text("Model override") },
+                            placeholder = { Text(provider.model) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(
+                                androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryEditable),
+                            shape = AppShapes.InputField,
+                            trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                        )
+                        ExposedDropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                            GeminiTtsCatalog.modelOptions(current.model ?: provider.model).forEach { model ->
+                                androidx.compose.material3.DropdownMenuItem(text = { Text(model) }, onClick = {
+                                    current = current.copy(model = model)
+                                    expanded = false
+                                })
+                            }
+                        }
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = current.model.orEmpty(),
+                        onValueChange = { current = current.copy(model = it.takeIf(String::isNotBlank)) },
+                        label = { Text("Model override") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = AppShapes.InputField,
+                    )
+                }
             }
             if (provider is TTSProviderSetting.MiniMax) {
                 item {
@@ -694,7 +721,9 @@ private fun ProviderVoicesFab(
     val httpClient = koinInject<PlatformHttpClient>()
     val haptics = rememberPremiumHaptics()
     val tts = LocalTTSState.current
-    var discovered by remember(provider.id) { mutableStateOf(providerPresetVoices(provider)) }
+    var discovered by remember(provider.id, (provider as? TTSProviderSetting.Gemini)?.model) {
+        mutableStateOf(providerPresetVoices(provider))
+    }
     var isFetching by remember { mutableStateOf(false) }
     var filterText by remember(provider.id) { mutableStateOf("") }
     val filterKeywords = filterText.split(" ").filter { it.isNotBlank() }
@@ -1003,12 +1032,12 @@ private fun ManualVoiceSheet(
     }
 }
 
-private fun providerPresetVoices(provider: TTSProviderSetting): List<TTSVoice> {
+internal fun providerPresetVoices(provider: TTSProviderSetting): List<TTSVoice> {
     return when (provider) {
         is TTSProviderSetting.OpenAI -> listOf("alloy", "echo", "fable", "onyx", "nova", "shimmer").map {
             TTSVoice(name = it.replaceFirstChar(Char::uppercaseChar), providerVoiceId = it, model = provider.model)
         }
-        is TTSProviderSetting.Gemini -> listOf("Kore", "Puck", "Charon", "Fenrir", "Aoede").map {
+        is TTSProviderSetting.Gemini -> GeminiTtsCatalog.voices.map {
             TTSVoice(name = it, providerVoiceId = it, model = provider.model)
         }
         is TTSProviderSetting.MiniMax -> listOf("female-shaonv", "female-yujie", "male-qn-qingse", "audiobook_male_1").map {

@@ -272,6 +272,23 @@ class PlaceholderRuntimeInstrumentedTest {
         }
     }
 
+    @Test fun geminiSpeechDecodesEveryPartWithoutPlayingContainerMetadata() = runBlocking {
+        val response = """{"candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"not audio"},{"inlineData":{"mimeType":"audio/L16;codec=pcm;rate=24000","data":"AQACAA=="}},{"inlineData":{"mimeType":"audio/wav","data":"UklGRjQAAABXQVZFZm10IBAAAAABAAEAwF0AAIC7AAACABAAZGF0YQQAAAABAAIATElTVAQAAABJTkZP"}}]}}]}"""
+        val http = RecordingHttpClient(response, "")
+        val chunks = me.rerere.tts.provider.providers.GeminiTTSProvider(http).generateSpeech(
+            me.rerere.tts.provider.TTSProviderSetting.Gemini(),
+            me.rerere.tts.model.TTSRequest("Read both parts."),
+        ).toList()
+        assertEquals(2, chunks.size)
+        for (chunk in chunks) {
+            assertEquals(me.rerere.tts.model.AudioFormat.PCM, chunk.format)
+            assertEquals(24000, chunk.sampleRate)
+            assertArrayEquals(byteArrayOf(1, 0, 2, 0), chunk.data)
+        }
+        assertFalse(chunks[0].isLast)
+        assertTrue(chunks[1].isLast)
+    }
+
     // Text-only protocol fixtures must never access media files or service-account keys.
     private object TextOnlyMediaEncoder : PlatformMediaEncoder {
         override fun encodeImage(url: String, withPrefix: Boolean): Result<String> = error("Unexpected image encoding")

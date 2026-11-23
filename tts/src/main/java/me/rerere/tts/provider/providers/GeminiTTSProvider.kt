@@ -1,5 +1,6 @@
 package me.rerere.tts.provider.providers
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
@@ -13,6 +14,7 @@ import kotlinx.serialization.json.put
 import me.rerere.common.http.jsonArrayOrNull
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.common.http.jsonPrimitiveOrNull
+import me.rerere.common.http.urlEncode
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformLog
@@ -35,28 +37,34 @@ class GeminiTTSProvider(
 
     @Serializable
     data class GeminiTTSResponse(
-        val candidates: List<Candidate>
+        val candidates: List<Candidate> = emptyList(),
+        val promptFeedback: PromptFeedback? = null
     )
 
     @Serializable
+    data class PromptFeedback(val blockReason: String? = null)
+
+    @Serializable
     data class Candidate(
-        val content: Content
+        val content: Content? = null,
+        val finishReason: String? = null,
+        val finishMessage: String? = null,
     )
 
     @Serializable
     data class Content(
-        val parts: List<Part>
+        val parts: List<Part> = emptyList()
     )
 
     @Serializable
     data class Part(
-        val inlineData: InlineData
+        val inlineData: InlineData? = null
     )
 
     @Serializable
     data class InlineData(
         val data: String,
-        val mimeType: String
+        val mimeType: String = "audio/L16;codec=pcm;rate=24000"
     )
 
     override fun generateSpeech(
@@ -97,7 +105,7 @@ class GeminiTTSProvider(
         val response = httpClient.execute(
             PlatformHttpRequest(
                 method = "POST",
-                url = "${providerSetting.baseUrl}/models/${providerSetting.model}:generateContent",
+                url = "${providerSetting.baseUrl.trimEnd('/')}/models/${providerSetting.model.removePrefix("models/")}:generateContent",
                 headers = mapOf(
                     "x-goog-api-key" to providerSetting.apiKey,
                     "Content-Type" to "application/json",
@@ -116,75 +124,68 @@ class GeminiTTSProvider(
         val responseJson = response.body.decodeToString()
         val geminiResponse = json.decodeFromString<GeminiTTSResponse>(responseJson)
 
-        if (geminiResponse.candidates.isEmpty() ||
-            geminiResponse.candidates[0].content.parts.isEmpty()
-        ) {
-            throw Exception("No audio data returned from Gemini TTS")
+        val candidate = geminiResponse.candidates.firstOrNull()
+            ?: error("Gemini returned no speech: ${geminiResponse.promptFeedback?.blockReason ?: "no candidate"}")
+        require(candidate.finishReason == null || candidate.finishReason == "STOP") {
+            "Gemini speech was not completed: ${candidate.finishReason}. ${candidate.finishMessage.orEmpty()}"
         }
-
-        val audioBase64 = geminiResponse.candidates[0].content.parts[0].inlineData.data
-        val audioData = Base64.Default.decode(audioBase64)
-
-        emit(
-            AudioChunk(
-                data = audioData,
-                format = AudioFormat.PCM,
-                sampleRate = 24000, // Gemini TTS returns 24kHz 16-bit mono PCM
-                isLast = true,
-                metadata = mapOf(
-                    "provider" to "gemini",
-                    "model" to providerSetting.model,
-                    "voice" to providerSetting.voiceName,
-                    "sampleRate" to "24000",
-                    "channels" to "1",
-                    "bitDepth" to "16"
-                )
-            )
-        )
+        val parts = candidate.content?.parts.orEmpty().mapNotNull { it.inlineData }
+        require(parts.isNotEmpty()) { "No audio data returned from Gemini TTS" }
+        // Decode all parts before publishing anything: malformed/truncated responses must not
+        // enter the playlist as successful partial speech.
+        val chunks = parts.map { part -> decodeGeminiAudio(Base64.Default.decode(part.data), part.mimeType) }
+        val first = chunks.first()
+        require(chunks.all { it.format == first.format && it.sampleRate == first.sampleRate }) {
+            "Gemini changed audio format within one speech response"
+        }
+        require(chunks.size == 1 || first.format == AudioFormat.PCM) {
+            "Gemini returned multiple compressed audio containers"
+        }
+        chunks.forEachIndexed { index, chunk ->
+            emit(chunk.copy(isLast = index == chunks.lastIndex, metadata = chunk.metadata + mapOf(
+                "provider" to "gemini", "model" to providerSetting.model, "voice" to providerSetting.voiceName,
+            )))
+        }
     }
 
     override suspend fun listModels(
         providerSetting: TTSProviderSetting.Gemini
     ): List<TTSModelInfo> = withContext(me.rerere.tts.provider.ttsIoDispatcher) {
         if (providerSetting.apiKey.isBlank()) return@withContext emptyList()
-        runCatching {
-            val response = httpClient.execute(
-                PlatformHttpRequest(
-                    method = "GET",
-                    url = "${providerSetting.baseUrl}/models",
-                    headers = mapOf(
-                        "x-goog-api-key" to providerSetting.apiKey,
-                    ),
-                )
-            )
-            if (response.statusCode !in 200..299) {
-                PlatformLog.e(
-                    TAG,
-                    "listModels failed: ${response.statusCode} ${response.body.decodeToString()}"
-                )
-                return@withContext emptyList()
-            }
-            val body = response.body.decodeToString()
-            ttsJson.parseToJsonElement(body)
-                .jsonObjectOrNull
-                ?.get("models")
-                ?.jsonArrayOrNull
-                .orEmpty()
-                .mapNotNull { element ->
-                    val rawName = element.jsonObjectOrNull
-                        ?.get("name")
-                        ?.jsonPrimitiveOrNull
-                        ?.contentOrNull
-                        .orEmpty()
-                    val id = rawName.removePrefix("models/").removePrefix("tunedModels/")
+        try {
+            val models = mutableListOf<TTSModelInfo>()
+            val visitedPages = mutableSetOf<String>()
+            var pageToken: String? = null
+            do {
+                val query = pageToken?.let { "?pageToken=${it.urlEncode()}" }.orEmpty()
+                val response = httpClient.execute(PlatformHttpRequest(
+                    method = "GET", url = "${providerSetting.baseUrl.trimEnd('/')}/models$query",
+                    headers = mapOf("x-goog-api-key" to providerSetting.apiKey),
+                ))
+                check(response.statusCode in 200..299) { "Gemini model discovery failed: ${response.statusCode}" }
+                val body = ttsJson.parseToJsonElement(response.body.decodeToString()).jsonObjectOrNull
+                    ?: error("Invalid Gemini models response")
+                body["models"]?.jsonArrayOrNull.orEmpty().forEach { element ->
+                    val model = element.jsonObjectOrNull ?: return@forEach
+                    val id = model["name"]?.jsonPrimitiveOrNull?.contentOrNull
+                        ?.removePrefix("models/")?.removePrefix("tunedModels/") ?: return@forEach
+                    val methods = model["supportedGenerationMethods"]?.jsonArrayOrNull
+                        ?.mapNotNull { it.jsonPrimitiveOrNull?.contentOrNull }
                     val lower = id.lowercase()
-                    id.takeIf {
-                        it.isNotBlank() &&
-                            (lower.contains("tts") || lower.contains("speech") || lower.endsWith("-tts"))
-                    }?.let { TTSModelInfo(id = it, displayName = it) }
+                    if ((lower.contains("tts") || lower.contains("speech")) &&
+                        !lower.startsWith("gemini-3.8-") &&
+                        (methods == null || "generateContent" in methods)) {
+                        models += TTSModelInfo(id, model["displayName"]?.jsonPrimitiveOrNull?.contentOrNull ?: id)
+                    }
                 }
-        }.getOrElse { e ->
-            PlatformLog.e(TAG, "listModels error: ${e.message}")
+                pageToken = body["nextPageToken"]?.jsonPrimitiveOrNull?.contentOrNull?.takeIf(String::isNotBlank)
+                check(pageToken == null || visitedPages.add(pageToken)) { "Gemini repeated a model page token" }
+            } while (pageToken != null)
+            models.distinctBy { it.id }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            PlatformLog.e(TAG, "listModels error: ${error.message}")
             emptyList()
         }
     }

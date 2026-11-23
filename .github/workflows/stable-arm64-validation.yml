@@ -113,6 +113,7 @@ jobs:
           chmod +x gradlew
           ./gradlew :workspace:testDebugUnitTest --tests '*Rootfs*Test' \
             :speech:testDebugUnitTest --tests '*SherpaCatalogTest' \
+            :tts:testDebugUnitTest \
             :app:testStableDebugUnitTest \
             --tests '*GenerationHandlerSkillToolTest' --tests '*AdditionalContextTest' \
             --tests '*SettingsStoreDurabilityTest' --tests '*SettingsMergeTest' \
@@ -125,6 +126,7 @@ jobs:
             --tests '*SkillEditPersistenceTest' --tests '*PromptEditorBehaviorTest' \
             --tests '*LocalSpeechModelSettingsSyncTest' --tests '*LocalSttInstallTest' \
             --tests '*WidgetReliabilityTest' --tests '*WidgetAvatarRendererTest' \
+            --tests '*Tts*Test' --tests '*MarkdownMathParsingTest' \
             --tests '*SkillActivationResumeTest' --tests '*LorebookEntryEditorTest' \
             -Dlastchat.renderDir="$GITHUB_WORKSPACE/app/build/reports/addon-ui" \
             --no-parallel --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process \
@@ -163,6 +165,8 @@ jobs:
             app/build/reports/tests/
             app/build/test-results/
             workspace/build/test-results/
+            speech/build/test-results/
+            tts/build/test-results/
           if-no-files-found: ignore
 
   startup:
