@@ -64,8 +64,11 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: stable-validation-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: stable-validation-${{ runner.os }}-
+            ~/.m2/repository/org/robolectric
+          key: stable-validation-v2-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            stable-validation-v2-${{ runner.os }}-
+            stable-validation-${{ runner.os }}-
       - name: Configure stable build
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}

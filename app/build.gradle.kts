@@ -201,6 +201,7 @@ android {
             // Avatar render harness (Robolectric native graphics) needs assets/res.
             isIncludeAndroidResources = true
             all {
+                it.systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
                 it.systemProperty("lastchat.renderDir", System.getProperty("lastchat.renderDir") ?: "")
                 it.systemProperty("lastchat.rollbackPreviewDir", System.getProperty("lastchat.rollbackPreviewDir") ?: "")
                 it.systemProperty("lastchat.videoDir", System.getProperty("lastchat.videoDir") ?: "")
