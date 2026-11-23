@@ -24,6 +24,7 @@ import me.rerere.tts.model.TTSModelInfo
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
+import me.rerere.tts.provider.TTSVoice
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -87,9 +88,13 @@ class GeminiTTSProvider(
                 })
                 put("speechConfig", buildJsonObject {
                     put("voiceConfig", buildJsonObject {
-                        put("prebuiltVoiceConfig", buildJsonObject {
-                            put("voiceName", providerSetting.voiceName)
-                        })
+                        if (usesModernGeminiVoices(providerSetting.model)) {
+                            put("voice", providerSetting.voiceName)
+                        } else {
+                            put("prebuiltVoiceConfig", buildJsonObject {
+                                put("voiceName", providerSetting.voiceName)
+                            })
+                        }
                     })
                 })
             })
@@ -148,6 +153,45 @@ class GeminiTTSProvider(
         }
     }
 
+    /** Google's live prebuilt catalog, including voices added after this app was released. */
+    suspend fun listVoices(providerSetting: TTSProviderSetting.Gemini): List<TTSVoice> =
+        withContext(me.rerere.tts.provider.ttsIoDispatcher) {
+            require(providerSetting.apiKey.isNotBlank()) { "A Gemini API key is required to fetch voices" }
+            val voices = mutableListOf<TTSVoice>()
+            val visitedPages = mutableSetOf<String>()
+            var pageToken: String? = null
+            do {
+                val page = pageToken?.let { "&page_token=${it.urlEncode()}" }.orEmpty()
+                val response = httpClient.execute(PlatformHttpRequest(
+                    method = "GET",
+                    url = "${providerSetting.baseUrl.trimEnd('/')}/voices?type=prebuilt&page_size=1000$page",
+                    headers = mapOf("x-goog-api-key" to providerSetting.apiKey),
+                ))
+                check(response.statusCode in 200..299) { "Gemini voice discovery failed: ${response.statusCode}" }
+                val body = ttsJson.parseToJsonElement(response.body.decodeToString()).jsonObjectOrNull
+                    ?: error("Invalid Gemini voices response")
+                val entries = body["voices"]?.jsonArrayOrNull ?: error("Gemini voices response has no voices list")
+                entries.forEach { entry ->
+                    val voice = entry.jsonObjectOrNull ?: return@forEach
+                    fun field(key: String) = voice[key]?.jsonPrimitiveOrNull?.contentOrNull
+                    val type = field("type")?.lowercase()
+                    if (type != null && type != "prebuilt" && type != "voice_type_prebuilt") return@forEach
+                    val id = (field("id") ?: field("name")?.removePrefix("voices/"))
+                        ?.takeIf(String::isNotBlank) ?: return@forEach
+                    voices += TTSVoice(
+                        name = (field("display_name") ?: field("displayName"))?.takeIf(String::isNotBlank) ?: id,
+                        providerVoiceId = id,
+                        locale = field("language_code") ?: field("languageCode"),
+                        model = providerSetting.model,
+                    )
+                }
+                pageToken = (body["next_page_token"] ?: body["nextPageToken"])
+                    ?.jsonPrimitiveOrNull?.contentOrNull?.takeIf(String::isNotBlank)
+                check(pageToken == null || visitedPages.add(pageToken)) { "Gemini repeated a voice page token" }
+            } while (pageToken != null)
+            voices.distinctBy { it.providerVoiceId }
+        }
+
     override suspend fun listModels(
         providerSetting: TTSProviderSetting.Gemini
     ): List<TTSModelInfo> = withContext(me.rerere.tts.provider.ttsIoDispatcher) {
@@ -173,7 +217,6 @@ class GeminiTTSProvider(
                         ?.mapNotNull { it.jsonPrimitiveOrNull?.contentOrNull }
                     val lower = id.lowercase()
                     if ((lower.contains("tts") || lower.contains("speech")) &&
-                        !lower.startsWith("gemini-3.8-") &&
                         (methods == null || "generateContent" in methods)) {
                         models += TTSModelInfo(id, model["displayName"]?.jsonPrimitiveOrNull?.contentOrNull ?: id)
                     }
@@ -189,4 +232,12 @@ class GeminiTTSProvider(
             emptyList()
         }
     }
+}
+
+/** Older preview models use the original prebuiltVoiceConfig wire format. */
+internal fun usesModernGeminiVoices(model: String): Boolean {
+    val version = Regex("^gemini-(\\d+)(?:\\.(\\d+))?").find(model.removePrefix("models/")) ?: return false
+    val major = version.groupValues[1].toIntOrNull() ?: return false
+    val minor = version.groupValues[2].toIntOrNull() ?: 0
+    return major > 3 || (major == 3 && minor >= 8)
 }

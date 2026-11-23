@@ -43,7 +43,7 @@ class GeminiTtsSettingsTest {
             GeminiTtsChoiceField(value, GeminiTtsCatalog.modelOptions(value), "Model", "Model", onValueChange = { value = it })
         } } }
         compose.onNodeWithContentDescription("Model").performClick()
-        compose.onNodeWithText("gemini-2.5-pro-preview-tts").performClick()
+        compose.onNodeWithText("gemini-2.5-pro-preview-tts").performScrollTo().performClick()
         compose.runOnIdle { assertEquals("gemini-2.5-pro-preview-tts", value) }
         compose.onNodeWithContentDescription("Model").performTextReplacement("my-proxy-speech-model")
         compose.runOnIdle { assertEquals("my-proxy-speech-model", value) }
@@ -58,4 +58,19 @@ class GeminiTtsSettingsTest {
         compose.onNodeWithText("Sulafat").performScrollTo().performClick()
         compose.runOnIdle { assertEquals("Sulafat", value) }
     }
+    @Test fun addVoiceUsesLiveApiNamesAndIdsInsteadOfTheFallbackList() = kotlinx.coroutines.runBlocking {
+        val http = object : me.rerere.common.platform.PlatformHttpClient {
+            override suspend fun execute(request: me.rerere.common.platform.PlatformHttpRequest) =
+                me.rerere.common.platform.PlatformHttpResponse(200, body =
+                    """{"voices":[{"id":"NewApiVoice","display_name":"New voice from Google","type":"prebuilt"}]}""".encodeToByteArray())
+            override fun streamEvents(request: me.rerere.common.platform.PlatformHttpRequest):
+                kotlinx.coroutines.flow.Flow<me.rerere.common.platform.PlatformServerEvent> = kotlinx.coroutines.flow.emptyFlow()
+        }
+        val voices = fetchProviderVoices(org.robolectric.RuntimeEnvironment.getApplication(), http,
+            TTSProviderSetting.Gemini(apiKey = "test-key"))
+        assertEquals(listOf("NewApiVoice"), voices.map { it.providerVoiceId })
+        assertEquals("New voice from Google", voices.single().name)
+        assertFalse(voices.any { it.providerVoiceId == "Kore" })
+    }
+
 }

@@ -1,6 +1,10 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.utils.plus
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
@@ -721,10 +725,11 @@ private fun ProviderVoicesFab(
     val httpClient = koinInject<PlatformHttpClient>()
     val haptics = rememberPremiumHaptics()
     val tts = LocalTTSState.current
-    var discovered by remember(provider.id, (provider as? TTSProviderSetting.Gemini)?.model) {
+    val gemini = provider as? TTSProviderSetting.Gemini
+    var discovered by remember(provider.id, gemini?.model, gemini?.baseUrl, gemini?.apiKey) {
         mutableStateOf(providerPresetVoices(provider))
     }
-    var isFetching by remember { mutableStateOf(false) }
+    var isFetching by remember(provider.id, gemini?.model, gemini?.baseUrl, gemini?.apiKey) { mutableStateOf(false) }
     var filterText by remember(provider.id) { mutableStateOf("") }
     val filterKeywords = filterText.split(" ").filter { it.isNotBlank() }
     val filteredVoices = discovered.fastFilter { voice ->
@@ -743,20 +748,37 @@ private fun ProviderVoicesFab(
         provider.voices.any { selectedVoice -> voicesReferToSameProviderVoice(selectedVoice, voice) }
     }
 
-    fun fetchVoices() {
+    suspend fun refreshVoices() {
         if (isFetching) return
-        scope.launch {
-            isFetching = true
-            discovered = fetchProviderVoices(context, httpClient, provider).ifEmpty { discovered }
+        isFetching = true
+        try {
+            // A successful response replaces the fallback wholesale, including an empty list.
+            // Failures retain the last good in-session catalog rather than losing saved choices.
+            discovered = withTimeout(20_000) { fetchProviderVoices(context, httpClient, provider) }
+        } catch (_: TimeoutCancellationException) {
+            // Keep the current catalog available when discovery times out.
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Offline, restricted keys and proxies without /voices keep the fallback/last result.
+        } finally {
             isFetching = false
         }
+    }
+
+    fun fetchVoices() { scope.launch { refreshVoices() } }
+
+    // Refresh on every opening and whenever the endpoint/key/model changes. The fallback is
+    // immediately usable while loading; a nonempty fallback must never suppress discovery.
+    LaunchedEffect(showSheet, provider.id, gemini?.model, gemini?.baseUrl, gemini?.apiKey) {
+        if (showSheet && gemini != null) refreshVoices()
     }
 
     FloatingActionButton(
         onClick = {
             haptics.perform(HapticPattern.Tick)
             onOpen()
-            if (discovered.isEmpty()) fetchVoices()
+            if (gemini == null && discovered.isEmpty()) fetchVoices()
         },
         shape = AppShapes.CardLarge,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1119,12 +1141,15 @@ private fun voicesReferToSameProviderVoice(a: TTSVoice, b: TTSVoice): Boolean {
         (a.model ?: "").equals(b.model ?: "", ignoreCase = true)
 }
 
-private suspend fun fetchProviderVoices(
+internal suspend fun fetchProviderVoices(
     context: android.content.Context,
     httpClient: PlatformHttpClient,
     provider: TTSProviderSetting,
 ): List<TTSVoice> = withContext(Dispatchers.IO) {
     when (provider) {
+        is TTSProviderSetting.Gemini ->
+            me.rerere.tts.provider.providers.GeminiTTSProvider(httpClient).listVoices(provider)
+
         is TTSProviderSetting.SystemTTS -> discoverLocalTtsEngines(context).flatMap { engine ->
             discoverLocalTtsVoices(context, engine.packageName).map { voice ->
                 TTSVoice(

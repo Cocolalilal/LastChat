@@ -8,6 +8,7 @@ import me.rerere.common.platform.android.OkHttpPlatformHttpClient
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.TTSModelInfo
 import me.rerere.tts.model.TTSRequest
+import me.rerere.tts.provider.TTSVoice
 import me.rerere.tts.provider.TTSProviderSetting
 import me.rerere.tts.provider.TtsSpeechGenerator
 import me.rerere.tts.provider.providers.CartesiaTTSProvider
@@ -97,6 +98,12 @@ class TTSManager(private val context: Context) : TtsSpeechGenerator {
             is TTSProviderSetting.PlayHT -> playHTProvider.generateSpeech(providerSetting, request)
         }
     }
+
+    suspend fun listVoices(providerSetting: TTSProviderSetting): List<TTSVoice> =
+        when (providerSetting) {
+            is TTSProviderSetting.Gemini -> geminiProvider.listVoices(providerSetting)
+            else -> emptyList()
+        }
 
     suspend fun listModels(providerSetting: TTSProviderSetting): List<TTSModelInfo> =
         withContext(Dispatchers.IO) {

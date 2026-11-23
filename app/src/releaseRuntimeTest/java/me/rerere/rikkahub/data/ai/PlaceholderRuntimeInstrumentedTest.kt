@@ -287,6 +287,20 @@ class PlaceholderRuntimeInstrumentedTest {
         }
         assertFalse(chunks[0].isLast)
         assertTrue(chunks[1].isLast)
+        val voicesHttp = RecordingHttpClient(
+            """{"voices":[{"id":"FutureApiVoice","display_name":"Live catalog voice","type":"prebuilt"}]}""", "",
+        )
+        val provider = me.rerere.tts.provider.TTSProviderSetting.Gemini(
+            apiKey = "test", model = "gemini-3.8-flash-tts",
+        )
+        val liveVoices = me.rerere.tts.provider.providers.GeminiTTSProvider(voicesHttp).listVoices(provider)
+        assertEquals("FutureApiVoice", liveVoices[0].providerVoiceId)
+        assertEquals("Live catalog voice", liveVoices[0].name)
+        me.rerere.tts.provider.providers.GeminiTTSProvider(http).generateSpeech(
+            provider.copy(voiceName = liveVoices[0].providerVoiceId),
+            me.rerere.tts.model.TTSRequest("Use the API voice."),
+        ).toList()
+        assertTrue(http.requests[1].body!!.decodeToString().contains("\"voice\":\"FutureApiVoice\""))
     }
 
     // Text-only protocol fixtures must never access media files or service-account keys.

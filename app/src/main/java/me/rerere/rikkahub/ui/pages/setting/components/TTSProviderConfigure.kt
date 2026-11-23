@@ -550,6 +550,9 @@ private fun GeminiTTSConfiguration(
 
     var fetchingModels by remember(setting.id, setting.baseUrl, setting.apiKey) { mutableStateOf(false) }
     var discoveredModels by remember(setting.id, setting.baseUrl, setting.apiKey) { mutableStateOf(emptyList<String>()) }
+    var discoveredVoices by remember(setting.id, setting.baseUrl, setting.apiKey, setting.model) {
+        mutableStateOf(GeminiTtsCatalog.voices)
+    }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val ttsManager = koinInject<TTSManager>()
     GeminiTtsChoiceField(
@@ -571,10 +574,25 @@ private fun GeminiTTSConfiguration(
         onValueChange = { onValueChange(setting.copy(model = it)) },
     )
 
+    androidx.compose.runtime.LaunchedEffect(showVoiceFields, setting.id, setting.baseUrl, setting.apiKey, setting.model) {
+        if (showVoiceFields) {
+            try {
+                discoveredVoices = kotlinx.coroutines.withTimeout(20_000) {
+                    ttsManager.listVoices(setting).map { it.providerVoiceId }
+                }
+            } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                // Keep the offline fallback if discovery times out.
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // Preserve the fallback for offline/restricted/older endpoints.
+            }
+        }
+    }
     if (showVoiceFields) {
         GeminiTtsChoiceField(
             value = setting.voiceName,
-            options = GeminiTtsCatalog.voices,
+            options = discoveredVoices,
             label = stringResource(R.string.setting_tts_page_voice_name),
             placeholder = stringResource(R.string.setting_tts_page_voice_name_placeholder),
             onValueChange = { onValueChange(setting.copy(voiceName = it)) },

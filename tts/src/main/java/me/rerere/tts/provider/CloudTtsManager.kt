@@ -40,6 +40,12 @@ class CloudTtsManager(httpClient: PlatformHttpClient) : TtsSpeechGenerator {
         is TTSProviderSetting.SystemTTS -> error("System TTS requires a platform provider")
     }
 
+    suspend fun listVoices(providerSetting: TTSProviderSetting): List<TTSVoice> =
+        when (providerSetting) {
+            is TTSProviderSetting.Gemini -> gemini.listVoices(providerSetting)
+            else -> emptyList()
+        }
+
     suspend fun listModels(providerSetting: TTSProviderSetting): List<TTSModelInfo> =
         when (providerSetting) {
             is TTSProviderSetting.OpenAI -> openAI.listModels(providerSetting)
