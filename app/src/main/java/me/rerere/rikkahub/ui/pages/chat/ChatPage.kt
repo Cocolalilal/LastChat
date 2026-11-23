@@ -92,6 +92,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
@@ -3792,8 +3794,8 @@ private fun ContextUsagePopupContent(
 
     var isEditingLimit by remember { mutableStateOf(false) }
     val maxCapacityTokens = model?.baseCapacityTokens ?: maxOf(usage.totalTokens, model?.contextCapacityTokens ?: 0)
-    val isCustomLimitActive = model?.customContextLimitTokens != null ||
-        model?.contextLimitSource == me.rerere.ai.provider.ContextLimitSource.MANUAL
+    val customLimit = model?.customContextLimitTokens?.takeIf { it > 0 }
+    val isCustomLimitActive = customLimit != null && customLimit != model.baseCapacityTokens
 
     val minSafeFloorTokens = remember(model, usage) {
         if (model != null) {
@@ -4037,6 +4039,7 @@ private fun ContextUsagePopupContent(
             // The Pencil / Close button sized to 24dp to optically balance against the bar height, with long-press reset
             Box(
                 modifier = Modifier
+                    .semantics { selected = isCustomLimitActive }
                     .size(24.dp)
                     .clip(androidx.compose.foundation.shape.CircleShape)
                     .background(

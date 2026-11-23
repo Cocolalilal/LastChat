@@ -19,6 +19,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import dev.chrisbanes.haze.rememberHazeState
 import me.rerere.ai.context.ContextUsageBreakdown
+import me.rerere.ai.provider.ContextLimitSource
 import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.ui.hooks.PremiumHaptics
 import me.rerere.rikkahub.ui.modifier.LastChatBlur
@@ -57,6 +58,51 @@ class ContextUsageMenuTest {
 
     @Test fun topMenuRetainsBreakdownAndLimitEditor() = exerciseMenu(ChatToolbarPlacement.Top, true)
     @Test fun bottomMenuRetainsBreakdownAndLimitEditor() = exerciseMenu(ChatToolbarPlacement.Bottom, false)
+
+    @Test fun pencilTracksEffectiveOverrideAcrossModelUpdatesAndReset() {
+        var model by mutableStateOf(Model(modelId = "chat", contextWindowTokens = 32_000,
+            contextLimitSource = ContextLimitSource.MANUAL))
+        val usage = ContextUsageBreakdown(conversationTokens = 4_000, totalTokens = 32_000,
+            usableInputTokens = 28_000)
+        compose.setContent {
+            val haze = rememberHazeState()
+            MaterialTheme(colorScheme = findPresetTheme(SeafoamMintThemeId).getColorScheme(true),
+                shapes = Shapes, typography = Typography) {
+                CompositionLocalProvider(LocalLastChatBlur provides LastChatBlur(true, haze),
+                    LocalMotionPolicy provides MotionPolicy(reduceMotion = false), LocalDarkMode provides true) {
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                        Box(Modifier.fillMaxSize().lastChatBlurSource())
+                        ContextUsageMenu(true, usage, model, ChatToolbarPlacement.Top,
+                            onUpdateModelLimit = { model = model.copy(customContextLimitTokens = it) },
+                            onDismissRequest = {}, haptics = noHaptics)
+                    }
+                }
+            }
+        }
+        compose.mainClock.autoAdvance = false
+        frames()
+        val pencil = compose.onNodeWithContentDescription("Edit context limit")
+        pencil.assertIsNotSelected()
+        for (redundantLimit in listOf(32_000, 0, -1)) {
+            compose.runOnIdle { model = model.copy(customContextLimitTokens = redundantLimit) }
+            frames()
+            pencil.assertIsNotSelected()
+        }
+        compose.runOnIdle { model = model.copy(customContextLimitTokens = 16_000) }
+        frames()
+        pencil.assertIsSelected()
+        compose.runOnIdle { model = model.copy(contextWindowTokens = 16_000) }
+        frames()
+        pencil.assertIsNotSelected()
+        compose.runOnIdle { model = model.copy(contextWindowTokens = 32_000) }
+        frames()
+        pencil.assertIsSelected()
+        pencil.performTouchInput { longClick() }
+        frames()
+        assertEquals(null, model.customContextLimitTokens)
+        assertEquals(ContextLimitSource.MANUAL, model.contextLimitSource)
+        pencil.assertIsNotSelected()
+    }
 
     private fun exerciseMenu(placement: ChatToolbarPlacement, dark: Boolean) {
         val usage = ContextUsageBreakdown(conversationTokens = 4_000, systemPromptTokens = 800,
@@ -103,7 +149,7 @@ class ContextUsageMenuTest {
     }
 
     private fun capture(name: String) {
-        val directory = System.getProperty("lastchat.renderDir")?.let(::File) ?: return
+        val directory = System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() }?.let(::File) ?: return
         directory.mkdirs()
         compose.runOnIdle {
             val view = compose.activity.window.decorView
