@@ -149,7 +149,7 @@ fun Application.configureWebApi(
                 call.respond(
                     buildWebBootstrap(
                         settings = settings,
-                        assistants = settings.assistants.map { it.toWebAssistantDto(context) },
+                        assistants = settings.assistants.map { it.toWebAssistantDto(context, settings.lorebooks, settings.skills) },
                         conversations = conversations,
                         generationJobs = generationJobs,
                     )
@@ -775,7 +775,20 @@ private fun Route.webRoutes(
                             enabledSkillIds = requestedModeIds,
                             enabledLorebookIds = requestedLorebookIds,
                         )
-                    }
+                    },
+                    skills = current.skills.map { skill ->
+                        val selected = skill.id in requestedModeIds
+                        skill.copy(
+                            availableAssistantIds = if (!skill.availableForAllAssistants && selected)
+                                skill.availableAssistantIds + assistantId else skill.availableAssistantIds - assistantId,
+                            availableExcludedAssistantIds = if (skill.availableForAllAssistants && !selected)
+                                skill.availableExcludedAssistantIds + assistantId else skill.availableExcludedAssistantIds - assistantId,
+                        )
+                    },
+                    lorebooks = current.lorebooks.map { lorebook ->
+                        lorebook.copy(excludedAssistantIds = if (lorebook.allAssistants && lorebook.id !in requestedLorebookIds)
+                            lorebook.excludedAssistantIds + assistantId else lorebook.excludedAssistantIds - assistantId)
+                    },
                 )
             }
             call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))

@@ -114,7 +114,6 @@ import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
-import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.MaterialIconPickerDialog
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
@@ -427,13 +426,11 @@ fun SkillEditorPage(
     var description by remember { mutableStateOf(skill?.description ?: "") }
     var icon by remember { mutableStateOf(skill?.icon) }
     var instructions by remember { mutableStateOf(skill?.instructions ?: "") }
-    val alwaysEnabled = false
-    var disableModelInvocation by remember { mutableStateOf(skill?.disableModelInvocation ?: false) }
-    var userInvocable by remember { mutableStateOf(skill?.userInvocable ?: true) }
     var injectionPosition by remember { mutableStateOf(skill?.injectionPosition ?: InjectionPosition.AFTER_SYSTEM) }
     var depth by remember { mutableStateOf(skill?.depth?.toString() ?: "0") }
     var availableForAllAssistants by remember { mutableStateOf(skill?.availableForAllAssistants ?: true) }
     var availableAssistantIds by remember { mutableStateOf(skill?.availableAssistantIds ?: emptySet()) }
+    var availableExcludedAssistantIds by remember { mutableStateOf(skill?.availableExcludedAssistantIds ?: emptySet()) }
     var showIconPicker by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var namePending by remember { mutableStateOf(false) }
@@ -479,9 +476,10 @@ fun SkillEditorPage(
     val formEnabled = !isSaving || isEditing
     fun currentDraft(): Skill = (packageSkillMetadata ?: skill ?: initialSkill).copy(
         name = name.trim(), description = description.trim(), icon = icon, instructions = instructions,
-        alwaysEnabled = false, disableModelInvocation = disableModelInvocation, userInvocable = userInvocable,
+        alwaysEnabled = false,
         injectionPosition = injectionPosition, depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
         availableForAllAssistants = availableForAllAssistants, availableAssistantIds = availableAssistantIds,
+        availableExcludedAssistantIds = availableExcludedAssistantIds,
         updatedAt = System.currentTimeMillis(),
     )
 
@@ -553,26 +551,22 @@ fun SkillEditorPage(
             AddonPromptField(title = stringResource(R.string.skills_page_instructions), value = instructions,
                 onValueChange = { instructions = it; persistDraft() }, stateKey = "skill_instructions_${skill?.id ?: "new"}",
                 enabled = formEnabled, onPendingChange = { instructionsPending = it })
-            SettingsGroup(title = "Activation") {
-                SettingGroupItem(
-                    title = "Assistant can use",
-                    trailing = { HapticSwitch(!disableModelInvocation, {
-                        disableModelInvocation = !it; persistDraft()
-                    }, enabled = formEnabled) },
-                    onClick = if (formEnabled) ({ disableModelInvocation = !disableModelInvocation; persistDraft() }) else null,
-                )
-                SettingGroupItem(
-                    title = "Slash command",
-                    trailing = { HapticSwitch(userInvocable, { userInvocable = it; persistDraft() }, enabled = formEnabled) },
-                    onClick = if (formEnabled) ({ userInvocable = !userInvocable; persistDraft() }) else null,
-                )
-            }
             CharacterAccessSection(
                 assistants = assistants, selectedIds = availableAssistantIds, enabled = formEnabled, entryName = name,
-                allSelected = availableForAllAssistants,
-                onAllSelectedChange = { availableForAllAssistants = it; persistDraft() },
+                title = "Automatic activation", allSelected = availableForAllAssistants,
+                excludedIds = availableExcludedAssistantIds,
+                onAllSelectedChange = {
+                    availableForAllAssistants = it
+                    availableAssistantIds = emptySet()
+                    availableExcludedAssistantIds = emptySet()
+                    persistDraft()
+                },
                 onSelectionChange = { id, selected ->
-                    availableAssistantIds = if (selected) availableAssistantIds + id else availableAssistantIds - id
+                    if (availableForAllAssistants) {
+                        availableExcludedAssistantIds = if (selected) availableExcludedAssistantIds - id else availableExcludedAssistantIds + id
+                    } else {
+                        availableAssistantIds = if (selected) availableAssistantIds + id else availableAssistantIds - id
+                    }
                     persistDraft()
                 },
             )
@@ -604,7 +598,7 @@ fun SkillEditorPage(
             initialContent = editingPackageContent, saving = packageFileSaving,
             onDismiss = { if (!packageFileSaving) editingPackagePath = null },
             onSave = { content ->
-                val currentSkill = packageSkillMetadata ?: skill ?: return@SkillPackageTextEditorDialog
+                val currentSkill = currentDraft()
                 val parsedSkill = if (relativePath == "SKILL.md") {
                     when (val parsed = SkillExportImport.importFromString(content)) {
                         is SkillExportImport.ImportResult.Success -> {
@@ -650,8 +644,6 @@ fun SkillEditorPage(
                             name = updatedSkill.name
                             description = updatedSkill.description
                             instructions = updatedSkill.instructions
-                            disableModelInvocation = updatedSkill.disableModelInvocation
-                            userInvocable = updatedSkill.userInvocable
                             onPackageMetadataChanged?.invoke(updatedSkill)
                         }
                         editingPackagePath = null

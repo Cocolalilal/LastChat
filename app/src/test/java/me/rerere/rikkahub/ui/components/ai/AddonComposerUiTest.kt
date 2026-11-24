@@ -59,6 +59,8 @@ import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.SecureStore
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.withLorebookDefault
+import me.rerere.rikkahub.data.datastore.withLorebookAssignment
 import me.rerere.rikkahub.data.model.AdditionalContext
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Skill
@@ -212,22 +214,29 @@ class AddonComposerUiTest {
         compose.onNodeWithContentDescription("Delete").assertDoesNotExist()
     }
 
-    @Test fun contextEditorKeepsCharacterAssignmentsWhenAllCharactersIsToggled() {
+    @Test fun contextDefaultsResetExceptionsAndKeepCharactersIndividuallyEditable() {
         var snippet by mutableStateOf(snippets.first())
         content { AdditionalContextEditorPage(snippet, listOf(assistant), onUpdate = { snippet = it(snippet) }) }
+        compose.onNodeWithText("Enabled").assertDoesNotExist()
         capture("additional-context-editor")
         compose.runOnIdle { dark = true }
         capture("additional-context-editor")
         compose.onNodeWithText("Characters").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("All characters").performClick()
+        compose.onNodeWithContentDescription("Enabled by default").assertIsOff().performClick()
         assertTrue(snippet.allAssistants)
-        compose.onNodeWithText("Mira").assertDoesNotExist()
-        compose.onNodeWithContentDescription("All characters").performClick()
+        capture("context-character-defaults")
+        assertTrue(snippet.assistantIds.isEmpty())
+        compose.onNodeWithContentDescription("Mira").assertIsOn().performClick()
+        assertTrue(assistant.id in snippet.excludedAssistantIds)
+        compose.onNodeWithContentDescription("Mira").assertIsOff()
+        compose.onNodeWithContentDescription("Enabled by default").performClick()
         assertFalse(snippet.allAssistants)
+        assertTrue(snippet.excludedAssistantIds.isEmpty())
+        compose.onNodeWithContentDescription("Mira").assertIsOff().performClick()
         assertTrue(assistant.id in snippet.assistantIds)
-        compose.onNodeWithContentDescription("Mira").performClick()
-        compose.waitForIdle()
-        assertFalse(assistant.id in snippet.assistantIds)
+        compose.onNodeWithContentDescription("Enabled by default").performClick()
+        assertTrue(snippet.assistantIds.isEmpty())
+        compose.onNodeWithContentDescription("Mira").assertIsOn()
     }
     @Test fun skillCreationUsesThePageWithoutOpeningAModal() {
         content { SkillEditorPage(skill = null, assistants = listOf(assistant), onSave = {}) }
@@ -237,24 +246,25 @@ class AddonComposerUiTest {
         capture("skill-editor")
     }
 
-    @Test fun existingSkillActivationAndAccessChangesAutosaveWithoutReenablingTheSkill() {
+    @Test fun existingSkillAssignmentsAutosaveAndActivationTogglesAreAbsent() {
         val original = Skill(name = "write", instructions = "Write clearly.", enabled = false)
         var saved = original
-        val saveHistory = mutableListOf<Skill>()
-        content { SkillEditorPage(original, listOf(assistant), onSave = {}, onAutoSave = { saved = it; saveHistory += it }) }
+        content { SkillEditorPage(original, listOf(assistant), onSave = {}, onAutoSave = { saved = it }) }
         compose.onNodeWithText("Save").assertDoesNotExist()
-        compose.onNodeWithText("Assistant can use").performScrollTo().performClick()
-        assertTrue(saved.disableModelInvocation)
-        assertFalse(saved.enabled)
-        compose.onNodeWithText("Slash command").performScrollTo().performClick()
-        assertFalse(saved.userInvocable)
-        compose.onNodeWithText("Characters").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("All characters").assertIsOn().performClick()
+        compose.onNodeWithText("Assistant can use").assertDoesNotExist()
+        compose.onNodeWithText("Slash command").assertDoesNotExist()
+        compose.onNodeWithText("Automatic activation").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Enabled by default").assertIsOn()
+        compose.onNodeWithContentDescription("Mira").assertIsOn().performClick()
+        compose.waitForIdle()
+        assertTrue(assistant.id in saved.availableExcludedAssistantIds)
+        capture("skill-character-exceptions")
+        compose.onNodeWithContentDescription("Enabled by default").performClick()
         assertFalse(saved.availableForAllAssistants)
+        assertTrue(saved.availableExcludedAssistantIds.isEmpty())
         compose.onNodeWithContentDescription("Mira").assertIsOff().performClick()
         compose.waitForIdle()
-        assertTrue("Save history: ${saveHistory.map { it.availableAssistantIds }}", assistant.id in saved.availableAssistantIds)
-        assertFalse(saved.enabled)
+        assertTrue(assistant.id in saved.availableAssistantIds)
     }
 
     @Test fun longSkillPromptUsesAnExpandableFieldAtLargerFontScale() {
@@ -270,6 +280,30 @@ class AddonComposerUiTest {
         compose.onAllNodes(hasText("Instructions")).assertCountEquals(1)
         compose.onNodeWithText("Save").assertExists()
         capture("skill-prompt-expanded")
+    }
+
+    @Test fun lorebookCharactersRemainEditableWithEitherDefault() {
+        val book = Lorebook(name = "Coastal town")
+        var settings by mutableStateOf(Settings(assistants = listOf(assistant), lorebooks = listOf(book)))
+        content {
+            me.rerere.rikkahub.ui.pages.setting.AssistantLorebookToggleSheet(
+                settings.lorebooks.single(), settings.assistants,
+                onDefaultChange = { settings = settings.withLorebookDefault(book.id, it) },
+                onAssignmentChange = { id, checked -> settings = settings.withLorebookAssignment(book.id, id, checked) },
+                onDismiss = {},
+            )
+        }
+        compose.onNodeWithContentDescription("Enabled by default").assertIsOff().performClick()
+        compose.onNodeWithContentDescription("Mira").assertIsOn().performClick()
+        assertEquals(setOf(assistant.id), settings.lorebooks.single().excludedAssistantIds)
+        capture("lorebook-character-exceptions")
+        compose.onNodeWithContentDescription("Enabled by default").performClick()
+        compose.onNodeWithContentDescription("Mira").assertIsOff().performClick()
+        assertEquals(setOf(book.id), settings.assistants.single().enabledLorebookIds)
+        compose.onNodeWithContentDescription("Enabled by default").performClick()
+        assertTrue(settings.assistants.single().enabledLorebookIds.isEmpty())
+        assertTrue(settings.lorebooks.single().excludedAssistantIds.isEmpty())
+        compose.onNodeWithContentDescription("Mira").assertIsOn()
     }
 
     @Test fun lorebookMetadataKeepsTheOriginalSheetAndCancelBehavior() {
@@ -333,9 +367,9 @@ class AddonComposerUiTest {
         assertEquals(snippets.reversed(), settings.additionalContexts)
     }
 
-    @Test fun pickerKeepsSavedSelectionsForTemporarilyDisabledEntries() {
+    @Test fun pickerIgnoresLegacyEnabledFlagAndKeepsEmptyPromptSelections() {
         var settings by mutableStateOf(Settings(additionalContexts = snippets.mapIndexed { index, snippet ->
-            if (index == 0) snippet.copy(enabled = false) else snippet
+            if (index == 0) snippet.copy(enabled = false, prompt = "") else snippet
         }))
         var chat by mutableStateOf(me.rerere.rikkahub.data.model.Conversation.ofId(kotlin.uuid.Uuid.random(), assistant.id)
             .copy(enabledAdditionalContextIds = snippets.map { it.id }.toSet()))

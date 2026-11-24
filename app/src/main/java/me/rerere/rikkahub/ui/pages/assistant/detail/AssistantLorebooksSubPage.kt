@@ -38,6 +38,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Lorebook
+import me.rerere.rikkahub.data.model.isAssignedTo
 import me.rerere.rikkahub.ui.components.ui.EmptyStateCard
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -113,7 +114,7 @@ fun AssistantLorebooksSubPage(
             }
             
             itemsIndexed(lorebooks, key = { _, it -> it.id }) { index, lorebook ->
-                val isEnabled = assistant.enabledLorebookIds.contains(lorebook.id)
+                val isEnabled = lorebook.isAssignedTo(assistant)
                 
                 // Calculate position for connected card styling
                 val position = when {
@@ -129,12 +130,7 @@ fun AssistantLorebooksSubPage(
                     position = position,
                     onClick = { navController.navigate(Screen.SettingLorebookDetail(lorebook.id.toString())) },
                     onToggle = { enabled ->
-                        val newIds = if (enabled) {
-                            assistant.enabledLorebookIds + lorebook.id
-                        } else {
-                            assistant.enabledLorebookIds - lorebook.id
-                        }
-                        onUpdate(assistant.copy(enabledLorebookIds = newIds))
+                        vm.setLorebookAssignment(lorebook.id, enabled)
                     }
                 )
             }

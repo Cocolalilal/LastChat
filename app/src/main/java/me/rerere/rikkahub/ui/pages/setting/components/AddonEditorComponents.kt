@@ -129,6 +129,7 @@ fun CharacterAccessSection(
     selectedIds: Set<Uuid>,
     onSelectionChange: (Uuid, Boolean) -> Unit,
     allSelected: Boolean? = null,
+    excludedIds: Set<Uuid> = emptySet(),
     onAllSelectedChange: ((Boolean) -> Unit)? = null,
     horizontalPadding: Dp = 16.dp,
     title: String = "Characters",
@@ -136,7 +137,8 @@ fun CharacterAccessSection(
     enabled: Boolean = true,
 ) {
     var open by remember { mutableStateOf(false) }
-    val summary = if (allSelected == true) "All characters" else "${assistants.count { it.id in selectedIds }} selected"
+    val selectedCount = assistants.count { if (allSelected == true) it.id !in excludedIds else it.id in selectedIds }
+    val summary = if (allSelected == true && excludedIds.isEmpty()) "All characters" else "$selectedCount selected"
     SettingsGroup(title = "", horizontalPadding = horizontalPadding) {
         SettingGroupItem(title = title, subtitle = summary,
             trailing = { Icon(Icons.Rounded.KeyboardArrowDown, null) },
@@ -160,13 +162,13 @@ fun CharacterAccessSection(
             if (allSelected != null && onAllSelectedChange != null) {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), shape = AppShapes.CardLarge) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("All characters", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Text("Enabled by default", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                         HapticSwitch(allSelected, onAllSelectedChange, enabled = enabled,
-                            modifier = Modifier.semantics { contentDescription = "All characters" })
+                            modifier = Modifier.semantics { contentDescription = "Enabled by default" })
                     }
                 }
             }
-            if (allSelected != true) assistants.forEachIndexed { index, assistant ->
+            assistants.forEachIndexed { index, assistant ->
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                     shape = addonItemShape(addonItemPosition(index, assistants.size))) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -174,7 +176,8 @@ fun CharacterAccessSection(
                             modifier = Modifier.size(40.dp).clearAndSetSemantics {})
                         Text(assistant.name.ifBlank { "Character" }, style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        HapticSwitch(assistant.id in selectedIds, { onSelectionChange(assistant.id, it) }, enabled = enabled,
+                        HapticSwitch(if (allSelected == true) assistant.id !in excludedIds else assistant.id in selectedIds,
+                            { onSelectionChange(assistant.id, it) }, enabled = enabled,
                             modifier = Modifier.semantics { contentDescription = assistant.name })
                     }
                 }

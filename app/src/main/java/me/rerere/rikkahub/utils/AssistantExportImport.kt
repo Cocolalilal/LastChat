@@ -16,6 +16,7 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.CharacterCardV2
 import me.rerere.rikkahub.data.model.CharacterCardV2Data
 import me.rerere.rikkahub.data.model.Lorebook
+import me.rerere.rikkahub.data.model.isAssignedTo
 import me.rerere.rikkahub.data.model.ModeAttachment
 import me.rerere.rikkahub.data.model.TavernCharacterBook
 import me.rerere.rikkahub.data.model.TavernCharacterBookEntry
@@ -109,9 +110,7 @@ object AssistantExportImport : KoinComponent {
         // 3. Process Lorebooks
         val bundledLorebooks = if (includeLorebooks) {
             val allLorebooks = settingsStore.settingsFlow.value.lorebooks
-            assistant.enabledLorebookIds.mapNotNull { id ->
-                allLorebooks.find { it.id == id }
-            }.map { lorebook ->
+            allLorebooks.filter { it.isAssignedTo(assistant) }.map { lorebook ->
                 val entryAttachments = lorebook.entries.associate { entry ->
                     entry.id.toString() to entry.attachments.mapNotNull { attachment ->
                         embedAttachment(context, attachment.url, attachment.type.name, attachment.fileName, attachment.mime)
@@ -227,7 +226,8 @@ object AssistantExportImport : KoinComponent {
 
         if (importLorebooks) {
             export.lorebooks.forEach { lbExport ->
-                var lorebook = lbExport.lorebook.copy(id = Uuid.random()) // New ID
+                var lorebook = lbExport.lorebook.copy(id = Uuid.random(), allAssistants = false,
+                    excludedAssistantIds = emptySet()) // Character imports must not change other characters.
                 val entryAttachments = lbExport.entryAttachments
 
                 // Restore attachments for entries
@@ -305,9 +305,7 @@ object AssistantExportImport : KoinComponent {
     suspend fun exportToCharacterCardV2(assistant: Assistant, context: Context): String {
         // Collect Lorebooks into a single CharacterBook
         val allLorebooks = settingsStore.settingsFlow.value.lorebooks
-        val enabledLorebooks = assistant.enabledLorebookIds.mapNotNull { id ->
-            allLorebooks.find { it.id == id }
-        }
+        val enabledLorebooks = allLorebooks.filter { it.isAssignedTo(assistant) }
 
         val mergedTavernEntries = mutableListOf<TavernCharacterBookEntry>()
         enabledLorebooks.forEach { lb ->

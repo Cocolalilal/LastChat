@@ -63,10 +63,25 @@ data class Lorebook(
     val description: String = "",
     val cover: Avatar? = null,  // Cover image for the book visualization
     val entries: List<LorebookEntry> = emptyList(),
+    val allAssistants: Boolean = false,
+    val excludedAssistantIds: Set<Uuid> = emptySet(),
     val enabled: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
+
+/** Keep legacy per-character inclusions while allowing a default with individual exclusions. */
+fun Lorebook.isAssignedTo(assistant: Assistant): Boolean =
+    if (allAssistants) assistant.id !in excludedAssistantIds else id in assistant.enabledLorebookIds
+
+/** Conversation overrides replace inherited assignments; Add-ons ordering remains unchanged. */
+fun resolveLorebooks(
+    lorebooks: List<Lorebook>,
+    assistant: Assistant,
+    conversationEnabledIds: Set<Uuid>? = null,
+): List<Lorebook> = lorebooks.filter { lorebook ->
+    lorebook.enabled && (conversationEnabledIds?.contains(lorebook.id) ?: lorebook.isAssignedTo(assistant))
+}
 
 fun Lorebook.collectMediaFileRefs(): List<String> {
     return buildList {

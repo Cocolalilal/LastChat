@@ -126,6 +126,7 @@ internal fun Settings.migrateAlwaysEnabledSkillsToContext(): Settings {
                 enabled = skill.enabled,
                 allAssistants = skill.availableForAllAssistants,
                 assistantIds = skill.availableAssistantIds,
+                excludedAssistantIds = skill.availableExcludedAssistantIds,
                 injectionPosition = skill.injectionPosition,
                 depth = skill.depth,
                 attachments = skill.attachments,

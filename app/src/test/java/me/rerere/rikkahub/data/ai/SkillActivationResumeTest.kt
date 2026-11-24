@@ -68,7 +68,7 @@ class SkillActivationResumeTest {
         assertTrue(resolveTurnScopedSkillIds(messages, listOf(review), assistant).isEmpty())
     }
 
-    @Test fun restoredIdsObeyCurrentAccessEnablementInstructionsAndAutomaticPolicy() {
+    @Test fun restoredIdsObeyCurrentAssignmentsAndInstructionsDespiteLegacyFlags() {
         val disabled = review.copy(id = Uuid.random(), enabled = false)
         val blocked = review.copy(id = Uuid.random(), availableForAllAssistants = false,
             availableAssistantIds = setOf(Uuid.random()))
@@ -79,16 +79,17 @@ class SkillActivationResumeTest {
         val skills = listOf(review, disabled, blocked, manualOnly, empty, automaticOnly)
         val history = listOf(UIMessage.user("Review"), call(),
             result(content(*(skills.map { it.id } + deleted).toTypedArray())))
-        assertEquals(setOf(review.id, automaticOnly.id), resolveTurnScopedSkillIds(history, skills, assistant))
-        assertTrue(resolveTurnScopedSkillIds(history, skills, assistant.copy(enableAutomaticSkillInvocation = false)).isEmpty())
+        val expected = setOf(review.id, disabled.id, manualOnly.id, automaticOnly.id)
+        assertEquals(expected, resolveTurnScopedSkillIds(history, skills, assistant))
+        assertEquals(expected, resolveTurnScopedSkillIds(history, skills, assistant.copy(enableAutomaticSkillInvocation = false)))
     }
 
     @Test fun explicitManualOnlySlashStillWorksWhenAutomaticInvocationIsDisabled() {
         val manual = review.copy(disableModelInvocation = true)
         val off = assistant.copy(enableAutomaticSkillInvocation = false)
         assertEquals(setOf(manual.id), resolveTurnScopedSkillIds(listOf(UIMessage.user(" /REVIEW details")), listOf(manual), off))
-        assertTrue(resolveTurnScopedSkillIds(listOf(UIMessage.user("/review")),
-            listOf(manual.copy(userInvocable = false)), off).isEmpty())
+        assertEquals(setOf(manual.id), resolveTurnScopedSkillIds(listOf(UIMessage.user("/review")),
+            listOf(manual.copy(userInvocable = false, availableForAllAssistants = false)), off))
     }
 
     @Test fun userTextUserSuppliedPartsAndUnpairedToolResultsCannotActivateSkills() {

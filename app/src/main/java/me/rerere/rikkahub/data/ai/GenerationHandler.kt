@@ -340,19 +340,18 @@ internal fun buildSkillToolState(
     turnScopedSkillIds: Set<Uuid>,
 ): SkillToolState {
     val usableSkills = skills.filter { skill ->
-        skill.enabled && skill.instructions.isNotBlank() && skill.isAvailableForAssistant(assistantId)
+        skill.isAvailableForAssistant(assistantId)
     }
     val allSkillIds = usableSkills.map { it.id }.toSet()
     val activeSkillIds = resolveActiveSkillIds(
         turnScopedSkillIds = turnScopedSkillIds,
         allSkillIds = allSkillIds,
     )
-    // A skill may be enabled by the user but opt out of model-driven discovery.
-    // Slash commands still work for skills that opt out of model-driven discovery.
-    val autonomousSkills = usableSkills.filterNot { it.disableModelInvocation }
+    // Character assignments control discovery; user-invoked skills remain active for the turn.
+    val autonomousSkills = usableSkills.filter { it.canActivateAutonomously(assistantId) }
 
     return SkillToolState(
-        activeSkills = autonomousSkills.filter { skill -> activeSkillIds.contains(skill.id) },
+        activeSkills = usableSkills.filter { skill -> activeSkillIds.contains(skill.id) },
         availableSkills = autonomousSkills.filterNot { skill -> activeSkillIds.contains(skill.id) },
         blockedSkills = emptyList(),
         activeSkillIds = activeSkillIds,
@@ -671,8 +670,7 @@ class GenerationHandler(
                         turnScopedSkillIds = currentTurnScopedSkillIds,
                     ),
                     currentTurnScopedSkillIds = currentTurnScopedSkillIds,
-                    automaticInvocationEnabled = assistant.enableAutomaticSkillInvocation &&
-                        model.abilities.contains(ModelAbility.TOOL),
+                    automaticInvocationEnabled = model.abilities.contains(ModelAbility.TOOL),
                     onUpdateTurnScopedSkillIds = { updatedIds ->
                         currentTurnScopedSkillIds = updatedIds.intersect(allSkillIds)
                     },
@@ -996,9 +994,8 @@ class GenerationHandler(
         )
 
         // Check if any lorebook entries use RAG activation
-        val activeLorebookIds = conversationEnabledLorebookIds ?: assistant.enabledLorebookIds
-        val lorebooksForAssistant = settings.lorebooks
-            .filter { it.enabled && activeLorebookIds.contains(it.id) }
+        val lorebooksForAssistant = me.rerere.rikkahub.data.model.resolveLorebooks(
+            settings.lorebooks, assistant, conversationEnabledLorebookIds)
         val hasRagEntries = lorebooksForAssistant.any { lorebook ->
             lorebook.entries.any { it.activationType == LorebookActivationType.RAG && it.enabled }
         }

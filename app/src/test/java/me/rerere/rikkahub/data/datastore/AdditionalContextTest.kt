@@ -10,14 +10,14 @@ import kotlin.uuid.Uuid
 
 class AdditionalContextTest {
     @Test
-    fun `snippets require assignment and obey enabled flag`() {
+    fun `snippets require assignment and ignore obsolete enabled flag`() {
         val character = Uuid.random()
         val other = Uuid.random()
         val snippet = AdditionalContext(name = "Style", prompt = "Be concise", assistantIds = setOf(character))
         assertTrue(snippet.appliesTo(character))
         assertFalse(snippet.appliesTo(other))
         assertTrue(snippet.copy(allAssistants = true).appliesTo(other))
-        assertFalse(snippet.copy(enabled = false).appliesTo(character))
+        assertTrue(snippet.copy(enabled = false).appliesTo(character))
         assertFalse(snippet.copy(prompt = " ").appliesTo(character))
     }
 
@@ -69,7 +69,7 @@ class AdditionalContextTest {
         fun active(ids: Set<Uuid>?) = me.rerere.rikkahub.data.model.resolveAdditionalContexts(contexts, character, ids)
         assertEquals(listOf(first), active(null))
         assertEquals(emptyList<AdditionalContext>(), active(emptySet()))
-        assertEquals(listOf(second), active(setOf(second.id, disabled.id, blank.id, Uuid.random())))
+        assertEquals(listOf(second, disabled), active(setOf(second.id, disabled.id, blank.id, Uuid.random())))
         assertEquals(listOf(first, second), active(linkedSetOf(second.id, first.id)))
         assertEquals(listOf(second, first), me.rerere.rikkahub.data.model.resolveAdditionalContexts(
             listOf(second, first), character, setOf(first.id, second.id)))

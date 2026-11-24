@@ -9,16 +9,17 @@ data class AdditionalContext(
     val id: Uuid = Uuid.random(),
     val name: String = "",
     val prompt: String = "",
-    val enabled: Boolean = true,
+    val enabled: Boolean = true, // Legacy metadata; assigned contexts are always enabled.
     val assistantIds: Set<Uuid> = emptySet(),
     val allAssistants: Boolean = false,
+    val excludedAssistantIds: Set<Uuid> = emptySet(),
     // Preserve placement and media when migrating legacy always-enabled skills.
     val injectionPosition: InjectionPosition = InjectionPosition.AFTER_SYSTEM,
     val depth: Int = 0,
     val attachments: List<ModeAttachment> = emptyList(),
 ) {
     fun appliesTo(assistantId: Uuid): Boolean =
-        enabled && prompt.isNotBlank() && (allAssistants || assistantId in assistantIds)
+        prompt.isNotBlank() && isCharacterAssigned(allAssistants, assistantIds, excludedAssistantIds, assistantId)
 
     internal fun asPromptInjection(): Skill = Skill(
         id = id,
@@ -36,6 +37,6 @@ fun resolveAdditionalContexts(
     assistantId: Uuid,
     conversationEnabledIds: Set<Uuid>? = null,
 ): List<AdditionalContext> = contexts.filter { context ->
-    context.enabled && context.prompt.isNotBlank() &&
-        (conversationEnabledIds?.contains(context.id) ?: (context.allAssistants || assistantId in context.assistantIds))
+    context.prompt.isNotBlank() &&
+        (conversationEnabledIds?.contains(context.id) ?: context.appliesTo(assistantId))
 }

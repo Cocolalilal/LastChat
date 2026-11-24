@@ -119,7 +119,7 @@ jobs:
             :tts:testDebugUnitTest \
             :app:testStableDebugUnitTest \
             --tests '*GenerationHandlerSkillToolTest' --tests '*AdditionalContextTest' \
-            --tests '*SettingsStoreDurabilityTest' --tests '*SettingsMergeTest' \
+            --tests '*SettingsStoreDurabilityTest' --tests '*SettingsMergeTest' --tests '*AddonAssignmentTest' \
             --tests '*SkillExportImportTest' --tests '*PhoneUseContinuationTest' \
             --tests '*AvatarSerializationTest' --tests '*StartupDependenciesTest' \
             --tests '*AddonComposerUiTest' --tests '*QuestionnaireMotionTest' \

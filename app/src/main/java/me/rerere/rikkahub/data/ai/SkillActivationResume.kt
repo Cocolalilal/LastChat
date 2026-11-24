@@ -25,10 +25,9 @@ internal fun resolveTurnScopedSkillIds(
     val activeTurn = messages.toTurnGroups().lastOrNull()?.messages ?: return emptySet()
     val command = activeTurn.first().takeIf { it.role == MessageRole.USER }?.toText().orEmpty()
     val active = setOfNotNull(resolveSkillCommand(command, skills, assistant.id)?.id).toMutableSet()
-    if (!assistant.enableAutomaticSkillInvocation) return active
 
     val allowed = skills.asSequence().filter {
-        it.isAvailableForAssistant(assistant.id) && it.instructions.isNotBlank() && !it.disableModelInvocation
+        it.canActivateAutonomously(assistant.id)
     }.map { it.id }.toSet()
     if (allowed.isEmpty()) return active
 

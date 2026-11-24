@@ -26,27 +26,28 @@ class GenerationHandlerSkillToolTest {
     }
 
     @Test
-    fun `disabled empty and unauthorized skills are not exposed even when requested`() {
+    fun `assignments limit discovery while manual activation remains global`() {
         val allowed = skill("allowed")
         val blocked = skill("blocked").copy(availableForAllAssistants = false, availableAssistantIds = setOf(otherAssistantId))
         val disabled = skill("disabled").copy(enabled = false)
         val empty = skill("empty").copy(instructions = "")
         val state = buildSkillToolState(listOf(allowed, blocked, disabled, empty), assistantId, setOf(blocked.id, disabled.id))
         assertEquals(listOf(allowed), state.availableSkills)
-        assertTrue(state.activeSkillIds.isEmpty())
+        assertEquals(setOf(blocked.id, disabled.id), state.activeSkillIds)
+        assertEquals(listOf(blocked, disabled), state.activeSkills)
     }
 
     @Test
     fun `manual-only skills remain invocable through exact slash command`() {
-        val manual = skill("review").copy(disableModelInvocation = true)
+        val manual = skill("review").copy(availableForAllAssistants = false, disableModelInvocation = true)
         val state = buildSkillToolState(listOf(manual), assistantId, emptySet())
         assertTrue(state.availableSkills.isEmpty())
         assertEquals(manual, resolveSkillCommand("/review this code", listOf(manual), assistantId))
         assertNull(resolveSkillCommand("please /review this code", listOf(manual), assistantId))
         assertNull(resolveSkillCommand("/reviewer", listOf(manual), assistantId))
-        assertNull(resolveSkillCommand("/review", listOf(manual.copy(userInvocable = false)), assistantId))
-        assertNull(resolveSkillCommand("/review", listOf(manual.copy(availableForAllAssistants = false)), assistantId))
-        assertNull(resolveSkillCommand("/review", listOf(manual.copy(enabled = false)), assistantId))
+        assertEquals(manual.copy(userInvocable = false), resolveSkillCommand("/review", listOf(manual.copy(userInvocable = false)), assistantId))
+        assertEquals(manual, resolveSkillCommand("/review", listOf(manual), otherAssistantId))
+        assertEquals(manual.copy(enabled = false), resolveSkillCommand("/review", listOf(manual.copy(enabled = false)), assistantId))
         assertEquals(manual, resolveSkillCommand(" /REVIEW\ncode", listOf(manual), assistantId))
     }
 

@@ -80,6 +80,9 @@ import me.rerere.rikkahub.ui.components.settings.CollapseSpacingColumn
 import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.data.model.InjectionPosition
 import me.rerere.rikkahub.data.model.Lorebook
+import me.rerere.rikkahub.data.model.isAssignedTo
+import me.rerere.rikkahub.data.datastore.withLorebookDefault
+import me.rerere.rikkahub.data.datastore.withLorebookAssignment
 import me.rerere.rikkahub.data.model.LorebookActivationType
 import me.rerere.rikkahub.data.model.LorebookEntry
 import me.rerere.rikkahub.data.model.ModeAttachment
@@ -606,14 +609,11 @@ fun SettingLorebookDetailPage(
         AssistantLorebookToggleSheet(
             lorebook = lorebook,
             assistants = settings.assistants,
-            onUpdateAssistant = { assistant ->
-                vm.updateSettings { settings -> settings.copy(
-                    assistants = settings.assistants.map {
-                        if (it.id == assistant.id) it.copy(enabledLorebookIds =
-                            if (lorebook.id in assistant.enabledLorebookIds) it.enabledLorebookIds + lorebook.id
-                            else it.enabledLorebookIds - lorebook.id) else it
-                    }
-                ) }
+            onDefaultChange = { all ->
+                vm.updateSettings { it.withLorebookDefault(lorebook.id, all) }
+            },
+            onAssignmentChange = { assistantId, checked ->
+                vm.updateSettings { it.withLorebookAssignment(lorebook.id, assistantId, checked) }
             },
             onDismiss = { showAssistantToggleSheet = false }
         )
@@ -1423,15 +1423,15 @@ private fun LorebookEntryAttachmentItem(
 }
 
 @Composable
-private fun AssistantLorebookToggleSheet(
+internal fun AssistantLorebookToggleSheet(
     lorebook: Lorebook,
     assistants: List<me.rerere.rikkahub.data.model.Assistant>,
-    onUpdateAssistant: (me.rerere.rikkahub.data.model.Assistant) -> Unit,
+    onDefaultChange: (Boolean) -> Unit,
+    onAssignmentChange: (kotlin.uuid.Uuid, Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     val cornerRadius = 28.dp
     val smallCorner = 8.dp
-    val isDarkMode = LocalDarkMode.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
 
@@ -1467,8 +1467,19 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                shape = AppShapes.CardLarge,
+            ) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Enabled by default", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    HapticSwitch(lorebook.allAssistants, onDefaultChange,
+                        modifier = Modifier.semantics { contentDescription = "Enabled by default" })
+                }
+            }
+
             assistants.forEachIndexed { index, assistant ->
-                val isEnabled = assistant.enabledLorebookIds.contains(lorebook.id)
+                val isEnabled = lorebook.isAssignedTo(assistant)
 
                 // Calculate position for connected card styling
                 val position = when {
@@ -1522,14 +1533,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 
                         HapticSwitch(
                             checked = isEnabled,
-                            onCheckedChange = { newEnabled ->
-                                val newIds = if (newEnabled) {
-                                    assistant.enabledLorebookIds + lorebook.id
-                                } else {
-                                    assistant.enabledLorebookIds - lorebook.id
-                                }
-                                onUpdateAssistant(assistant.copy(enabledLorebookIds = newIds))
-                            }
+                            onCheckedChange = { onAssignmentChange(assistant.id, it) },
+                            modifier = Modifier.semantics { contentDescription = assistant.name },
                         )
                     }
                 }

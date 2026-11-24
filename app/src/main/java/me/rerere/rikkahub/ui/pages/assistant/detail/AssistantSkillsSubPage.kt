@@ -3,7 +3,6 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -72,21 +71,6 @@ fun AssistantSkillsSubPage(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        item(key = "automatic_skill_invocation") {
-            me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup(title = "", horizontalPadding = 0.dp) {
-                me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem(
-                    title = "Automatic skill selection",
-                    trailing = {
-                        HapticSwitch(assistant.enableAutomaticSkillInvocation, {
-                            onUpdate(assistant.copy(enableAutomaticSkillInvocation = it))
-                        })
-                    },
-                    onClick = { onUpdate(assistant.copy(enableAutomaticSkillInvocation = !assistant.enableAutomaticSkillInvocation)) },
-                )
-            }
-            Spacer(Modifier.size(12.dp))
-        }
-
         itemsIndexed(availableSkills, key = { _, it -> it.id }) { index, skill ->
             val position = when {
                 availableSkills.size == 1 -> ItemPosition.ONLY
@@ -94,7 +78,7 @@ fun AssistantSkillsSubPage(
                 index == availableSkills.lastIndex -> ItemPosition.LAST
                 else -> ItemPosition.MIDDLE
             }
-            val isEnabled = skill.isAvailableForAssistant(assistant.id)
+            val isEnabled = skill.canActivateAutonomously(assistant.id)
 
             AddonSelectionCard(
                 name = skill.name,
@@ -114,8 +98,9 @@ fun AssistantSkillsSubPage(
                 AddonSelectionCard(
                     name = snippet.name.ifBlank { "Untitled context" },
                     description = snippet.prompt,
-                    icon = "notes",
-                    isEnabled = snippet.allAssistants || assistant.id in snippet.assistantIds,
+                    icon = null,
+                    isEnabled = if (snippet.allAssistants) assistant.id !in snippet.excludedAssistantIds
+                        else assistant.id in snippet.assistantIds,
                     position = when {
                         settings.additionalContexts.size == 1 -> ItemPosition.ONLY
                         index == 0 -> ItemPosition.FIRST
@@ -134,7 +119,7 @@ fun AssistantSkillsSubPage(
 private fun AddonSelectionCard(
     name: String,
     description: String,
-    icon: String,
+    icon: String?,
     isEnabled: Boolean,
     position: ItemPosition,
     onClick: () -> Unit,
@@ -173,7 +158,7 @@ private fun AddonSelectionCard(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
+            if (icon != null) Surface(
                 shape = CircleShape,
                 color = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                 modifier = Modifier.size(40.dp)

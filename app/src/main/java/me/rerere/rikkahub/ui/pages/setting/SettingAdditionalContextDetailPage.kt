@@ -14,7 +14,6 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
-import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.pages.setting.components.AddonPromptField
@@ -107,19 +106,20 @@ internal fun AdditionalContextEditor(
                     modifier = Modifier.fillMaxWidth(0.5f), enabled = enabled,
                     onPendingChange = onNamePending)
             })
-            SettingGroupItem(title = "Enabled",
-                trailing = { HapticSwitch(snippet.enabled, { checked -> onUpdate { it.copy(enabled = checked) } }, enabled = enabled) },
-                onClick = if (enabled) ({ onUpdate { it.copy(enabled = !it.enabled) } }) else null)
         }
         AddonPromptField(title = "Prompt", value = snippet.prompt,
             onValueChange = { prompt -> onUpdate { it.copy(prompt = prompt) } },
             stateKey = "context_prompt_${snippet.id}", enabled = enabled, onPendingChange = onPromptPending)
         CharacterAccessSection(assistants = assistants, selectedIds = snippet.assistantIds, enabled = enabled,
             entryName = snippet.name,
-            allSelected = snippet.allAssistants,
-            onAllSelectedChange = { all -> onUpdate { it.copy(allAssistants = all) } },
+            allSelected = snippet.allAssistants, excludedIds = snippet.excludedAssistantIds,
+            onAllSelectedChange = { all -> onUpdate {
+                it.copy(allAssistants = all, assistantIds = emptySet(), excludedAssistantIds = emptySet())
+            } },
             onSelectionChange = { id, checked -> onUpdate {
-                it.copy(assistantIds = if (checked) it.assistantIds + id else it.assistantIds - id)
+                if (it.allAssistants) it.copy(excludedAssistantIds =
+                    if (checked) it.excludedAssistantIds - id else it.excludedAssistantIds + id)
+                else it.copy(assistantIds = if (checked) it.assistantIds + id else it.assistantIds - id)
             } })
     }
 }

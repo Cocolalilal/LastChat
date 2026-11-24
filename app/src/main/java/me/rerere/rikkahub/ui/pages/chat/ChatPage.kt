@@ -3210,14 +3210,16 @@ private fun rememberContextMeterUsage(
             .takeIf { it > 0 }
     }.take(6)
     val availableSkills = settings.skills.filter { skill ->
-        skill.enabled && skill.instructions.isNotBlank()
+        skill.instructions.isNotBlank()
     }
     val activeSkillIds = setOfNotNull(
         me.rerere.rikkahub.data.model.resolveSkillCommand(
             pendingParts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }, settings.skills, assistant.id,
         )?.id
     )
-    val activeLorebookIds = conversation.enabledLorebookIds ?: assistant.enabledLorebookIds
+    val activeLorebookIds = me.rerere.rikkahub.data.model.resolveLorebooks(
+        settings.lorebooks, assistant, conversation.enabledLorebookIds,
+    ).map { it.id }.toSet()
     val activeLoreEntries = remember(settings.lorebooks, activeLorebookIds) {
         settings.lorebooks
             .filter { lorebook -> lorebook.enabled && lorebook.id in activeLorebookIds }

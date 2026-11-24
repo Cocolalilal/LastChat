@@ -17,12 +17,13 @@ data class Skill(
     val icon: String? = null,            // Material icon name, e.g. "code"
     val instructions: String = "",       // Markdown body of SKILL.md
     val attachments: List<ModeAttachment> = emptyList(), // Optional multimedia context attachments
-    val enabled: Boolean = true,
+    val enabled: Boolean = true,         // Legacy metadata; activation uses character assignments.
     @SerialName("always_enabled")
     val alwaysEnabled: Boolean = false,              // Legacy: migrated into AdditionalContext on load
     @SerialName("available_for_all_assistants")
     val availableForAllAssistants: Boolean = true,
     val availableAssistantIds: Set<Uuid> = emptySet(),
+    val availableExcludedAssistantIds: Set<Uuid> = emptySet(),
     @SerialName("autonomous_for_all_assistants")
     val autonomousForAllAssistants: Boolean = false,
     @SerialName("autonomous_assistant_ids")
@@ -31,9 +32,9 @@ data class Skill(
     val depth: Int = 0,                  // Only used when injectionPosition is AT_DEPTH
     // Optional Claude Skills spec fields
     @SerialName("disable_model_invocation")
-    val disableModelInvocation: Boolean = false,  // Exclude from model-driven discovery
+    val disableModelInvocation: Boolean = false,  // Retained for package round trips; assignments govern activation.
     @SerialName("user_invocable")
-    val userInvocable: Boolean = true,            // Allow manual /skillname invocation
+    val userInvocable: Boolean = true,            // Legacy package metadata; slash commands are always available.
     @SerialName("argument_hint")
     val argumentHint: String? = null,             // Slash command hint e.g. "/skill-name"
     // Agent Skills frontmatter. These are retained when importing a package so a
@@ -49,9 +50,12 @@ data class Skill(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
-    fun isAvailableForAssistant(assistantId: Uuid): Boolean {
-        return enabled && (availableForAllAssistants || availableAssistantIds.contains(assistantId))
-    }
+    /** Manual invocation is available on every character, independently of automatic assignments. */
+    @Suppress("UNUSED_PARAMETER")
+    fun isAvailableForAssistant(assistantId: Uuid): Boolean = instructions.isNotBlank()
+
+    fun canActivateAutonomously(assistantId: Uuid): Boolean = instructions.isNotBlank() &&
+        isCharacterAssigned(availableForAllAssistants, availableAssistantIds, availableExcludedAssistantIds, assistantId)
 
     /** The package path exposed by the workspace bind mount; never uses a raw name. */
     fun workspaceDirectory(): String = "/skills/${safePackageRoot()}"
@@ -86,7 +90,7 @@ fun resolveSkillCommand(text: String, skills: List<Skill>, assistantId: Uuid): S
     val command = text.trimStart().takeWhile { !it.isWhitespace() }
     if (!command.startsWith("/") || command.length < 2) return null
     return skills.firstOrNull {
-        it.userInvocable && it.instructions.isNotBlank() && it.isAvailableForAssistant(assistantId) &&
+        it.isAvailableForAssistant(assistantId) &&
             it.name.isNotBlank() && command.drop(1).equals(it.name, ignoreCase = true)
     }
 }

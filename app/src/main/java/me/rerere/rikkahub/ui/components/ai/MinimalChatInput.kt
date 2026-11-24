@@ -168,6 +168,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.resolveConversationContext
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.resolveLorebooks
 import me.rerere.rikkahub.data.model.canManuallySummarizeConversation
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Skill
@@ -300,7 +301,7 @@ fun MinimalChatInput(
     ) {
         val query = slashQuery.drop(1)
         SkillCommandCardState(query, settings.skills.filter {
-            it.isAvailableForAssistant(assistant.id) && it.userInvocable && it.instructions.isNotBlank() &&
+            it.isAvailableForAssistant(assistant.id) && it.instructions.isNotBlank() &&
                 it.name.isNotBlank() && it.name.contains(query, ignoreCase = true)
         })
     } else null
@@ -2139,9 +2140,7 @@ private fun MinimalPickerContent(
 
         if (settings.lorebooks.isNotEmpty()) {
             // Lorebooks - show active count and blue icon when enabled
-            val lorebookIds = settings.lorebooks.map { it.id }.toSet()
-            val activeLorebookIds = (conversation.enabledLorebookIds ?: assistant.enabledLorebookIds).intersect(lorebookIds)
-            val activeLorebooksCount = activeLorebookIds.size
+            val activeLorebooksCount = resolveLorebooks(settings.lorebooks, assistant, conversation.enabledLorebookIds).size
             val lorebooksActive = activeLorebooksCount > 0
             MinimalPickerItem(
                 icon = {

@@ -20,6 +20,7 @@ import me.rerere.rikkahub.data.ai.rag.EmbeddingService
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.datastore.withLorebookAssignment
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.model.Assistant
@@ -165,17 +166,14 @@ class AssistantDetailVM(
         viewModelScope.launch {
             settingsStore.update { latest ->
                 latest.copy(skills = latest.skills.map { skill ->
-                    if (skill.id != skillId) skill else {
-                        val ids = when {
-                            !skill.enabled -> emptySet()
-                            skill.availableForAllAssistants -> latest.assistants.map { it.id }.toSet()
-                            else -> skill.availableAssistantIds
-                        }
-                        skill.copy(
-                            enabled = skill.enabled || enabled,
-                            availableForAllAssistants = false,
-                            availableAssistantIds = if (enabled) ids + assistantId else ids - assistantId,
-                        )
+                    if (skill.id != skillId) skill else if (skill.availableForAllAssistants) {
+                        skill.copy(availableExcludedAssistantIds = if (enabled) {
+                            skill.availableExcludedAssistantIds - assistantId
+                        } else skill.availableExcludedAssistantIds + assistantId)
+                    } else {
+                        skill.copy(availableAssistantIds = if (enabled) {
+                            skill.availableAssistantIds + assistantId
+                        } else skill.availableAssistantIds - assistantId)
                     }
                 })
             }
@@ -186,14 +184,14 @@ class AssistantDetailVM(
         viewModelScope.launch {
             settingsStore.update { latest ->
                 latest.copy(additionalContexts = latest.additionalContexts.map { snippet ->
-                    if (snippet.id != contextId) snippet else {
-                        val ids = if (snippet.allAssistants) {
-                            latest.assistants.map { it.id }.toSet()
-                        } else snippet.assistantIds
-                        snippet.copy(
-                            allAssistants = false,
-                            assistantIds = if (enabled) ids + assistantId else ids - assistantId,
-                        )
+                    if (snippet.id != contextId) snippet else if (snippet.allAssistants) {
+                        snippet.copy(excludedAssistantIds = if (enabled) {
+                            snippet.excludedAssistantIds - assistantId
+                        } else snippet.excludedAssistantIds + assistantId)
+                    } else {
+                        snippet.copy(assistantIds = if (enabled) {
+                            snippet.assistantIds + assistantId
+                        } else snippet.assistantIds - assistantId)
                     }
                 })
             }
@@ -287,6 +285,11 @@ class AssistantDetailVM(
             checkBackgroundDelete(old = old, new = saved)
             appStorageRepository.deleteFilesIfUnreferenced(old.collectRemovedMediaRefs(new = saved))
         }
+    }
+
+    /** Apply a per-character lorebook exception against the current default, without stale snapshots. */
+    fun setLorebookAssignment(lorebookId: Uuid, enabled: Boolean) {
+        settingsStore.enqueueUpdate { it.withLorebookAssignment(lorebookId, assistantId, enabled) }
     }
 
     fun addMemory(memory: AssistantMemory) {

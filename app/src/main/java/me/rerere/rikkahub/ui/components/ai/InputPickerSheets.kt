@@ -53,6 +53,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpStatus
 import me.rerere.rikkahub.data.model.resolveAdditionalContexts
+import me.rerere.rikkahub.data.model.isAssignedTo
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
@@ -78,8 +79,8 @@ internal fun LorebooksPickerSheet(
     val isDarkMode = LocalDarkMode.current
 
     val lorebookIds = remember(settings.lorebooks) { settings.lorebooks.map { it.id }.toSet() }
-    val effectiveEnabledIds = (conversation.enabledLorebookIds ?: assistant.enabledLorebookIds).intersect(lorebookIds)
-    var localEnabledIds by remember(conversation.id, conversation.enabledLorebookIds, assistant.enabledLorebookIds, lorebookIds) {
+    val effectiveEnabledIds = (conversation.enabledLorebookIds ?: settings.lorebooks.filter { it.isAssignedTo(assistant) }.map { it.id }.toSet()).intersect(lorebookIds)
+    var localEnabledIds by remember(conversation.id, conversation.enabledLorebookIds, assistant.enabledLorebookIds, settings.lorebooks) {
         mutableStateOf(effectiveEnabledIds)
     }
 
@@ -375,8 +376,7 @@ internal fun AdditionalContextPickerSheet(
         conversation.enabledAdditionalContextIds).map { it.id }.toSet()
     var localIds by remember(conversation.id, conversation.enabledAdditionalContextIds,
         assistant.id, settings.additionalContexts) {
-        // A globally disabled/empty entry remains selected for this chat, so restoring it
-        // later restores its selection. Only remove IDs whose entries were deleted.
+        // Keep explicit chat selections until their entries are deleted, even while prompts are empty.
         val existingIds = settings.additionalContexts.map { it.id }.toSet()
         mutableStateOf(conversation.enabledAdditionalContextIds?.intersect(existingIds) ?: effectiveIds)
     }
@@ -403,21 +403,13 @@ internal fun AdditionalContextPickerSheet(
                             me.rerere.rikkahub.ui.pages.setting.components.addonItemPosition(index, settings.additionalContexts.size))) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
-                            Surface(shape = me.rerere.rikkahub.ui.theme.AppShapes.Avatar,
-                                color = if (checked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                                modifier = Modifier.size(40.dp)) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Rounded.Notes, null, Modifier.size(20.dp),
-                                        tint = if (checked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(snippet.name.ifBlank { "Untitled context" }, style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 if (snippet.prompt.isNotBlank()) Text(snippet.prompt, style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
-                            HapticSwitch(checked = checked, enabled = snippet.enabled && snippet.prompt.isNotBlank(),
+                            HapticSwitch(checked = checked, enabled = snippet.prompt.isNotBlank(),
                                 onCheckedChange = { enabled ->
                                     val ids = if (enabled) localIds + snippet.id else localIds - snippet.id
                                     localIds = ids

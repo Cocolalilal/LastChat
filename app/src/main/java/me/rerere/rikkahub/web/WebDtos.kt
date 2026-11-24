@@ -40,6 +40,7 @@ import me.rerere.ai.ui.MessageNode
 import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.data.model.Skill
+import me.rerere.rikkahub.data.model.isAssignedTo
 import me.rerere.common.http.urlEncode
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.JsonInstantPretty
@@ -649,7 +650,7 @@ fun Settings.toWebSettingsDto(context: Context): WebSettingsDto {
                 } == true,
             )
         },
-        assistants = assistants.map { it.toWebAssistantDto(context) },
+        assistants = assistants.map { it.toWebAssistantDto(context, lorebooks, skills) },
         assistantTags = assistantTags.map { WebAssistantTagDto(id = it.id.toString(), name = it.name) },
         modeInjections = skills.filter { it.name.isNotBlank() && it.instructions.isNotBlank() }
             .map { it.toWebModeInjectionDto() },
@@ -846,14 +847,18 @@ private fun RpStyleRule.toWebRpStyleRuleDto(): WebRpStyleRuleDto {
     )
 }
 
-internal fun Assistant.toWebAssistantDto(context: Context): WebAssistantDto {
+internal fun Assistant.toWebAssistantDto(
+    context: Context,
+    lorebooks: List<me.rerere.rikkahub.data.model.Lorebook>,
+    skills: List<Skill>,
+): WebAssistantDto {
     return WebAssistantDto(
         id = id.toString(),
         chatModelId = chatModelId?.toString(),
         thinkingBudget = thinkingBudget,
         mcpServers = mcpServers.map(Uuid::toString),
-        modeInjectionIds = enabledSkillIds.map(Uuid::toString),
-        lorebookIds = enabledLorebookIds.map(Uuid::toString),
+        modeInjectionIds = skills.filter { it.canActivateAutonomously(id) }.map { it.id.toString() },
+        lorebookIds = lorebooks.filter { it.isAssignedTo(this) }.map { it.id.toString() },
         name = name.ifBlank { "Assistant" },
         avatar = avatar.toWebAvatarDto(context),
         useAssistantAvatar = useAssistantAvatar,
@@ -901,14 +906,14 @@ private fun QuickMessage.toWebQuickMessageDto(): WebQuickMessageDto {
 
 private fun Skill.toWebModeInjectionDto(): WebModeInjectionDto {
     return WebModeInjectionDto(
-        userInvocable = userInvocable,
-        availableForAllAssistants = availableForAllAssistants,
-        availableAssistantIds = availableAssistantIds.map(Uuid::toString),
+        userInvocable = true,
+        availableForAllAssistants = true,
+        availableAssistantIds = emptyList(),
         id = id.toString(),
         name = name.ifBlank { description.ifBlank { "Skill" } },
         description = description,
-        enabled = enabled,
-        alwaysEnabled = alwaysEnabled,
+        enabled = true,
+        alwaysEnabled = false,
         icon = icon,
     )
 }
