@@ -249,18 +249,17 @@ object GenericalFace {
         if (c <= 0.001f) return
         val closedFace = face("Eyes closed") ?: return
         val closed = if (side == 0) closedFace.left else closedFace.right
-        val ccx = closed.cx; val ccy = closed.cy
         val mx = xs.average().toFloat()
-        val ymin = ys.min(); val ymax = ys.max()
-        val my = ymin + (ymax - ymin) * 0.58f
-        val w = (xs.max() - xs.min()).coerceAtLeast(30f)
-        val cw = (closed.x.max() - closed.x.min()).coerceAtLeast(1f)
-        val sx = min(1f, w / cw)
+        val my = ys.min() + (ys.max() - ys.min()) * 0.58f
+        val width = min((xs.max() - xs.min()).coerceAtLeast(30f), closed.x.max() - closed.x.min())
+        val height = closed.y.max() - closed.y.min()
+        val txs = closed.x.copyOf(); val tys = closed.y.copyOf()
+        EyeCornerGeometry.resize(txs, tys, mx - width / 2f, my - height / 2f, width, height)
         val sa = shiftFor(key, "Eyes closed", side, ref, closed)
         for (i in 0 until N) {
             val j = ((i + sa) % N + N) % N
-            val tx = mx + (closed.x[j] - ccx) * sx
-            val ty = my + (closed.y[j] - ccy)
+            val tx = txs[j]
+            val ty = tys[j]
             xs[i] += (tx - xs[i]) * c
             ys[i] += (ty - ys[i]) * c
         }
@@ -299,28 +298,7 @@ object GenericalFace {
                 }
             }
         }
-        val c = closure.coerceIn(0f, 1f)
-        if (c > 0.001f) {
-            val closedFace = face("Eyes closed") ?: return Outline(xs, ys)
-            val closed = if (side == 0) closedFace.left else closedFace.right
-            val ccx = closed.cx; val ccy = closed.cy
-            val mx = xs.average().toFloat()
-            // Close toward the lower-middle of the eye (lids meet a bit below centre).
-            val ymin = ys.min(); val ymax = ys.max()
-            val my = ymin + (ymax - ymin) * 0.58f
-            // Bar no wider than the eye itself (narrow/soft shapes stay narrow).
-            val w = (xs.max() - xs.min()).coerceAtLeast(30f)
-            val cw = (closed.x.max() - closed.x.min()).coerceAtLeast(1f)
-            val sx = min(1f, w / cw)
-            val sa = shiftFor(key, "Eyes closed", side, ref, closed)
-            for (i in 0 until N) {
-                val j = ((i + sa) % N + N) % N
-                val tx = mx + (closed.x[j] - ccx) * sx
-                val ty = my + (closed.y[j] - ccy)
-                xs[i] += (tx - xs[i]) * c
-                ys[i] += (ty - ys[i]) * c
-            }
-        }
+        applyClosure(xs, ys, key, ref, side, closure)
         return Outline(xs, ys)
     }
 }

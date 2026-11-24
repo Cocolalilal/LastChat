@@ -10,7 +10,6 @@ import kotlin.math.min
 import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlin.math.tan
 
 /**
  * Engine21.2 — Julian's rule: two eyes leaning the same way (// or \\) is never good. Mirrored
@@ -21,8 +20,7 @@ import kotlin.math.tan
  * the perspective lean of a diagonal Grok gaze. This guard measures each eye's tilt (+ = "/")
  * and removes only the part both eyes share (the "common lean"), continuously — a face with no
  * common lean is untouched, mirrored or one-eye tilts pass through, and nothing ever pops.
- *  - Generical: the common lean of the two top lids is sheared out of the lids only (top moves,
- *    the bottom edge stays level and in place).
+ *  - Generical: the common lean is removed by rotation, preserving the corner curves.
  *  - Grok: each pill is turned about its own centre by the common lean, measured relative to the
  *    head roll (a tilted head tilts both eyes, which is fine).
  */
@@ -51,11 +49,17 @@ object TiltGuard {
         val bins = 10
         val by = FloatArray(bins) { Float.MAX_VALUE }
         val x0 = minX + 0.2f * w; val bw = 0.6f * w / bins
-        for (i in 0 until n) {
-            if (x[i] < x0) continue
-            val b = ((x[i] - x0) / bw).toInt()
-            if (b !in 0 until bins) continue
-            if (y[i] < by[b]) by[b] = y[i]
+        // Intersect the outline at uniform x positions. Picking the nearest sample
+        // mistakes unevenly sampled round caps for a slanted lid as an eye gets short.
+        for (b in 0 until bins) {
+            val sampleX = x0 + (b + 0.5f) * bw
+            for (i in 0 until n) {
+                val j = (i + 1) % n
+                val dx = x[j] - x[i]
+                if (abs(dx) < 1e-6f) continue
+                val t = (sampleX - x[i]) / dx
+                if (t in 0f..1f) by[b] = min(by[b], y[i] + (y[j] - y[i]) * t)
+            }
         }
         var sx = 0.0; var sy = 0.0; var sxx = 0.0; var sxy = 0.0; var k = 0
         for (b in 0 until bins) if (by[b] != Float.MAX_VALUE) {
@@ -69,17 +73,16 @@ object TiltGuard {
         return -deg(atan(slope))
     }
 
-    /** Shears the top of one eye by [deg] (top fully, bottom not at all); bottoms stay level. */
-    private fun shearTop(x: FloatArray, y: FloatArray, deg: Float) {
-        var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE; var cx = 0f
-        for (i in x.indices) { if (y[i] < minY) minY = y[i]; if (y[i] > maxY) maxY = y[i]; cx += x[i] }
-        cx /= x.size
-        val h = maxY - minY
-        if (h < 1e-3f) return
-        val t = tan(Math.toRadians(deg.toDouble())).toFloat()
+    /** Correct lean rigidly; a shear would squash the rounded corners again. */
+    private fun turnOutline(x: FloatArray, y: FloatArray, degrees: Float) {
+        val cx = (x.min() + x.max()) / 2f
+        val cy = (y.min() + y.max()) / 2f
+        val r = Math.toRadians(degrees.toDouble())
+        val c = cos(r).toFloat(); val s = sin(r).toFloat()
         for (i in x.indices) {
-            val wTop = ((maxY - y[i]) / h).coerceIn(0f, 1f)
-            y[i] += t * (x[i] - cx) * wTop
+            val dx = x[i] - cx; val dy = y[i] - cy
+            x[i] = cx + dx * c - dy * s
+            y[i] = cy + dx * s + dy * c
         }
     }
 
@@ -88,7 +91,7 @@ object TiltGuard {
         repeat(2) {
             val m = common(topTilt(lx, ly), topTilt(rx, ry))
             if (m == 0f) return
-            shearTop(lx, ly, m); shearTop(rx, ry, m)
+            turnOutline(lx, ly, m); turnOutline(rx, ry, m)
         }
     }
 
