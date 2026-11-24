@@ -130,6 +130,7 @@ jobs:
             --tests '*LocalSpeechModelSettingsSyncTest' --tests '*LocalSttInstallTest' \
             --tests '*WidgetReliabilityTest' --tests '*WidgetAvatarRendererTest' \
             --tests '*Tts*Test' --tests '*MarkdownMathParsingTest' --tests '*ContextUsageMenuTest' \
+            --tests '*GrokBlinkRenderTest' --tests '*GrokEyeRoundingTest' --tests '*EyeStyleLerpTest' \
             --tests '*SkillActivationResumeTest' --tests '*LorebookEntryEditorTest' \
             -Dlastchat.renderDir="$GITHUB_WORKSPACE/app/build/reports/addon-ui" \
             --no-parallel --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process \

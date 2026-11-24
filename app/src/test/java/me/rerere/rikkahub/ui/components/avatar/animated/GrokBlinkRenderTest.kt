@@ -20,6 +20,30 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35], application = Application::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class GrokBlinkRenderTest {
+    @Test fun renderBlinkPhasesWithRoundedCaps() {
+        AvatarPackData.ensureLoaded(RuntimeEnvironment.getApplication())
+        val bitmap = Bitmap.createBitmap(1_200, 720, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        canvas.drawColor(android.graphics.Color.rgb(28, 28, 28))
+        val expressions = listOf("Neutral", "Angry", "Happy")
+        for ((row, expression) in expressions.withIndex()) for (column in 0..4) {
+            canvas.save()
+            canvas.translate(column * 240f, row * 240f)
+            CanvasDrawScope().draw(Density(2f), LayoutDirection.Ltr, Canvas(canvas), Size(240f, 240f)) {
+                drawMark(requireNotNull(MarkShapes.resolve(MarkShapes.PICKER_IDS.first())), MarkShapes.PICKER_IDS.first(), true, MotionFrame(
+                    exprFrom = expression, exprTo = expression, exprWeights = listOf(expression to 1f),
+                    lid = 1f - column * 0.245f, maskBlink = 0f,
+                ), false, 1f, Color(0xFF2A92FE), Color.White, Color.White)
+            }
+            canvas.restore()
+        }
+        System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() }?.let { directory ->
+            java.io.File(directory, "grok-blink-rounding.png").apply { parentFile?.mkdirs() }
+                .outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        bitmap.recycle()
+    }
+
     @Test fun fullyClosedMaskHasTheSamePixelsOnHappyAndNeutral() {
         AvatarPackData.ensureLoaded(RuntimeEnvironment.getApplication())
         fun render(shapeId: String, expression: String, grok: Boolean, closure: Float): Bitmap {

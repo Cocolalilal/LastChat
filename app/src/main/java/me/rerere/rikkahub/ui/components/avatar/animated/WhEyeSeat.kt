@@ -208,7 +208,7 @@ object WhEyeSeat {
             val driftY = sin(timeSec * 0.58f + sideSign) * 0.003f * awake
             return outline.map { pt ->
                 val g = pt[0]
-                val w = pt[1] * e.lidY
+                val w = pt[1]
                 val sLocal = e.offX + l * g + d * w
                 val v = e.offY - d * g + l * w
                 // Left eye local +x points outward (desktop J1[0].C = -x) → mirror.

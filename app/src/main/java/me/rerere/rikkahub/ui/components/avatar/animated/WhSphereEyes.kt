@@ -556,38 +556,46 @@ object WhSphereEyes {
         return n
     }
 
-    /** Capsule outline from spine + half-width (desktop sS) with rounded caps. */
+    /** Build the stroke after deforming its spine, so closing never flattens its round caps. */
     fun stadiumOutline(eye: EyeState): List<FloatArray> {
-        val c = eye.closeK
-        if (c <= 0.001f) return stadiumOpen(eye)
-        val open = stadiumOpen(eye.copy(closeK = 0f))
-        if (open.size < 3) return open
-        return lidSquash(open, eye.wid, c.coerceIn(0f, 1f))
+        if (eye.pts.size < 2) return emptyList()
+        val openness = eye.lidY.coerceIn(0.02f, 1.25f)
+        val isArc = curved(eye)
+        val open = eye.copy(
+            lidY = 1f, closeK = 0f,
+            pts = eye.pts.map { floatArrayOf(it[0], it[1] * if (isArc || openness > 1f) openness else 1f) },
+            // Already curved lids only thin; keep their ends circular as well.
+            wid = eye.wid * if (isArc) kotlin.math.sqrt(min(1f, openness)) else 1f,
+        )
+        val closure = 1f - (1f - eye.closeK.coerceIn(0f, 1f)) * if (isArc) 1f else min(1f, openness)
+        if (closure <= 0f) return stadiumOpen(open)
+        val outline = stadiumOpen(open)
+        val minX = outline.minOf { it[0] }; val maxX = outline.maxOf { it[0] }
+        val minY = outline.minOf { it[1] }; val maxY = outline.maxOf { it[1] }
+        val cx = (minX + maxX) / 2f
+        val lidLine = minY + (maxY - minY) * 0.4f
+        val radius = (eye.wid * 0.42f).coerceIn(0.035f, 0.06f)
+        val half = ((maxX - minX) * 0.61f - radius).coerceAtLeast(radius)
+        val k = closure * closure * (3f - 2f * closure)
+        fun ease(v: Float): Float = v.coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
+        // Shorten the open spine before growing the lid sideways. A vertical eye must
+        // close through a round shape, rather than rotating diagonally into a bar.
+        val collapse = 1f - ease(k * 2f)
+        val expand = ease(k * 2f - 1f)
+        val cy = (minY + maxY) / 2f
+        val shaped = open.copy(
+            wid = open.wid + (radius - open.wid) * k * k * k,
+            pts = open.pts.mapIndexed { i, p ->
+                val u = i.toFloat() / open.pts.lastIndex * 2f - 1f
+                floatArrayOf(
+                    cx + (p[0] - cx) * collapse + half * u * expand,
+                    cy + (lidLine - cy) * k + (p[1] - cy) * collapse + 0.2f * half * u * u * expand,
+                )
+            },
+        )
+        return stadiumOpen(shaped)
     }
 
-    /**
-     * Engine17.1 blink: the eye squashes about its lid line (lids meet at the lower middle),
-     * widening a little, never thinner than a soft lid bar, and bends into a gentle ‿ only as
-     * it closes — the Grok cousin of Generical's closing eye. Shape stays smooth and convex.
-     */
-    private fun lidSquash(open: List<FloatArray>, wid: Float, c: Float): List<FloatArray> {
-        val minX = open.minOf { it[0] }; val maxX = open.maxOf { it[0] }
-        val minY = open.minOf { it[1] }; val maxY = open.maxOf { it[1] }
-        val h = (maxY - minY).coerceAtLeast(1e-4f)
-        val cx = (minX + maxX) / 2f
-        val yl = minY + h * 0.4f
-        val bar = 2f * (wid * 0.42f).coerceIn(0.035f, 0.06f)
-        val k = c * c * (3f - 2f * c)
-        val sy = max(1f - k, (bar / h).coerceAtMost(1f) * k + (1f - k))
-        val sx = 1f + 0.22f * k
-        val halfW = ((maxX - minX) / 2f * sx).coerceAtLeast(1e-4f)
-        val bend = 0.2f * halfW * k * k
-        return open.map { p ->
-            val x = cx + (p[0] - cx) * sx
-            val f = (x - cx) / halfW
-            floatArrayOf(x, yl + (p[1] - yl) * sy + bend * f * f)
-        }
-    }
 
     private fun stadiumOpen(eye: EyeState): List<FloatArray> {
         val pts = eye.pts
@@ -601,8 +609,8 @@ object WhSphereEyes {
             val p1 = pts[min(pts.lastIndex, i + 1)]
             var tx = p1[0] - p0[0]
             var ty = p1[1] - p0[1]
-            val L = hypot(tx, ty).coerceAtLeast(1e-6f)
-            tx /= L; ty /= L
+            val length = hypot(tx, ty)
+            if (length > 1e-6f) { tx /= length; ty /= length } else { tx = 1f; ty = 0f }
             tangents += floatArrayOf(tx, ty)
             val nx = -ty; val ny = tx
             left += floatArrayOf(pts[i][0] + nx * w, pts[i][1] + ny * w)
@@ -715,7 +723,7 @@ object WhSphereEyes {
         val h = eye.offX
         val f = eye.offY
         fun p(g: Float, y: Float): FloatArray {
-            val w = y * eye.lidY
+            val w = if (localOutline != null) y * eye.lidY else y
             val S = h + l * g + d * w
             val v = f - d * g + l * w
             val x = hypot(S, v)
