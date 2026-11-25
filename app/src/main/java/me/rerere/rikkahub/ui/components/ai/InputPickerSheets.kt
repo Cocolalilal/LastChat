@@ -401,7 +401,7 @@ internal fun AdditionalContextPickerSheet(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                         shape = me.rerere.rikkahub.ui.pages.setting.components.addonItemShape(
                             me.rerere.rikkahub.ui.pages.setting.components.addonItemPosition(index, settings.additionalContexts.size))) {
-                        Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        Row(Modifier.fillMaxWidth().padding(start = 20.dp, top = 12.dp, end = 12.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(snippet.name.ifBlank { "Untitled context" }, style = MaterialTheme.typography.titleMedium,
