@@ -287,4 +287,179 @@ class ChatPageTest {
             )
         )
     }
+
+    @Test
+    fun latestAssistantSpeechTargetUsesSelectedRegenerationAndNeverFallsBackAcrossTurns() {
+        val conversationId = Uuid.random()
+        val turnAnchorId = Uuid.random()
+        val olderTurnReply = UIMessage.assistant("Earlier turn reply")
+        val v1ToolCall = UIMessage(
+            role = me.rerere.ai.core.MessageRole.ASSISTANT,
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "call-1",
+                    toolName = "search_web",
+                    arguments = "{}",
+                )
+            ),
+            versionTag = "v1",
+        )
+        val v1FinalReply = UIMessage.assistant("Old v1 reply").copy(versionTag = "v1")
+        val v2Blank = UIMessage.assistant("").copy(versionTag = "v2")
+        val v2Reply = UIMessage.assistant("New v2 reply").copy(versionTag = "v2")
+
+        // Blank v2 right after clicking regenerate must NOT fall back to olderTurnReply or v1FinalReply.
+        val blankRegenConversation = Conversation.ofId(
+            id = conversationId,
+            messages = listOf(
+                MessageNode.of(UIMessage.user("Turn 1")),
+                MessageNode.of(olderTurnReply),
+                MessageNode.of(UIMessage.user("Turn 2")),
+                MessageNode(id = turnAnchorId, messages = listOf(v1ToolCall, v2Blank), selectIndex = 1),
+                MessageNode.of(v1FinalReply),
+            ),
+        )
+        val blankTarget = latestAssistantSpeechTarget(blankRegenConversation)
+        assertEquals(turnAnchorId, blankTarget?.identity?.turnAnchorNodeId)
+        assertEquals("v2", blankTarget?.identity?.versionTag)
+        assertEquals("", blankTarget?.text)
+
+        // Once v2 has text, trailing v1FinalReply must be ignored.
+        val streamedRegenConversation = Conversation.ofId(
+            id = conversationId,
+            messages = listOf(
+                MessageNode.of(UIMessage.user("Turn 1")),
+                MessageNode.of(olderTurnReply),
+                MessageNode.of(UIMessage.user("Turn 2")),
+                MessageNode(id = turnAnchorId, messages = listOf(v1ToolCall, v2Reply), selectIndex = 1),
+                MessageNode.of(v1FinalReply),
+            ),
+        )
+        val activeTarget = latestAssistantSpeechTarget(streamedRegenConversation)
+        assertEquals("New v2 reply", activeTarget?.text)
+
+        // When trailing node is a USER message, there is no latest assistant turn yet.
+        val pendingUserConversation = Conversation.ofId(
+            id = conversationId,
+            messages = listOf(
+                MessageNode.of(UIMessage.user("Turn 1")),
+                MessageNode.of(olderTurnReply),
+                MessageNode.of(UIMessage.user("Turn 2")),
+            ),
+        )
+        assertEquals(null, latestAssistantSpeechTarget(pendingUserConversation))
+    }
+
+    @Test
+    fun ttsAutoplayWhileGeneratingSpeaksOnlyRegeneratedReplyAndFlushesPreviousPlayback() {
+        val state = ChatTtsAutoplayState()
+        val conversationId = Uuid.random()
+        val turnAnchorId = Uuid.random()
+        val olderTurnReply = UIMessage.assistant("Older turn that must not play.")
+        val v1Reply = UIMessage.assistant("Original reply.").copy(versionTag = "v1")
+        val v2Blank = UIMessage.assistant("").copy(versionTag = "v2")
+        val v2Chunk1 = v2Blank.copy(parts = listOf(UIMessagePart.Text("First new sentence. ")))
+        val v2Chunk2 = v2Blank.copy(parts = listOf(UIMessagePart.Text("First new sentence. Second sentence")))
+
+        fun conv(activeNode: MessageNode) = Conversation.ofId(
+            id = conversationId,
+            messages = listOf(
+                MessageNode.of(UIMessage.user("First")),
+                MessageNode.of(olderTurnReply),
+                MessageNode.of(UIMessage.user("Second")),
+                activeNode,
+            ),
+        )
+
+        // Generation starts before blank v2 is seeded: baseline captures v1, nothing spoken.
+        assertTrue(
+            state.onUpdate(
+                mode = me.rerere.rikkahub.data.datastore.TtsAutoplayMode.WHILE_GENERATING,
+                isGenerating = true,
+                target = latestAssistantSpeechTarget(conv(MessageNode(id = turnAnchorId, messages = listOf(v1Reply), selectIndex = 0))),
+            ).isEmpty()
+        )
+
+        // Blank v2 is seeded: must NOT speak olderTurnReply.
+        assertTrue(
+            state.onUpdate(
+                mode = me.rerere.rikkahub.data.datastore.TtsAutoplayMode.WHILE_GENERATING,
+                isGenerating = true,
+                target = latestAssistantSpeechTarget(conv(MessageNode(id = turnAnchorId, messages = listOf(v1Reply, v2Blank), selectIndex = 1))),
+            ).isEmpty()
+        )
+
+        // First sentence of v2 arrives: flushes previous playback and speaks v2.
+        assertEquals(
+            listOf(TtsAutoplayCommand(text = "First new sentence.", flush = true)),
+            state.onUpdate(
+                mode = me.rerere.rikkahub.data.datastore.TtsAutoplayMode.WHILE_GENERATING,
+                isGenerating = true,
+                target = latestAssistantSpeechTarget(conv(MessageNode(id = turnAnchorId, messages = listOf(v1Reply, v2Chunk1), selectIndex = 1))),
+            )
+        )
+
+        // Generation finishes with unpunctuated tail: appends remaining text without flushing.
+        assertEquals(
+            listOf(TtsAutoplayCommand(text = "Second sentence", flush = false)),
+            state.onUpdate(
+                mode = me.rerere.rikkahub.data.datastore.TtsAutoplayMode.WHILE_GENERATING,
+                isGenerating = false,
+                target = latestAssistantSpeechTarget(conv(MessageNode(id = turnAnchorId, messages = listOf(v1Reply, v2Chunk2), selectIndex = 1))),
+            )
+        )
+
+        // Switching back to v1 while idle must NOT trigger autoplay.
+        assertTrue(
+            state.onUpdate(
+                mode = me.rerere.rikkahub.data.datastore.TtsAutoplayMode.WHILE_GENERATING,
+                isGenerating = false,
+                target = latestAssistantSpeechTarget(conv(MessageNode(id = turnAnchorId, messages = listOf(v1Reply, v2Chunk2), selectIndex = 0))),
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun ttsAutoplayAfterGenerationSpeaksFullMultiSentenceRegeneratedReply() {
+        val state = ChatTtsAutoplayState()
+        val conversationId = Uuid.random()
+        val turnAnchorId = Uuid.random()
+        val v1Reply = UIMessage.assistant("Old reply.").copy(versionTag = "v1")
+        val v2Final = UIMessage.assistant("First sentence. Second sentence! Third line").copy(versionTag = "v2")
+
+        // Generation starts with v1 visible as baseline.
+        assertTrue(
+            state.onUpdate(
+                mode = me.rerere.rikkahub.data.datastore.TtsAutoplayMode.AFTER_GENERATION,
+                isGenerating = true,
+                target = latestAssistantSpeechTarget(
+                    Conversation.ofId(
+                        id = conversationId,
+                        messages = listOf(
+                            MessageNode.of(UIMessage.user("Hi")),
+                            MessageNode(id = turnAnchorId, messages = listOf(v1Reply), selectIndex = 0),
+                        ),
+                    )
+                ),
+            ).isEmpty()
+        )
+
+        // Generation finishes with v2 selected: speaks the entire regenerated text in full.
+        assertEquals(
+            listOf(TtsAutoplayCommand(text = "First sentence. Second sentence! Third line", flush = true)),
+            state.onUpdate(
+                mode = me.rerere.rikkahub.data.datastore.TtsAutoplayMode.AFTER_GENERATION,
+                isGenerating = false,
+                target = latestAssistantSpeechTarget(
+                    Conversation.ofId(
+                        id = conversationId,
+                        messages = listOf(
+                            MessageNode.of(UIMessage.user("Hi")),
+                            MessageNode(id = turnAnchorId, messages = listOf(v1Reply, v2Final), selectIndex = 1),
+                        ),
+                    )
+                ),
+            )
+        )
+    }
 }

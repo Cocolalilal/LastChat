@@ -865,7 +865,8 @@ private fun SharedTransitionScope.ChatListNormal(
                                 group = group,
                                 isLastTurn = isLastTurn,
                                 onCitationClick = onCitationClick,
-                                model = group.lastNode.currentMessage.modelId?.let(modelById::get),
+                                model = (group.filteredNodes.lastOrNull { it.currentMessage.modelId != null }
+                                    ?: group.actionTargetNode).currentMessage.modelId?.let(modelById::get),
                                 assistant = assistant,
                                 loading = loading && isLastTurn,
                                 onRegenerate = onRegenerateNode,

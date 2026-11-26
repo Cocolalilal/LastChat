@@ -223,6 +223,38 @@ data class MessageTurnGroup(
         val durations = filteredNodes.mapNotNull { it.currentMessage.generationDurationMs }
         if (durations.isNotEmpty()) durations.sum() else null
     }
+
+    /**
+     * The visible node in this turn that message actions (TTS, copy, edit, delete, fork, metadata)
+     * should target. Always resolves from [filteredNodes] so an unselected regeneration's trailing
+     * node is never used.
+     */
+    val actionTargetNode: MessageNode by lazy {
+        filteredNodes
+            .asReversed()
+            .firstOrNull { node ->
+                node.currentMessage.role == role && node.currentMessage.toContentText().isNotBlank()
+            }
+            ?: filteredNodes
+                .asReversed()
+                .firstOrNull { node ->
+                    node.currentMessage.parts.any { part ->
+                        part is UIMessagePart.Text || part is UIMessagePart.Reasoning || part is UIMessagePart.Thinking
+                    }
+                }
+            ?: filteredNodes.lastOrNull()
+            ?: lastNode
+    }
+
+    /** Full visible assistant text of the currently selected turn version for TTS playback. */
+    internal fun visibleAssistantSpeechText(): String {
+        return filteredNodes.asSequence()
+            .map { it.currentMessage }
+            .filter { it.role == MessageRole.ASSISTANT }
+            .map { it.toContentText() }
+            .filter { it.isNotBlank() }
+            .joinToString(separator = "\n\n")
+    }
 }
 
 /**
@@ -1105,17 +1137,7 @@ fun ChatMessageTurn(
         }
     }
 
-    // Actions should target the visible assistant content node instead of blindly using lastNode,
-    // because the last node in a turn can be a tool node.
-    val actionTargetNode = group.filteredNodes
-        .asReversed()
-        .firstOrNull { node ->
-            node.currentMessage.parts.any { part ->
-                part is UIMessagePart.Text || part is UIMessagePart.Reasoning || part is UIMessagePart.Thinking
-            }
-        }
-        ?: group.filteredNodes.lastOrNull()
-        ?: group.lastNode
+    val actionTargetNode = group.actionTargetNode
     
     ProvideTextStyle(textStyle) {
         when (group.role) {
@@ -1127,10 +1149,10 @@ fun ChatMessageTurn(
                     maxWidth = maxBubbleWidth,
                     showToolbar = showUserToolbar,
                     onToggleToolbar = { showUserToolbar = !showUserToolbar },
-                    onCopy = { context.copyMessageToClipboard(group.lastNode.currentMessage) },
+                    onCopy = { context.copyMessageToClipboard(actionTargetNode.currentMessage) },
                     onRegenerate = {
                         stageEmit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.Regenerated)
-                        onRegenerate(group.lastNode)
+                        onRegenerate(actionTargetNode)
                     },
                     onOpenMenu = {
                         showActionsSheet = true
@@ -1195,7 +1217,7 @@ fun ChatMessageTurn(
                     },
                     onRegenerate = {
                         stageEmit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.Regenerated)
-                        onRegenerate(group.lastNode)
+                        onRegenerate(actionTargetNode)
                     },
                     onUpdate = onUpdate,
                     onOpenActionSheet = {
@@ -1633,7 +1655,7 @@ private fun AssistantMessageTurn(
         // reaches exactly zero, and the column takes its gap down with it (no end snap).
         me.rerere.rikkahub.ui.motion.ExpandableContent(visible = showActions) {
             ChatMessageActionButtons(
-                message = group.lastNode.currentMessage,
+                message = group.actionTargetNode.currentMessage,
                 onRegenerate = onRegenerate,
                 node = group.nodeWithMostVersions,
                 onUpdate = onUpdate,
@@ -1643,6 +1665,7 @@ private fun AssistantMessageTurn(
                 onModeClick = onModeClick,
                 onMemoryClick = onMemoryClick,
                 ttsProviderOverride = ttsProviderOverride,
+                speechText = group.visibleAssistantSpeechText(),
             )
         }
     }

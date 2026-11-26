@@ -152,8 +152,10 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.baseCapacityTokens
 import me.rerere.ai.provider.contextCapacityTokens
+import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.currentVersionMessages
 import kotlin.math.roundToInt
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -527,15 +529,58 @@ private fun chatToolbarPopupTransformOrigin(placement: ChatToolbarPlacement): Tr
 private val chatTopToolbarFadeHeight = 96.dp
 private val chatBottomToolbarTopFadeHeight = 36.dp
 
-private fun latestAssistantSpeechMessage(conversation: Conversation): UIMessage? {
-    return conversation.messageNodes.asReversed().asSequence()
-        .map { it.currentMessage }
-        .firstOrNull { message ->
-            message.role == MessageRole.ASSISTANT && message.toContentText().isNotBlank()
-        }
+internal data class AssistantSpeechIdentity(
+    val turnAnchorNodeId: Uuid,
+    val versionTag: String?,
+    val firstMessageId: Uuid,
+)
+
+internal data class AssistantSpeechTarget(
+    val identity: AssistantSpeechIdentity,
+    val text: String,
+)
+
+internal data class TtsAutoplayCommand(
+    val text: String,
+    val flush: Boolean,
+)
+
+internal fun latestAssistantTurnNodes(nodes: List<MessageNode>): List<MessageNode> {
+    if (nodes.isEmpty()) return emptyList()
+    if (nodes.last().role == MessageRole.USER) return emptyList()
+
+    var startIndex = nodes.lastIndex
+    while (startIndex > 0) {
+        if (nodes[startIndex].forceTurnBreakBefore) break
+        if (nodes[startIndex - 1].role == MessageRole.USER) break
+        startIndex--
+    }
+    return nodes.subList(startIndex, nodes.size)
 }
 
-private fun speakablePrefixLength(text: String, final: Boolean): Int {
+internal fun latestAssistantSpeechTarget(conversation: Conversation): AssistantSpeechTarget? {
+    val turnNodes = latestAssistantTurnNodes(conversation.messageNodes)
+    if (turnNodes.isEmpty()) return null
+
+    val activeMessages = turnNodes.currentVersionMessages()
+    val assistantMessages = activeMessages.filter { it.role == MessageRole.ASSISTANT }
+    val firstMessage = assistantMessages.firstOrNull() ?: return null
+    val text = assistantMessages
+        .map { it.toContentText() }
+        .filter { it.isNotBlank() }
+        .joinToString(separator = "\n\n")
+
+    return AssistantSpeechTarget(
+        identity = AssistantSpeechIdentity(
+            turnAnchorNodeId = turnNodes.first().id,
+            versionTag = turnNodes.first().currentMessage.versionTag,
+            firstMessageId = firstMessage.id,
+        ),
+        text = text,
+    )
+}
+
+internal fun speakablePrefixLength(text: String, final: Boolean): Int {
     val trimmedEnd = text.indexOfLast { !it.isWhitespace() }
     if (trimmedEnd < 0) return 0
 
@@ -568,6 +613,93 @@ private fun speakablePrefixLength(text: String, final: Boolean): Int {
     return if (final) trimmedEnd + 1 else 0
 }
 
+internal class ChatTtsAutoplayState {
+    private var completedIdentity: AssistantSpeechIdentity? = null
+    private var streamingIdentity: AssistantSpeechIdentity? = null
+    private var generationBaselineIdentity: AssistantSpeechIdentity? = null
+    private var generationBaselineText: String = ""
+    private var spokenLength: Int = 0
+    private var hasSpokenForCurrentTarget: Boolean = false
+    private var wasGenerating: Boolean = false
+
+    fun onUpdate(
+        mode: TtsAutoplayMode,
+        isGenerating: Boolean,
+        target: AssistantSpeechTarget?,
+    ): List<TtsAutoplayCommand> {
+        if (mode == TtsAutoplayMode.OFF) {
+            wasGenerating = false
+            return emptyList()
+        }
+
+        if (!isGenerating) {
+            if (!wasGenerating) return emptyList()
+            wasGenerating = false
+
+            if (target == null || target.text.isBlank()) return emptyList()
+            if (target.identity == generationBaselineIdentity && target.text == generationBaselineText) {
+                return emptyList()
+            }
+            if (completedIdentity == target.identity && spokenLength >= target.text.length) {
+                return emptyList()
+            }
+            if (streamingIdentity != target.identity) {
+                streamingIdentity = target.identity
+                spokenLength = 0
+                hasSpokenForCurrentTarget = false
+            } else if (spokenLength > target.text.length) {
+                spokenLength = target.text.length
+            }
+
+            val remaining = target.text.drop(spokenLength).trim()
+            spokenLength = target.text.length
+            completedIdentity = target.identity
+            if (remaining.isBlank()) return emptyList()
+
+            val shouldFlush = !hasSpokenForCurrentTarget
+            hasSpokenForCurrentTarget = true
+            return listOf(TtsAutoplayCommand(text = remaining, flush = shouldFlush))
+        }
+
+        if (!wasGenerating) {
+            generationBaselineIdentity = target?.identity
+            generationBaselineText = target?.text.orEmpty()
+            wasGenerating = true
+        }
+
+        if (mode != TtsAutoplayMode.WHILE_GENERATING) return emptyList()
+        if (target == null || target.text.isBlank()) return emptyList()
+        if (target.identity == generationBaselineIdentity && target.text == generationBaselineText) {
+            return emptyList()
+        }
+
+        if (streamingIdentity != target.identity) {
+            streamingIdentity = target.identity
+            spokenLength = 0
+            hasSpokenForCurrentTarget = false
+        } else if (spokenLength > target.text.length) {
+            spokenLength = target.text.length
+        }
+
+        val commands = mutableListOf<TtsAutoplayCommand>()
+        var cursor = spokenLength
+        while (cursor < target.text.length) {
+            val remaining = target.text.drop(cursor)
+            val length = speakablePrefixLength(remaining, final = false)
+            if (length <= 0) break
+            val segment = remaining.take(length).trim()
+            cursor += length
+            if (segment.isNotBlank()) {
+                val shouldFlush = !hasSpokenForCurrentTarget
+                hasSpokenForCurrentTarget = true
+                commands += TtsAutoplayCommand(text = segment, flush = shouldFlush)
+            }
+        }
+        spokenLength = cursor
+        return commands
+    }
+}
+
 @Composable
 private fun ChatTtsAutoplayEffect(
     settings: Settings,
@@ -585,82 +717,31 @@ private fun ChatTtsAutoplayEffect(
     ) {
         settings.getEffectiveTTSProvider(assistant)
     }
-    var completedMessageId by remember(conversation.id) { mutableStateOf<Uuid?>(null) }
-    var streamingMessageId by remember(conversation.id) { mutableStateOf<Uuid?>(null) }
-    var generationBaselineMessageId by remember(conversation.id) { mutableStateOf<Uuid?>(null) }
-    var generationBaselineText by remember(conversation.id) { mutableStateOf("") }
-    var spokenLength by remember(conversation.id) { mutableStateOf(0) }
-    var wasGenerating by remember(conversation.id) { mutableStateOf(false) }
+    val autoplayState = remember(conversation.id) { ChatTtsAutoplayState() }
 
     // Avoid passing the full conversation.currentMessages list to LaunchedEffect,
     // which triggers a deep O(N) List.equals comparison across 200k tokens on every chunk.
-    val ttsEnabled = mode != TtsAutoplayMode.OFF && provider != null
-    val speechTriggerKey = if (!ttsEnabled) {
+    val activeProvider = provider?.takeIf { mode != TtsAutoplayMode.OFF }
+    val isGenerating = loadingJob != null
+    val speechTriggerKey = if (activeProvider == null || mode == TtsAutoplayMode.AFTER_GENERATION) {
         null
-    } else if (mode == TtsAutoplayMode.AFTER_GENERATION) {
-        loadingJob == null
     } else {
-        latestAssistantSpeechMessage(conversation)?.let { it.id to it.toContentText().length }
+        latestAssistantSpeechTarget(conversation)?.let { it.identity to it.text.length }
     }
 
-    LaunchedEffect(conversation.id, speechTriggerKey, mode, provider) {
-        if (!ttsEnabled) return@LaunchedEffect
-        if (loadingJob == null) {
-            if (!wasGenerating) return@LaunchedEffect
-            wasGenerating = false
-            val latestMessage = latestAssistantSpeechMessage(conversation) ?: return@LaunchedEffect
-            val text = latestMessage.toContentText()
-            if (latestMessage.id == generationBaselineMessageId && text == generationBaselineText) {
-                return@LaunchedEffect
-            }
-            if (completedMessageId == latestMessage.id && spokenLength >= text.length) {
-                return@LaunchedEffect
-            }
-            if (streamingMessageId != latestMessage.id || spokenLength > text.length) {
-                streamingMessageId = latestMessage.id
-                spokenLength = 0
-            }
-            val remaining = text.drop(spokenLength)
-            val length = speakablePrefixLength(remaining, final = true)
-            val segment = remaining.take(length).trim()
-            if (segment.isNotBlank()) {
-                tts.speak(
-                    text = segment,
-                    flushCalled = spokenLength == 0,
-                    overrideSetting = provider,
-                )
-                spokenLength += length
-            }
-            completedMessageId = latestMessage.id
-            return@LaunchedEffect
-        }
-
-        if (mode != TtsAutoplayMode.WHILE_GENERATING) return@LaunchedEffect
-
-        if (!wasGenerating) {
-            val baselineMessage = latestAssistantSpeechMessage(conversation)
-            generationBaselineMessageId = baselineMessage?.id
-            generationBaselineText = baselineMessage?.toContentText().orEmpty()
-            wasGenerating = true
-        }
-        val latestMessage = latestAssistantSpeechMessage(conversation) ?: return@LaunchedEffect
-        if (latestMessage.id == generationBaselineMessageId && latestMessage.toContentText() == generationBaselineText) {
-            return@LaunchedEffect
-        }
-        val text = latestMessage.toContentText()
-        if (streamingMessageId != latestMessage.id) {
-            streamingMessageId = latestMessage.id
-            spokenLength = 0
-        }
-        if (spokenLength > text.length) {
-            spokenLength = 0
-        }
-        val remaining = text.drop(spokenLength)
-        val length = speakablePrefixLength(remaining, final = false)
-        val segment = remaining.take(length).trim()
-        if (segment.isNotBlank()) {
-            spokenLength += length
-            tts.speak(segment, flushCalled = false, overrideSetting = provider)
+    LaunchedEffect(conversation.id, isGenerating, speechTriggerKey, mode, activeProvider) {
+        val commands = autoplayState.onUpdate(
+            mode = if (activeProvider != null) mode else TtsAutoplayMode.OFF,
+            isGenerating = isGenerating,
+            target = if (activeProvider != null) latestAssistantSpeechTarget(conversation) else null,
+        )
+        if (activeProvider == null) return@LaunchedEffect
+        commands.forEach { command ->
+            tts.speak(
+                text = command.text,
+                flushCalled = command.flush,
+                overrideSetting = activeProvider,
+            )
         }
     }
 }

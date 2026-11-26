@@ -101,4 +101,74 @@ class MessageTurnGroupingTest {
         assertEquals(3, groups[1].nodes.size)
         assertEquals(MessageRole.USER, groups[2].role)
     }
+
+    @Test
+    fun actionTargetNodeAndSpeechTextUseSelectedShorterRegenerationInsteadOfOlderTrailingNode() {
+        val v1ToolCall = me.rerere.ai.ui.UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(
+                me.rerere.ai.ui.UIMessagePart.ToolCall(
+                    toolCallId = "call-1",
+                    toolName = "search_web",
+                    arguments = "{}",
+                )
+            ),
+            versionTag = "v1",
+        )
+        val v1ToolResult = me.rerere.ai.ui.UIMessage(
+            role = MessageRole.TOOL,
+            parts = listOf(
+                me.rerere.ai.ui.UIMessagePart.ToolResult(
+                    toolCallId = "call-1",
+                    toolName = "search_web",
+                    content = kotlinx.serialization.json.buildJsonObject { },
+                    arguments = kotlinx.serialization.json.buildJsonObject { },
+                )
+            ),
+            versionTag = "v1",
+        )
+        val v1FinalReply = UIMessage.assistant("Older reply from v1").copy(versionTag = "v1")
+        val v2DirectReply = UIMessage.assistant("Selected regeneration v2").copy(versionTag = "v2")
+
+        val v2SelectedGroup = listOf(
+            MessageNode(messages = listOf(v1ToolCall, v2DirectReply), selectIndex = 1),
+            MessageNode.of(v1ToolResult),
+            MessageNode.of(v1FinalReply),
+        ).groupIntoTurns().single()
+
+        assertEquals(v2DirectReply.id, v2SelectedGroup.actionTargetNode.currentMessage.id)
+        assertEquals("Selected regeneration v2", v2SelectedGroup.visibleAssistantSpeechText())
+
+        val v1SelectedGroup = listOf(
+            MessageNode(messages = listOf(v1ToolCall, v2DirectReply), selectIndex = 0),
+            MessageNode.of(v1ToolResult),
+            MessageNode.of(v1FinalReply),
+        ).groupIntoTurns().single()
+
+        assertEquals(v1FinalReply.id, v1SelectedGroup.actionTargetNode.currentMessage.id)
+        assertEquals("Older reply from v1", v1SelectedGroup.visibleAssistantSpeechText())
+    }
+
+    @Test
+    fun actionTargetNodeAndSpeechTextIgnoreLaterRegenerationTrailingNodesWhenSwitchingBack() {
+        val v1Reply = UIMessage.assistant("Original reply v1").copy(versionTag = "v1")
+        val v2LeadIn = UIMessage.assistant("Checking tools...").copy(versionTag = "v2")
+        val v2FinalReply = UIMessage.assistant("Longer regenerated reply v2").copy(versionTag = "v2")
+
+        val switchedBackToV1 = listOf(
+            MessageNode(messages = listOf(v1Reply, v2LeadIn), selectIndex = 0),
+            MessageNode.of(v2FinalReply),
+        ).groupIntoTurns().single()
+
+        assertEquals(v1Reply.id, switchedBackToV1.actionTargetNode.currentMessage.id)
+        assertEquals("Original reply v1", switchedBackToV1.visibleAssistantSpeechText())
+
+        val selectedV2 = listOf(
+            MessageNode(messages = listOf(v1Reply, v2LeadIn), selectIndex = 1),
+            MessageNode.of(v2FinalReply),
+        ).groupIntoTurns().single()
+
+        assertEquals(v2FinalReply.id, selectedV2.actionTargetNode.currentMessage.id)
+        assertEquals("Checking tools...\n\nLonger regenerated reply v2", selectedV2.visibleAssistantSpeechText())
+    }
 }

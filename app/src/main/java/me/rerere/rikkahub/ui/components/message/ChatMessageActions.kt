@@ -80,6 +80,7 @@ fun ColumnScope.ChatMessageActionButtons(
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)? = null,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)? = null,
     ttsProviderOverride: TTSProviderSetting? = null,
+    speechText: String = message.toContentText(),
 ) {
     val context = LocalContext.current
     val settings = LocalSettings.current
@@ -165,10 +166,12 @@ fun ColumnScope.ChatMessageActionButtons(
                 contentDescription = stringResource(R.string.tts),
                 onClick = {
                     if (!isSpeaking) {
-                        tts.speak(
-                            text = message.toContentText(),
-                            overrideSetting = ttsProviderOverride,
-                        )
+                        if (speechText.isNotBlank()) {
+                            tts.speak(
+                                text = speechText,
+                                overrideSetting = ttsProviderOverride,
+                            )
+                        }
                     } else {
                         tts.stop()
                     }

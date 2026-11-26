@@ -177,10 +177,16 @@ class AudioPlayer(context: Context) : TtsAudioPlayer {
         val mediaSource = ProgressiveMediaSource.Factory(dataSourceFactory)
             .createMediaSource(mediaItem)
 
-        val isIdleOrEnded = player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED
+        val wasEnded = player.playbackState == Player.STATE_ENDED
+        val wasIdle = player.playbackState == Player.STATE_IDLE
+        val insertedIndex = player.mediaItemCount
         player.addMediaSource(mediaSource)
 
-        if (isIdleOrEnded) {
+        if (wasEnded) {
+            player.seekTo(insertedIndex, 0L)
+            player.prepare()
+            player.play()
+        } else if (wasIdle) {
             player.prepare()
             player.play()
         } else if (!player.isPlaying && player.playWhenReady) {
