@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-11-23",
+  "updated_at": "2026-11-26",
   "search_providers": [
     {
       "id": "keyless",
@@ -1226,15 +1226,6 @@
       "type": "openai",
       "base_url": "https://api.liquid.ai/v1",
       "icon": "icons/liquid.svg",
-      "preset": true
-    },
-    {
-      "id": "d1f92a0e-c1d4-45aa-9b24-78fdbe4a3203",
-      "name": "Poolside",
-      "description": "Poolside offers coding-specialized models built for agentic software engineering workflows.",
-      "type": "openai",
-      "base_url": "https://api.poolside.ai/v1",
-      "icon": "icons/poolside.svg",
       "preset": true
     },
     {
