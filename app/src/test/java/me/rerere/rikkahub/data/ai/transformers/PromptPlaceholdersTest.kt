@@ -54,4 +54,29 @@ class PromptPlaceholdersTest {
     @Test fun emptyPersonaNamesUseStableFallbacks() {
         assertEquals("assistant / user", resolver("", Assistant(name = ""))("{{char}} / {user}"))
     }
+
+    @Test fun customCharacterSystemPromptResolvesAllAndRepeatedRuntimePlaceholders() {
+        val prompt = """
+            You are {{char}}, chatting with {{user}} on {{model_name}}.
+            Date: {{cur_date}}
+            Time: {{cur_time}}
+            Date & Time: {{cur_datetime}}
+            Timezone: {{timezone}}
+            Locations: {{location}}
+            Device info: {{device_info}}
+            System version: {{system_version}}
+            Battery level: {{location}}
+        """.trimIndent()
+        val resolved = resolver(assistant = Assistant(name = "Furina"))(prompt)
+        assertTrue(resolved.contains("You are Furina, chatting with Alex on"))
+        assertTrue(resolved.contains("Date: date"))
+        assertTrue(resolved.contains("Time: time"))
+        assertTrue(resolved.contains("Date & Time: datetime"))
+        assertTrue(resolved.contains("Timezone: zone"))
+        assertTrue(resolved.contains("Locations: place"))
+        assertTrue(resolved.contains("Device info: device"))
+        assertTrue(resolved.contains("System version: os"))
+        assertTrue(resolved.contains("Battery level: place"))
+        assertFalse(resolved.contains("{{"))
+    }
 }

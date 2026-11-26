@@ -227,7 +227,16 @@ fun AssistantDetailPage(
                     }
                 },
                 navigationIcon = {
-                    BackButton()
+                    val activeBackNavController = if (currentRoute != null && currentRoute != AssistantDetailRoutes.HOME) {
+                        navController
+                    } else {
+                        rootNavController
+                    }
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        LocalNavController provides activeBackNavController
+                    ) {
+                        BackButton()
+                    }
                 },
                 actions = {
                     AnimatedVisibility(

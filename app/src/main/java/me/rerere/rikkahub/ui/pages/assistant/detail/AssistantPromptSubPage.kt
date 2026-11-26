@@ -48,7 +48,11 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -111,10 +115,20 @@ fun AssistantPromptSubPage(
     onUpdate: (Assistant) -> Unit,
     vm: AssistantDetailVM
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val templateTransformer = koinInject<TemplateTransformer>()
-    var isFullScreen by remember { mutableStateOf(false) }
+    AssistantPromptSubPageContent(
+        assistant = assistant,
+        onUpdate = onUpdate,
+        estimateTokens = vm::estimateTokens,
+    )
+}
+
+@Composable
+internal fun AssistantPromptSubPageContent(
+    assistant: Assistant,
+    onUpdate: (Assistant) -> Unit,
+    estimateTokens: (String) -> Int = { it.length / 4 },
+) {
+    var isFullScreen by rememberSaveable(assistant.id.toString()) { mutableStateOf(false) }
     val fullScreenOpen = rememberUpdatedState(isFullScreen)
     val persistedAssistant = rememberUpdatedState(assistant)
     val currentOnUpdate = rememberUpdatedState(onUpdate)
@@ -130,6 +144,11 @@ fun AssistantPromptSubPage(
             // later flush cannot write an older snapshot of the other fields back.
             holder.replace(assistant)
             displayed = assistant
+            if (!isFullScreen && systemPromptValue.text.toString() != assistant.systemPrompt) {
+                systemPromptValue.edit {
+                    replace(0, length, assistant.systemPrompt)
+                }
+            }
         } else {
             val prompt = holder.assistant.systemPrompt
             val intros = holder.assistant.introTexts()
@@ -142,9 +161,34 @@ fun AssistantPromptSubPage(
         }
     }
 
+    LaunchedEffect(assistant.id, isFullScreen) {
+        if (!isFullScreen) {
+            snapshotFlow { systemPromptValue.text.toString() }.collectLatest { text ->
+                if (text != persistedAssistant.value.systemPrompt) {
+                    delay(300)
+                    holder.flush(
+                        systemPrompt = text,
+                        persisted = persistedAssistant.value,
+                        onUpdate = currentOnUpdate.value,
+                    )
+                }
+            }
+        }
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(assistant.id, lifecycleOwner) {
         fun flush() {
+            // The inline field is saveable; sync it with the expanded draft before lifecycle
+            // state is saved so recreation cannot restore older text over the expanded draft.
+            if (fullScreenOpen.value) {
+                val expandedText = holder.assistant.systemPrompt
+                if (systemPromptValue.text.toString() != expandedText) {
+                    systemPromptValue.edit {
+                        replace(0, length, expandedText)
+                    }
+                }
+            }
             holder.flush(
                 systemPrompt = if (fullScreenOpen.value) null else systemPromptValue.text.toString(),
                 persisted = persistedAssistant.value,
@@ -414,8 +458,9 @@ fun AssistantPromptSubPage(
             PromptInput(
                 title = stringResource(R.string.assistant_page_system_prompt),
                 state = systemPromptValue,
-                tokenCount = { PromptTokenCount(systemPromptValue, vm::estimateTokens) },
+                tokenCount = { PromptTokenCount(systemPromptValue, estimateTokens) },
                 onExpand = { isFullScreen = !isFullScreen },
+                onFocusLost = { flushDraft() },
             ) {
                     if (isFullScreen) {
                         FullScreenSystemPromptEditor(

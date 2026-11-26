@@ -964,7 +964,7 @@ class ChatService(
             updateConversation(conversationId, conversation)
         } else {
             // 新建对话, 并添加预设消息
-            val currentSettings = settingsStore.settingsFlowRaw.first()
+            val currentSettings = settingsStore.settingsFlow.first { !it.init }
             val assistant = currentSettings.getCurrentAssistant()
             
             var initialNodes = assistant.getInitialMessageNodes(promptPlaceholderResolver(context, currentSettings, assistant))
