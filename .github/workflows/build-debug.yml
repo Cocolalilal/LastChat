@@ -1,9 +1,8 @@
 name: Build Debug APK
 
+# Manual-only: the playbook forbids unminified dev previews on every push.
+# Stable release builds are produced by build-stable.yml.
 on:
-  push:
-    branches:
-      - feat/memory-summary
   workflow_dispatch:
 
 jobs:

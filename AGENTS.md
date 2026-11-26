@@ -731,7 +731,7 @@ The AI assistant in LastChat now has 5 specialized tools for complete autonomous
 ### 7. Critical Incident Post-Mortem & Hard-Won Lessons
 1. **Model & Keyed Provider Resolution Trap:**
    - *Bug:* Resolving candidate models solely from the catalog picked models whose provider had no active API key configured, causing immediate crash.
-   - *Rule:* Always iterate candidates and verify that `SecretKeyManager` has an active API key for that provider (`findProvider(model.provider)?.let { keyManager.hasKey(it) }`). Fall back to any enabled, keyed provider.
+   - *Rule:* Iterate candidates, skip disabled providers (`!rawProv.enabled`), and verify real credentials **after** `secretKeyManager.populateProviderSecrets(rawProv)`. There is no `hasKey()` helper in this fork: check `apiKey.isNotBlank() || resolvedApiKeyPool.any { it.value.isNotBlank() } || apiKeyPool.any { it.enabled && it.key.isNotBlank() }`, plus `subscriptionAccount != null` for OpenAI subscription accounts, `privateKey/serviceAccountEmail/projectId` for Google Vertex, and loopback base URLs for local OpenAI-compatible servers. Fall back to any enabled, keyed provider.
 2. **Streaming Thinking / Reasoning Collisions:**
    - *Bug:* Thinking models (DeepSeek R1, Gemini Flash Thinking, Claude) stream reasoning chunks as `UIMessagePart.Thinking` and `UIMessagePart.Reasoning`. Filtering solely for `UIMessagePart.Text` caused empty text buffers or broken JSON parsing.
    - *Rule:* Accumulate reasoning parts separately and dispatch via `onProgress` callbacks.
@@ -747,3 +747,68 @@ The AI assistant in LastChat now has 5 specialized tools for complete autonomous
 
 
 
+
+---
+
+## 21. Architecture: Memory Summary Recovery Pass — Parser Hardening, Auto-Sync Wiring & Compose 1.9 Selection Toolbar Migration
+
+**Commit:** `bfdf322e` on `feat/memory-summary` (12 files, +1584/−296). Fixes the "Overview card full of raw JSON" regression, the dead Dive Deeper section, the `[#ID]` chip clutter, the missing custom selection toolbar on Compose BOM `2025.11.00`, and four separate reasons the automatic summary cadence never fired.
+
+### 1. Raw-JSON-in-Overview Corruption (`MemorySummaryModels.kt`, `MemorySummaryService.kt`)
+- **Root cause chain:** `DiveDeeperAction` required `title` with no default while `buildFullSynthesisPrompt()` told the model to emit only `{prompt, context}`. Every synthesis that obeyed the prompt threw `MissingFieldException`, `parseSummaryJson()` swallowed it, and the fallback `MemorySummaryMarkdownCodec.decodeSectionsFromMarkdown(raw, ...)` wrapped the entire JSON blob inside one section titled `"Overview"` with icon `"star"`. That corrupt payload was then committed to Room.
+- **Schema tolerance:** `DiveDeeperAction` now defaults every field (`icon = "sparkles"`, `title/subtitle/context/prompt = ""`) and exposes `displayTitle()` / `displaySubtitle()`. `parseDiveDeeperActions()` resolves `title -> context -> prompt.take(60)` and keeps `context` as a subtitle fallback, so prompt-only, context-only and title-only shapes all survive.
+- **Prompt alignment:** the synthesis prompt's `dive_deeper` example now emits `icon`, `title`, `subtitle` **and** `prompt`, matching the model and `buildFullSummarizerUserPrompt`.
+- **Lenient-first parsing:** new `parseMemorySummaryFromJsonObject(JsonObject)` extracts `sections` through `parseSectionFromElement()` and `dive_deeper` through `parseDiveDeeperActions()`. `parseMemorySummaryJson()` tries it **before** `decodeFromString<MemorySummaryData>`, then refuses the markdown fallback entirely when `looksLikeRawJson(raw)` is true.
+- **`parseSectionFromElement()` hardening:** `content` may now be a `JsonPrimitive` **or** a `JsonArray` of bullet strings (joined into `- ` lines). This is what makes the lenient path win on real model drift instead of silently dropping sections.
+- **`looksLikeRawJson()` hardening:** strips `<think>` blocks and ```json fences before testing, and also detects a `"sections"` + `"content"` payload that does **not** start with `{`.
+- **Auto-heal on read:** `sanitizeMemorySummaryData()` detects `sections.size == 1 && looksLikeRawJson(sections[0].content)` and recursively re-parses that content into a full `MemorySummaryData`, then re-hydrates provenance. `MemorySummaryService.decodeSummaryEntity()` runs the lenient parse **first**, then strict decode + sanitize, then markdown; `parseSummaryJson()` throws a descriptive `IllegalStateException` (surfaced by the error banner) instead of ever writing corruption to Room.
+
+### 2. Automatic Summary System — Four Independent Breakages
+1. **`MemorySummaryScheduler.syncCadenceSchedule()` had zero callers.** Now `AssistantDetailVM` takes a `MemorySummaryScheduler` constructor param (wired in `ViewModelModule.kt`) and calls it from `update(assistant)` whenever `enableMemory`, `enableMemorySummary` or `memorySummaryCadence` changed. New `updateSummaryCadence(cadence)` helper lets the Summary page change cadence directly.
+2. **Startup reconciliation.** `LastChatApp.onCreate()` calls `syncCadenceSchedule()` for every assistant after settings init, so schedules survive app updates, imports and re-installs.
+3. **Koin lazily created `MemorySummaryService`**, so `memoryRepo.onMemoryChange` stayed `null` (and every memory mutation was dropped) until the user happened to open the Memory Summary page. Fixed with `single(createdAtStart = true)` in `RepositoryModule.kt`.
+4. **`resolveModelAndProvider()` returned disabled/unkeyed providers.** It now skips `!rawProv.enabled`, calls `hasValidCredentials()` on the populated provider (OpenAI/Google/Claude key or pool, OpenAI subscription account, Vertex service-account fields, loopback base URLs), prefers a `CHAT` model when scanning provider fallbacks, and returns `null` rather than handing back an unusable provider.
+
+### 3. `runBackgroundConsolidation()` & Worker Preconditions
+- Incremental mode: strict `parsePatchJson()` -> `SummaryPatchEngine.applyPatch()` first; on failure, `parseAskOrUpdateResponse(rawPatch, existingData)?.first` **only when the payload looks like JSON** (conversational fallbacks are never allowed to overwrite a summary); final fallback is `parseSummaryJson()` (full summary returned instead of a patch). Non-JSON garbage now throws inside `parseSummaryJson` and the worker retries cleanly instead of committing an empty document.
+- `MemorySummaryWorker`: periodic runs used to bail out whenever `summaryEntity == null`. Now a missing summary is allowed to generate a **baseline** as long as `memoryDAO.getMemoriesByAssistant()` is non-empty; the dirty/new-memory short-circuit only applies when a summary already exists.
+- `MemorySummaryScheduler`: `WorkManager` is now resolved lazily through `workManagerOrNull()` (`LastChatWorkManager.kt`) because Koin's `createdAtStart` graph construction can run before WorkManager is initialized; `IMMEDIATE` cancels the stale debounce job, `DEBOUNCE_10M` cancels the stale immediate job, and `syncCadenceSchedule()` now cancels **both** one-time jobs when switching to `HOURLY`/`DAILY`.
+
+### 4. Compose Foundation 1.9+ Selection Toolbar (`MemorySelectionToolbar.kt`)
+On `composeBom = "2025.11.00"` (foundation 1.9.x) `SelectionContainer` reads **`LocalClipboard`** (not `LocalClipboardManager`) and renders its menu through **`LocalTextContextMenuToolbarProvider`** (not `LocalTextToolbar`). The old overrides were therefore bypassed, which is why "Ask Agent / Inspect Source / Copy" never appeared.
+- **New primary path:**
+  - `InterceptingClipboard : Clipboard` wraps the platform clipboard, reads `ClipEntry.clipData.getItemAt(0).text` in `setClipEntry()`, and either diverts the text to a capture callback (`captureNext`) or rewrites it pointer-free (`sanitizeNextToSystemClipboard`).
+  - `MemorySelectionContextMenuProvider : TextContextMenuProvider` starts its own `ActionMode` from `MaterialTheme`-independent view context and is installed via `LocalTextContextMenuToolbarProvider`. It reads `dataProvider.data().components`, maps `TextContextMenuKeys.CopyKey` / `SelectAllKey`, injects `Ask Agent` + `Inspect Source` (+ clean `Copy`), forwards unknown components as extra menu rows, positions itself with `dataProvider.contentBounds(coords) + coords.positionInRoot()`, and completes a `CompletableDeferred` when the session closes.
+  - `Modifier.memorySelectionContextMenuComponents(hasSectionCitations)` registers the same two items through `appendTextContextMenuComponents { item(key = ...) }` so the entries also exist in the component list the provider reads.
+- **Legacy path retained** (`LegacyInterceptingClipboardManager`, `LegacyMemorySelectionTextToolbar` against `LocalClipboardManager` / `LocalTextToolbar`) and both are provided together — the new one wins, the old one keeps older foundation flags working.
+- **API gotchas burned in:**
+  - `item(...)` is an **Android-only extension** in `androidx.compose.foundation.text.contextmenu.builder`; it needs `androidx.annotation.DrawableRes` icons or none.
+  - `TextContextMenuItem.onClick` is declared with receiver `TextContextMenuSession`, so invoke it as `entry.onClick.invoke(session)` — `with(entry) { session.onClick() }` does **not** resolve.
+  - `currentMode` bookkeeping must use `this.actionMode == it`-style identity checks, never a bare `==` between a nullable and a fresh assignment, otherwise `finish()` runs against a stale mode.
+  - `showTextContextMenu` **suspends until closed**; always finish an `ActionMode` created off the main thread via `withContext(Dispatchers.Main.immediate)`.
+
+### 5. Clean Lines + Tap-to-Reveal Reference Tray
+- Section content keeps `[#ID]` pointers in Room and in `MemorySummarySection.content` (provenance, manual edit mode and agent tools untouched).
+- `parseSummaryLines()` builds `SummaryBulletLine(index, rawLine, cleanText, pointerIds, isBullet)` per non-blank line: `extractIds` for `pointerIds`, `stripPointers` + `- ` / `* ` / `• ` prefix removal for `cleanText`.
+- Rendering shows **only** clean text plus a 6dp tonal accent dot for bullets (tinted from the section icon at 0.7 alpha). The old overflowing bottom `Sources: #1 #2 …` row is gone.
+- Tapping a line with pointers toggles `expandedLineKey = "<sectionKey>:<lineIndex>"` (held in `rememberSaveable` at page level so only one tray opens at a time) and animates a `surfaceContainerHigh` tray via `AnimatedVisibility(expandVertically() + fadeIn() / shrinkVertically() + fadeOut())` containing `References` + a `FlowRow` of `#ID` chips (valid = `secondaryContainer`, missing = `errorContainer` + strikethrough) + an `Ask` chip that quotes the clean line into the bottom bar.
+- **Gesture discipline:** tap detection uses `Modifier.pointerInput(lineKey) { detectTapGestures(onTap = ...) }` on the line row **inside** `SelectionContainer` — never a `Surface(onClick)` — so long-press drag selection still escalates to the native handlers. Trays and headers are wrapped in `DisableSelection` so chips never get swallowed into a selection.
+
+### 6. Restored Dive Deeper Flow
+- `MemorySummaryPage` gained `onDiveDeeperClick: (DiveDeeperAction) -> Unit`; the stateful entry point calls `vm.switchToAssistant(assistantId)` then navigates to `Screen.Chat(id = UUID.randomUUID().toString(), text = prompt.base64Encode())`.
+- `ChatPage` decodes route text with `base64Decode()` and applies it as a **draft** (`ChatInputDraft`), so the prompt lands in the composer and is **not** auto-sent. `prompt.base64Encode()` resolves to `me.rerere.rikkahub.utils.base64Encode` (kotlin.io.encoding `Base64`, no Android import needed).
+
+### 7. Material 3 Expressive Redesign of `MemorySummaryPage.kt`
+- Top bar: back / title, brain icon with working/error dot, edit, overflow (`Regenerate Summary`, `Sync Frequency...`, `Live Agent Stream`), slim `LinearProgressIndicator` while generating.
+- **Editorial hero card:** 24dp `surfaceContainerLow` + 0.5dp `outlineVariant` border, `headlineSmall` bold title, `bodyMedium` subtitle, and a `FlowRow` of metadata pills (Updated relative time, `Rev N • ~N tokens`, and a tappable `Auto: …` pill).
+- **`SyncCadencePickerSheet`:** `ModalBottomSheet` listing all five cadences with labels/descriptions and a selected check, calling `onUpdateCadence` -> `AssistantDetailVM.updateSummaryCadence` -> `syncCadenceSchedule()`.
+- **Section cards:** 22dp `surfaceContainerLow` + 0.5dp border, 18dp padding, `SectionIconBox` (40dp / 12dp), `titleMedium SemiBold`, and a fact-count pill (`6 facts`) in `labelSmall`.
+- **Dive Deeper cards:** 18dp surface, 36dp icon box, `titleSmall SemiBold` + 2-line preview, trailing `Icons.AutoMirrored.Rounded.ArrowForward`, spring press scale (`0.975f`, `DampingRatioMediumBouncy` / `StiffnessMedium`) + `HapticPattern.Pop`.
+- **Ask bar:** floating 28dp pill (`surfaceContainerHigh`, 0.5dp border, shadow 4dp) with 1–5 line field and a 42dp `FilledIconButton`; the `LazyColumn` uses `bottom = 28.dp` content padding so the last card clears it.
+- `LazyColumn` keys are index-qualified (`"${normalizedKey()}_$idx"`, `"dive_${idx}_${hash}"`) because two sections can legitimately normalize to the same key.
+
+### 8. Testing & CI Notes
+- New `MemorySummaryModelsTest` cases: `parseMemorySummaryJson_toleratesDiveDeeperWithoutTitle`, `sanitizeMemorySummaryData_autoHealsLegacyOverviewRawJson`, `parseMemorySummaryJson_neverDumpsMalformedRawJsonIntoOverviewSection`.
+- `MemoryPointerParser.resolveIdsForSelection()` now strips `- `/`* ` prefixes and matches **per line**, so multi-line selections still resolve their backing receipt (`probe.length` threshold lowered to 2).
+- `.github/workflows/build-debug.yml` is now `workflow_dispatch` **only** — pushing to `feat/memory-summary` no longer spawns an unminified debug build alongside the stable release (playbook §3).
+- **Never verify locally:** `free -m` on the tablet sat around ~777MB available; `./gradlew :shared:jvmTest` or `:app:compileDebugKotlin` will trip LMK and kill the conversation process. Verification is the GitHub Actions run for the pushed SHA.
