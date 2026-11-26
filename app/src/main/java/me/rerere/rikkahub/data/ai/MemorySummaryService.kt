@@ -48,7 +48,10 @@ import me.rerere.rikkahub.data.memory.RawMemoryAction
 import me.rerere.rikkahub.data.memory.SectionLineEdit
 import me.rerere.rikkahub.data.memory.SummaryPatchEngine
 import me.rerere.rikkahub.data.memory.TokenEstimator
+import me.rerere.rikkahub.data.memory.looksLikeRawJson
+import me.rerere.rikkahub.data.memory.parseAskOrUpdateResponse
 import me.rerere.rikkahub.data.memory.parseMemorySummaryJson
+import me.rerere.rikkahub.data.memory.sanitizeMemorySummaryData
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.worker.MemorySummaryScheduler
 import java.time.Instant
@@ -176,16 +179,62 @@ class DefaultSummaryLlmExecutor(
         for (candidateId in candidates) {
             val model = settings.findModelById(candidateId) ?: continue
             val rawProv = model.findProvider(settings.providers) ?: continue
+            if (!rawProv.enabled) continue
             val populated = secretKeyManager.populateProviderSecrets(rawProv)
+            if (!hasValidCredentials(populated)) continue
             return model to populated
         }
         for (prov in settings.providers) {
             if (!prov.enabled) continue
             val populated = secretKeyManager.populateProviderSecrets(prov)
-            val model = prov.models.firstOrNull() ?: continue
+            if (!hasValidCredentials(populated)) continue
+            val model = prov.models.firstOrNull { it.type == me.rerere.ai.provider.ModelType.CHAT }
+                ?: prov.models.firstOrNull()
+                ?: continue
             return model to populated
         }
         return null
+    }
+
+    private fun hasValidCredentials(provider: ProviderSetting): Boolean {
+        if (!provider.enabled) return false
+        return when (provider) {
+            is ProviderSetting.OpenAI -> {
+                if (provider.subscriptionAccount != null) return true
+                val hasKey = provider.apiKey.isNotBlank() ||
+                    provider.resolvedApiKeyPool.any { it.value.isNotBlank() } ||
+                    provider.apiKeyPool.any { it.enabled && it.key.isNotBlank() }
+                hasKey || isLocalEndpoint(provider.baseUrl)
+            }
+            is ProviderSetting.Google -> {
+                if (provider.vertexAI) {
+                    provider.privateKey.isNotBlank() &&
+                        provider.serviceAccountEmail.isNotBlank() &&
+                        provider.projectId.isNotBlank()
+                } else {
+                    provider.apiKey.isNotBlank() ||
+                        provider.resolvedApiKeyPool.any { it.value.isNotBlank() } ||
+                        provider.apiKeyPool.any { it.enabled && it.key.isNotBlank() }
+                }
+            }
+            is ProviderSetting.Claude -> {
+                provider.apiKey.isNotBlank() ||
+                    provider.resolvedApiKeyPool.any { it.value.isNotBlank() } ||
+                    provider.apiKeyPool.any { it.enabled && it.key.isNotBlank() }
+            }
+            is ProviderSetting.LiteRtLocal -> true
+            is ProviderSetting.ComfyUI -> false
+        }
+    }
+
+    private fun isLocalEndpoint(url: String): Boolean {
+        val lower = url.lowercase()
+        return lower.contains("://localhost") ||
+            lower.contains("://127.0.0.1") ||
+            lower.contains("://[::1]") ||
+            lower.contains("://10.0.2.2") ||
+            lower.contains("://192.168.") ||
+            lower.contains("://10.")
     }
 }
 
@@ -653,8 +702,17 @@ class MemorySummaryService(
                 systemPrompt = DELTA_PATCH_SYSTEM_PROMPT,
                 userPrompt = buildDeltaPrompt(existingData!!, memories, deltaInstruction),
             )
-            val patch = parsePatchJson(rawPatch)
-            SummaryPatchEngine.applyPatch(existingData, patch, allowFullRewrite = false).updated
+            val updatedFromPatch = runCatching {
+                val patch = parsePatchJson(rawPatch)
+                SummaryPatchEngine.applyPatch(existingData, patch, allowFullRewrite = false).updated
+            }.getOrNull()
+                ?: if (looksLikeRawJson(rawPatch)) {
+                    parseAskOrUpdateResponse(rawPatch, existingData)?.first
+                } else {
+                    null
+                }
+                ?: MemoryPointerParser.hydrateProvenance(parseSummaryJson(rawPatch))
+            updatedFromPatch
         } else {
             val rawFull = llmExecutor.completeJson(
                 assistantId = assistantId,
@@ -818,8 +876,10 @@ class MemorySummaryService(
               ],
               "dive_deeper": [
                 {
-                  "prompt": "What are my current goals?",
-                  "context": "Goals"
+                  "icon": "target",
+                  "title": "Review my current goals",
+                  "subtitle": "Explore what matters most to me right now.",
+                  "prompt": "What are my current goals?"
                 }
               ]
             }
@@ -863,11 +923,21 @@ class MemorySummaryService(
 
     fun decodeSummaryEntity(entity: MemorySummaryEntity): MemorySummaryData {
         if (entity.summaryJson.isNotBlank()) {
+            val fromLenient = parseMemorySummaryJson(entity.summaryJson)
+            if (fromLenient != null && fromLenient.sections.isNotEmpty()) {
+                return MemoryPointerParser.hydrateProvenance(sanitizeMemorySummaryData(fromLenient))
+            }
             runCatching {
-                return MemoryPointerParser.hydrateProvenance(json.decodeFromString<MemorySummaryData>(entity.summaryJson))
+                val decoded = json.decodeFromString<MemorySummaryData>(entity.summaryJson)
+                val healed = sanitizeMemorySummaryData(decoded)
+                return MemoryPointerParser.hydrateProvenance(healed)
             }
         }
-        return MemorySummaryMarkdownCodec.decodeSectionsFromMarkdown(entity.rawMarkdown, MemorySummaryData())
+        val fromMarkdown = MemorySummaryMarkdownCodec.decodeSectionsFromMarkdown(
+            entity.rawMarkdown,
+            MemorySummaryData(),
+        )
+        return MemoryPointerParser.hydrateProvenance(sanitizeMemorySummaryData(fromMarkdown))
     }
 
     private fun parsePatchJson(raw: String): MemorySectionPatch =
@@ -875,10 +945,24 @@ class MemorySummaryService(
 
     private fun parseSummaryJson(raw: String): MemorySummaryData {
         val cleaned = extractJsonObject(raw)
-        return parseMemorySummaryJson(cleaned)
+        val parsed = parseMemorySummaryJson(cleaned)
             ?: parseMemorySummaryJson(raw)
-            ?: runCatching { json.decodeFromString<MemorySummaryData>(cleaned) }.getOrNull()
-            ?: MemorySummaryMarkdownCodec.decodeSectionsFromMarkdown(raw, MemorySummaryData())
+            ?: runCatching { json.decodeFromString<MemorySummaryData>(cleaned) }
+                .getOrNull()
+                ?.let(::sanitizeMemorySummaryData)
+        if (parsed != null && parsed.sections.isNotEmpty()) {
+            return MemoryPointerParser.hydrateProvenance(parsed)
+        }
+        if (looksLikeRawJson(raw)) {
+            val preview = raw.trim().take(140)
+            throw IllegalStateException("Failed to parse structured memory summary JSON (preview: $preview)")
+        }
+        val markdownFallback = MemorySummaryMarkdownCodec.decodeSectionsFromMarkdown(raw, MemorySummaryData())
+        val healedFallback = sanitizeMemorySummaryData(markdownFallback)
+        if (healedFallback.sections.isEmpty()) {
+            throw IllegalStateException("Model response contained no valid summary sections.")
+        }
+        return MemoryPointerParser.hydrateProvenance(healedFallback)
     }
 
     private fun extractJsonObject(raw: String): String {

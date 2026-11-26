@@ -68,6 +68,7 @@ val viewModelModule = module {
             appStorageRepository = get(),
             embeddingService = get(),
             memorySummaryService = get<MemorySummaryService>(),
+            memorySummaryScheduler = get(),
             memoryDAO = get(),
         )
     }

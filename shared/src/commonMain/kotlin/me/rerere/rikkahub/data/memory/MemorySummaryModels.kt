@@ -50,11 +50,15 @@ data class MemorySummarySection(
 
 @Serializable
 data class DiveDeeperAction(
-    val icon: String = "code",
-    val title: String,
+    val icon: String = "sparkles",
+    val title: String = "",
     val subtitle: String = "",
-    val prompt: String,
-)
+    val context: String = "",
+    val prompt: String = "",
+) {
+    fun displayTitle(): String = title.ifBlank { context }.ifBlank { prompt.take(60) }
+    fun displaySubtitle(): String = subtitle.ifBlank { if (title.isNotBlank()) context else "" }
+}
 
 @Serializable
 enum class MemorySummaryCadence {
@@ -160,11 +164,16 @@ val ALLOWED_SUMMARY_ICONS = setOf(
  * Checks whether text appears to be raw JSON payload rather than clean markdown or conversational prose.
  */
 fun looksLikeRawJson(text: String): Boolean {
-    val trimmed = text.trim()
-    return (trimmed.startsWith("{") && trimmed.contains("\"")) ||
-            trimmed.contains("\"action\":") ||
-            trimmed.contains("\"target_section\":") ||
-            (trimmed.contains("\"section\":") && trimmed.contains("\"content\":"))
+    val trimmed = stripThinkingTags(text).trim()
+    val unfenced = trimmed
+        .removePrefix("```json")
+        .removePrefix("```")
+        .trim()
+    return (unfenced.startsWith("{") && unfenced.contains("\"")) ||
+        trimmed.contains("\"action\":") ||
+        trimmed.contains("\"target_section\":") ||
+        (trimmed.contains("\"sections\"") && trimmed.contains("{") && trimmed.contains("\"content\"")) ||
+        (trimmed.contains("\"section\":") && trimmed.contains("\"content\":"))
 }
 
 /**
@@ -277,9 +286,22 @@ fun sanitizeMemorySummarySection(section: MemorySummarySection): MemorySummarySe
 }
 
 /**
- * Sanitizes all sections in MemorySummaryData.
+ * Sanitizes all sections in MemorySummaryData, auto-healing legacy single-section
+ * raw JSON dumps (e.g. an "Overview" card wrapping an entire serialized summary).
  */
 fun sanitizeMemorySummaryData(data: MemorySummaryData): MemorySummaryData {
+    if (data.sections.size == 1 && looksLikeRawJson(data.sections[0].content)) {
+        val healedFull = parseMemorySummaryJson(data.sections[0].content)
+        if (healedFull != null && healedFull.sections.isNotEmpty()) {
+            return MemoryPointerParser.hydrateProvenance(
+                healedFull.copy(
+                    title = healedFull.title.ifBlank { data.title },
+                    subtitle = healedFull.subtitle.ifBlank { data.subtitle },
+                    diveDeeper = healedFull.diveDeeper.ifEmpty { data.diveDeeper },
+                )
+            )
+        }
+    }
     val sanitized = data.sections.map { sanitizeMemorySummarySection(it) }
     return data.copy(sections = sanitized)
 }
@@ -303,17 +325,22 @@ fun parseDiveDeeperActions(element: JsonElement?): List<DiveDeeperAction> {
                 } else null
             }
             is JsonObject -> {
-                val prompt = item["prompt"]?.jsonPrimitive?.contentOrNull
-                    ?: item["title"]?.jsonPrimitive?.contentOrNull
-                if (!prompt.isNullOrBlank()) {
-                    val title = item["title"]?.jsonPrimitive?.contentOrNull ?: prompt.take(60)
-                    val subtitle = item["subtitle"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val icon = item["icon"]?.jsonPrimitive?.contentOrNull ?: guessIconForTitle(title)
+                val rawPrompt = item["prompt"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                val rawTitle = item["title"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                val rawContext = item["context"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                val rawSubtitle = item["subtitle"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                val resolvedPrompt = rawPrompt.ifBlank { rawTitle }.ifBlank { rawContext }
+                if (resolvedPrompt.isNotBlank()) {
+                    val resolvedTitle = rawTitle.ifBlank { rawContext }.ifBlank { resolvedPrompt.take(60) }
+                    val resolvedSubtitle = rawSubtitle.ifBlank { if (rawTitle.isNotBlank()) rawContext else "" }
+                    val rawIcon = item["icon"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                    val icon = if (rawIcon in ALLOWED_SUMMARY_ICONS) rawIcon else guessIconForTitle(resolvedTitle)
                     DiveDeeperAction(
                         icon = icon,
-                        title = title,
-                        subtitle = subtitle,
-                        prompt = prompt,
+                        title = resolvedTitle,
+                        subtitle = resolvedSubtitle,
+                        context = rawContext,
+                        prompt = resolvedPrompt,
                     )
                 } else null
             }
@@ -357,14 +384,22 @@ fun parseSectionFromElement(
     defaultTitle: String? = null,
 ): MemorySummarySection? {
     if (element !is JsonObject) return null
-    val content = element["content"]?.jsonPrimitive?.contentOrNull?.trim()
+    val contentEl = element["content"]
+    val content = when (contentEl) {
+        is JsonPrimitive -> contentEl.contentOrNull?.trim()
+        is JsonArray -> contentEl.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim() }
+            .filter { it.isNotBlank() }
+            .joinToString("\n") { if (it.startsWith("- ") || it.startsWith("* ")) it else "- $it" }
+            .trim()
+        else -> null
+    }
     if (content.isNullOrBlank()) return null
-    val title = element["title"]?.jsonPrimitive?.contentOrNull?.trim()
+    val title = (element["title"] as? JsonPrimitive)?.contentOrNull?.trim()
         ?: defaultTitle
         ?: "Category"
-    val icon = element["icon"]?.jsonPrimitive?.contentOrNull?.trim()
+    val icon = (element["icon"] as? JsonPrimitive)?.contentOrNull?.trim()
         ?: guessIconForTitle(title)
-    val id = element["id"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+    val id = (element["id"] as? JsonPrimitive)?.contentOrNull?.trim() ?: ""
     val safeIcon = if (icon in ALLOWED_SUMMARY_ICONS) icon else guessIconForTitle(title)
     return MemorySummarySection(
         id = id,
@@ -630,18 +665,58 @@ fun parseMemorySummaryWithUpdates(raw: String): Pair<MemorySummaryData, List<Raw
 }
 
 /**
+ * Leniently extracts a [MemorySummaryData] from a [JsonObject] using [parseSectionFromElement]
+ * and [parseDiveDeeperActions], tolerating partial schema drift.
+ */
+fun parseMemorySummaryFromJsonObject(element: JsonObject): MemorySummaryData? {
+    val sectionsEl = element["sections"] ?: return null
+    if (sectionsEl !is JsonArray) return null
+    val sections = sectionsEl.mapNotNull { parseSectionFromElement(it) }
+    if (sections.isEmpty() && sectionsEl.isNotEmpty()) return null
+    val title = element["title"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+        ?: "Your Summary"
+    val subtitle = element["subtitle"]?.jsonPrimitive?.contentOrNull?.trim()
+        ?: "A quick view of what I remember about you."
+    val diveDeeper = parseDiveDeeperActions(element["dive_deeper"] ?: element["diveDeeper"])
+    return sanitizeMemorySummaryData(
+        MemorySummaryData(
+            title = title,
+            subtitle = subtitle,
+            sections = sections,
+            diveDeeper = diveDeeper,
+        )
+    )
+}
+
+/**
  * Parses raw LLM response text into MemorySummaryData.
- * Resilient against markdown code-fences (```json ... ```) and leading/trailing chatter.
+ * Resilient against markdown code-fences (```json ... ```), partial schema drift,
+ * and leading/trailing chatter. Never dumps raw JSON into a markdown fallback section.
  */
 fun parseMemorySummaryJson(raw: String): MemorySummaryData? {
     if (raw.isBlank()) return null
     val cleaned = sanitizeJsonString(raw)
-    return try {
-        val parsed = memorySummaryJsonFormat.decodeFromString<MemorySummaryData>(cleaned)
-        sanitizeMemorySummaryData(parsed)
-    } catch (_: Exception) {
-        parseMarkdownFallback(raw)?.let { sanitizeMemorySummaryData(it) }
+
+    // 1. Lenient JsonObject parsing first (handles missing DiveDeeperAction fields, icon aliases, etc.)
+    runCatching {
+        val element = memorySummaryJsonFormat.parseToJsonElement(cleaned)
+        if (element is JsonObject) {
+            parseMemorySummaryFromJsonObject(element)?.let { return it }
+        }
     }
+
+    // 2. Direct kotlinx.serialization decoding fallback
+    runCatching {
+        val parsed = memorySummaryJsonFormat.decodeFromString<MemorySummaryData>(cleaned)
+        return sanitizeMemorySummaryData(parsed)
+    }
+
+    // 3. Never fall back to markdown parsing if the payload looks like raw JSON
+    if (looksLikeRawJson(raw)) {
+        return null
+    }
+
+    return parseMarkdownFallback(raw)?.let { sanitizeMemorySummaryData(it) }
 }
 
 /**

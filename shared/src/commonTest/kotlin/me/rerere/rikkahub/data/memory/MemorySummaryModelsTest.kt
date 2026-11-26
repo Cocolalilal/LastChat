@@ -348,4 +348,105 @@ class MemorySummaryModelsTest {
         assertNull(parsed)
         assertEquals("Real content", current.sections[0].content)
     }
+
+    @Test
+    fun parseMemorySummaryJson_toleratesDiveDeeperWithoutTitle() {
+        val raw = """
+            {
+              "title": "Your Summary",
+              "subtitle": "Overview of your preferences",
+              "sections": [
+                {
+                  "icon": "devices",
+                  "title": "Hardware",
+                  "content": "- Uses Lenovo Tab M9 [#79]"
+                }
+              ],
+              "dive_deeper": [
+                {
+                  "prompt": "What are my current goals?",
+                  "context": "Goals"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val parsed = parseMemorySummaryJson(raw)
+        assertNotNull(parsed)
+        assertEquals(1, parsed.sections.size)
+        assertEquals("devices", parsed.sections[0].icon)
+        assertEquals(1, parsed.diveDeeper.size)
+        assertEquals("Goals", parsed.diveDeeper[0].displayTitle())
+        assertEquals("What are my current goals?", parsed.diveDeeper[0].prompt)
+    }
+
+    @Test
+    fun sanitizeMemorySummaryData_autoHealsLegacyOverviewRawJson() {
+        val legacyCorrupted = MemorySummaryData(
+            title = "Your Summary",
+            sections = listOf(
+                MemorySummarySection(
+                    icon = "star",
+                    title = "Overview",
+                    content = """
+                        {
+                          "title": "Ammar Profile",
+                          "subtitle": "Synthesized baseline",
+                          "sections": [
+                            {
+                              "icon": "code",
+                              "title": "Engineering",
+                              "content": "- Builds LastChat on mobile [#12]"
+                            },
+                            {
+                              "icon": "heart",
+                              "title": "Interests",
+                              "content": "- Watches One Piece [#34]"
+                            }
+                          ],
+                          "dive_deeper": [
+                            {
+                              "prompt": "Explore engineering setup",
+                              "context": "Engineering"
+                            }
+                          ]
+                        }
+                    """.trimIndent(),
+                )
+            ),
+        )
+
+        val healed = sanitizeMemorySummaryData(legacyCorrupted)
+        assertEquals("Ammar Profile", healed.title)
+        assertEquals("Synthesized baseline", healed.subtitle)
+        assertEquals(2, healed.sections.size)
+        assertEquals("Engineering", healed.sections[0].title)
+        assertEquals("code", healed.sections[0].icon)
+        assertEquals(listOf(12), healed.sections[0].citedMemoryIds)
+        assertEquals("Interests", healed.sections[1].title)
+        assertEquals("heart", healed.sections[1].icon)
+        assertEquals(1, healed.diveDeeper.size)
+        assertEquals("Engineering", healed.diveDeeper[0].displayTitle())
+    }
+
+    @Test
+    fun parseMemorySummaryJson_neverDumpsMalformedRawJsonIntoOverviewSection() {
+        val malformedJson = """
+            {
+              "title": "Your Summary",
+              "sections": [
+                {
+                  "icon": "star",
+                  "title": "Broken",
+                  "content": 12345
+                }
+              ]
+            }
+        """.trimIndent()
+        val parsed = parseMemorySummaryJson(malformedJson)
+        // Even if sections couldn't be parsed, it must never wrap raw JSON inside an Overview section
+        if (parsed != null) {
+            assertEquals(0, parsed.sections.size)
+        }
+    }
 }

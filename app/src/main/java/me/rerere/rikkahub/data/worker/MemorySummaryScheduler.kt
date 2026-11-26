@@ -4,10 +4,12 @@ import android.content.Context
 import androidx.work.*
 import me.rerere.rikkahub.data.memory.MemoryChangeType
 import me.rerere.rikkahub.data.memory.MemorySummaryCadence
+import me.rerere.rikkahub.service.workManagerOrNull
 import java.util.concurrent.TimeUnit
 
 class MemorySummaryScheduler(context: Context) {
-    private val workManager: WorkManager = WorkManager.getInstance(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val workManager: WorkManager? by lazy { appContext.workManagerOrNull() }
 
     private fun immediateWorkName(assistantId: String) = "memory_summary_immediate_$assistantId"
     private fun debounceWorkName(assistantId: String) = "memory_summary_debounce_$assistantId"
@@ -29,8 +31,10 @@ class MemorySummaryScheduler(context: Context) {
         snippet: String,
         triggeredAtMs: Long,
     ) {
+        val wm = workManager ?: return
         when (cadence) {
             MemorySummaryCadence.IMMEDIATE -> {
+                wm.cancelUniqueWork(debounceWorkName(assistantId))
                 // Micro-coalesce 3s window with REPLACE so rapid multi-memory turns merge into 1 API call
                 val data = workDataOf(
                     MemorySummaryWorker.KEY_ASSISTANT_ID to assistantId,
@@ -47,7 +51,7 @@ class MemorySummaryScheduler(context: Context) {
                     .addTag(TAG_MEMORY_SUMMARY)
                     .build()
 
-                workManager.enqueueUniqueWork(
+                wm.enqueueUniqueWork(
                     immediateWorkName(assistantId),
                     ExistingWorkPolicy.REPLACE,
                     request,
@@ -55,6 +59,7 @@ class MemorySummaryScheduler(context: Context) {
             }
 
             MemorySummaryCadence.DEBOUNCE_10M -> {
+                wm.cancelUniqueWork(immediateWorkName(assistantId))
                 val data = workDataOf(
                     MemorySummaryWorker.KEY_ASSISTANT_ID to assistantId,
                     MemorySummaryWorker.KEY_TRIGGER_MODE to MemorySummaryWorker.MODE_DEBOUNCE_10M,
@@ -71,7 +76,7 @@ class MemorySummaryScheduler(context: Context) {
                     .build()
 
                 // REPLACE resets the 10-minute timer on every new memory change across process restarts
-                workManager.enqueueUniqueWork(
+                wm.enqueueUniqueWork(
                     debounceWorkName(assistantId),
                     ExistingWorkPolicy.REPLACE,
                     request,
@@ -109,17 +114,23 @@ class MemorySummaryScheduler(context: Context) {
      * Immediately reconciles periodic/debounced schedules with the new cadence setting.
      */
     fun syncCadenceSchedule(assistantId: String, enabled: Boolean, cadence: MemorySummaryCadence) {
+        val wm = workManager ?: return
         if (!enabled || cadence == MemorySummaryCadence.MANUAL) {
             cancelAllForAssistant(assistantId)
             return
         }
         when (cadence) {
-            MemorySummaryCadence.IMMEDIATE,
+            MemorySummaryCadence.IMMEDIATE -> {
+                wm.cancelUniqueWork(periodicWorkName(assistantId))
+                wm.cancelUniqueWork(debounceWorkName(assistantId))
+            }
             MemorySummaryCadence.DEBOUNCE_10M -> {
-                workManager.cancelUniqueWork(periodicWorkName(assistantId))
+                wm.cancelUniqueWork(periodicWorkName(assistantId))
+                wm.cancelUniqueWork(immediateWorkName(assistantId))
             }
             MemorySummaryCadence.HOURLY -> {
-                workManager.cancelUniqueWork(debounceWorkName(assistantId))
+                wm.cancelUniqueWork(immediateWorkName(assistantId))
+                wm.cancelUniqueWork(debounceWorkName(assistantId))
                 ensurePeriodicWork(
                     assistantId = assistantId,
                     repeatHours = 1L,
@@ -129,7 +140,8 @@ class MemorySummaryScheduler(context: Context) {
                 )
             }
             MemorySummaryCadence.DAILY -> {
-                workManager.cancelUniqueWork(debounceWorkName(assistantId))
+                wm.cancelUniqueWork(immediateWorkName(assistantId))
+                wm.cancelUniqueWork(debounceWorkName(assistantId))
                 ensurePeriodicWork(
                     assistantId = assistantId,
                     repeatHours = 24L,
@@ -149,6 +161,7 @@ class MemorySummaryScheduler(context: Context) {
         mode: String,
         policy: ExistingPeriodicWorkPolicy,
     ) {
+        val wm = workManager ?: return
         val data = workDataOf(
             MemorySummaryWorker.KEY_ASSISTANT_ID to assistantId,
             MemorySummaryWorker.KEY_TRIGGER_MODE to mode,
@@ -165,7 +178,7 @@ class MemorySummaryScheduler(context: Context) {
             .addTag(TAG_MEMORY_SUMMARY)
             .build()
 
-        workManager.enqueueUniquePeriodicWork(
+        wm.enqueueUniquePeriodicWork(
             periodicWorkName(assistantId),
             policy,
             request,
@@ -173,9 +186,10 @@ class MemorySummaryScheduler(context: Context) {
     }
 
     fun cancelAllForAssistant(assistantId: String) {
-        workManager.cancelUniqueWork(immediateWorkName(assistantId))
-        workManager.cancelUniqueWork(debounceWorkName(assistantId))
-        workManager.cancelUniqueWork(periodicWorkName(assistantId))
+        val wm = workManager ?: return
+        wm.cancelUniqueWork(immediateWorkName(assistantId))
+        wm.cancelUniqueWork(debounceWorkName(assistantId))
+        wm.cancelUniqueWork(periodicWorkName(assistantId))
     }
 
     private companion object {

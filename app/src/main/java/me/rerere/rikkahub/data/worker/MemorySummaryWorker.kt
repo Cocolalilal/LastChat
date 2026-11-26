@@ -42,16 +42,23 @@ class MemorySummaryWorker(
                 return Result.success()
             }
 
-            // Short-circuit periodic runs when no memories changed since last sync (saves RAM, battery, API tokens)
+            // Short-circuit periodic runs when no memories changed since last sync (saves RAM, battery, API tokens).
+            // When no summary exists yet, generate a baseline only if the assistant has at least one raw memory.
             val summaryEntity = memorySummaryDao.getSummaryOnce(assistantId)
             val isPeriodic = triggerMode == MODE_HOURLY || triggerMode == MODE_DAILY || triggerMode == MODE_PERIODIC
-            if (isPeriodic && summaryEntity != null) {
-                val hasNewMemories = memoryDAO.getMemoriesCreatedAfter(
-                    assistantId = assistantId,
-                    sinceTimestamp = summaryEntity.lastSyncedAt,
-                ).isNotEmpty()
-                if (summaryEntity.dirtySince <= 0L && !hasNewMemories) {
-                    return Result.success()
+            if (isPeriodic) {
+                if (summaryEntity == null) {
+                    if (memoryDAO.getMemoriesByAssistant(assistantId).isEmpty()) {
+                        return Result.success()
+                    }
+                } else {
+                    val hasNewMemories = memoryDAO.getMemoriesCreatedAfter(
+                        assistantId = assistantId,
+                        sinceTimestamp = summaryEntity.lastSyncedAt,
+                    ).isNotEmpty()
+                    if (summaryEntity.dirtySince <= 0L && !hasNewMemories) {
+                        return Result.success()
+                    }
                 }
             }
 

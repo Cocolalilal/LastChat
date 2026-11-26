@@ -237,6 +237,19 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
             }.onFailure {
                 Log.w(TAG, "Local model metadata sync failed", it)
             }
+            runCatching {
+                val settings = get<SettingsStore>().settingsFlow.first { !it.init }
+                val summaryScheduler = get<me.rerere.rikkahub.data.worker.MemorySummaryScheduler>()
+                settings.assistants.forEach { assistant ->
+                    summaryScheduler.syncCadenceSchedule(
+                        assistantId = assistant.id.toString(),
+                        enabled = assistant.enableMemory && assistant.enableMemorySummary,
+                        cadence = assistant.memorySummaryCadence,
+                    )
+                }
+            }.onFailure {
+                Log.w(TAG, "Memory summary cadence reconciliation failed", it)
+            }
         }
 
         // Installed on-device models -> chat-selectable models. Lives for the whole app (not a

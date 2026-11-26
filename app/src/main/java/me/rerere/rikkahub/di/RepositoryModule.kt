@@ -70,7 +70,7 @@ val repositoryModule = module {
         )
     }
 
-    single {
+    single(createdAtStart = true) {
         val memoryRepo = get<MemoryRepository>()
         val summaryService = MemorySummaryService(
             database = get(),

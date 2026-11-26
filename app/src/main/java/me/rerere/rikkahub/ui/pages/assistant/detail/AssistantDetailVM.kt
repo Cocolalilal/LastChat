@@ -36,7 +36,9 @@ import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.ai.MemorySummaryService
 import me.rerere.rikkahub.data.db.entity.MemorySummaryEntity
 import me.rerere.rikkahub.data.memory.MemoryChangeType
+import me.rerere.rikkahub.data.memory.MemorySummaryCadence
 import me.rerere.rikkahub.data.memory.MemorySummaryData
+import me.rerere.rikkahub.data.worker.MemorySummaryScheduler
 import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"
@@ -92,6 +94,7 @@ class AssistantDetailVM(
     private val appStorageRepository: AppStorageRepository,
     private val embeddingService: EmbeddingService,
     private val memorySummaryService: MemorySummaryService,
+    private val memorySummaryScheduler: MemorySummaryScheduler,
     private val memoryDAO: MemoryDAO? = null,
 ) : ViewModel() {
     private val assistantId = runCatching { Uuid.parse(id) }
@@ -505,6 +508,24 @@ class AssistantDetailVM(
             checkAvatarDelete(old = old, new = saved)
             checkBackgroundDelete(old = old, new = saved)
             appStorageRepository.deleteFilesIfUnreferenced(old.collectRemovedMediaRefs(new = saved))
+            if (
+                old.enableMemory != saved.enableMemory ||
+                old.enableMemorySummary != saved.enableMemorySummary ||
+                old.memorySummaryCadence != saved.memorySummaryCadence
+            ) {
+                memorySummaryScheduler.syncCadenceSchedule(
+                    assistantId = saved.id.toString(),
+                    enabled = saved.enableMemory && saved.enableMemorySummary,
+                    cadence = saved.memorySummaryCadence,
+                )
+            }
+        }
+    }
+
+    fun updateSummaryCadence(cadence: MemorySummaryCadence) {
+        val current = assistant.value
+        if (current.memorySummaryCadence != cadence) {
+            update(current.copy(memorySummaryCadence = cadence))
         }
     }
 

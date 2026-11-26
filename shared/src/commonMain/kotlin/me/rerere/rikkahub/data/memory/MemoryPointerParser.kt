@@ -112,10 +112,20 @@ object MemoryPointerParser {
         if (direct.isNotEmpty()) return direct
 
         val probe = stripPointers(selectedText).trim()
-        if (probe.length < 3) return emptyList()
+        if (probe.length < 2) return emptyList()
+
+        val probeLines = probe.lineSequence()
+            .map { it.removePrefix("- ").removePrefix("* ").trim() }
+            .filter { it.length >= 2 }
+            .toList()
+        if (probeLines.isEmpty()) return emptyList()
 
         val matchedLines = fullSectionContent.lineSequence()
-            .filter { line -> stripPointers(line).contains(probe, ignoreCase = true) }
+            .filter { line ->
+                val cleanLine = stripPointers(line)
+                cleanLine.contains(probe, ignoreCase = true) ||
+                    probeLines.any { sub -> cleanLine.contains(sub, ignoreCase = true) }
+            }
             .toList()
 
         return matchedLines.flatMap { extractIds(it) }.distinct()
