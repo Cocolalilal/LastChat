@@ -449,4 +449,55 @@ class MemorySummaryModelsTest {
             assertEquals(0, parsed.sections.size)
         }
     }
+
+    @Test
+    fun parseMemorySectionPatch_acceptsAliasKeysAndAppliesPatch() {
+        val current = MemorySummaryData(
+            sections = listOf(
+                MemorySummarySection(icon = "star", title = "Old Section", content = "- Stale item [#1]"),
+                MemorySummarySection(icon = "devices", title = "Devices", content = "- Uses old tablet [#2]\n- Prefers dark mode [#3]"),
+            )
+        )
+
+        val aliasPayload = """
+            {
+              "action": "patch_operations",
+              "operations": [
+                {
+                  "op": "delete_section",
+                  "title": "Old Section"
+                },
+                {
+                  "op": "update_section",
+                  "title": "Devices",
+                  "line_edits": [
+                    {
+                      "op": "replace",
+                      "match": "- Uses old tablet [#2]",
+                      "content": "- Uses Lenovo Tab M9 [#2]"
+                    }
+                  ]
+                }
+              ],
+              "dive_deeper": []
+            }
+        """.trimIndent()
+
+        val patch = parseMemorySectionPatch(aliasPayload)
+        assertNotNull(patch)
+        assertEquals("patch_operations", patch.action)
+        assertEquals(2, patch.operations.size)
+        assertEquals("delete_section", patch.operations[0].action)
+        assertEquals("Old Section", patch.operations[0].targetSection)
+        assertEquals("update_section", patch.operations[1].action)
+        assertEquals("Devices", patch.operations[1].targetSection)
+        assertEquals(1, patch.operations[1].lineEdits.size)
+
+        val result = SummaryPatchEngine.applyPatch(current, patch, allowFullRewrite = false)
+        assertNull(result.updated.sections.firstOrNull { it.title == "Old Section" })
+        val devices = result.updated.sections.firstOrNull { it.title == "Devices" }
+        assertNotNull(devices)
+        assertContains(devices.content, "- Uses Lenovo Tab M9 [#2]")
+        assertContains(devices.content, "- Prefers dark mode [#3]")
+    }
 }

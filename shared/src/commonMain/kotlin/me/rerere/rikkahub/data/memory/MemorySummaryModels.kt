@@ -417,9 +417,18 @@ fun parseLineEdits(element: JsonElement?): List<SectionLineEdit> {
     if (element !is JsonArray) return emptyList()
     return element.mapNotNull { item ->
         if (item is JsonObject) {
-            val op = item["op"]?.jsonPrimitive?.contentOrNull ?: "replace"
-            val find = item["find"]?.jsonPrimitive?.contentOrNull
-            val replace = item["replace"]?.jsonPrimitive?.contentOrNull
+            val op = (item["op"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+                ?: (item["action"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+                ?: "replace"
+            val find = (item["find"] as? JsonPrimitive)?.contentOrNull
+                ?: (item["match"] as? JsonPrimitive)?.contentOrNull
+                ?: (item["old"] as? JsonPrimitive)?.contentOrNull
+                ?: (item["target"] as? JsonPrimitive)?.contentOrNull
+            val replace = (item["replace"] as? JsonPrimitive)?.contentOrNull
+                ?: (item["content"] as? JsonPrimitive)?.contentOrNull
+                ?: (item["new"] as? JsonPrimitive)?.contentOrNull
+                ?: (item["value"] as? JsonPrimitive)?.contentOrNull
+                ?: (item["text"] as? JsonPrimitive)?.contentOrNull
             SectionLineEdit(op = op, find = find, replace = replace)
         } else null
     }
@@ -432,10 +441,16 @@ fun parsePatchOperations(element: JsonElement?): List<SummaryPatchOperation> {
     if (element !is JsonArray) return emptyList()
     return element.mapNotNull { item ->
         if (item is JsonObject) {
-            val opAction = item["action"]?.jsonPrimitive?.contentOrNull ?: "update_section"
-            val opTarget = item["target_section"]?.jsonPrimitive?.contentOrNull
-                ?: item["target"]?.jsonPrimitive?.contentOrNull
+            val opAction = (item["action"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+                ?: (item["op"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+                ?: (item["type"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+                ?: "update_section"
+            val opTarget = (item["target_section"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+                ?: (item["target"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+                ?: (item["title"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+                ?: (item["section_title"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
             val opSec = parseSectionFromElement(item["section"] as? JsonObject, defaultTitle = opTarget)
+                ?: parseSectionFromElement(item, defaultTitle = opTarget)
             val opLineEdits = parseLineEdits(item["line_edits"] ?: item["lineEdits"])
             SummaryPatchOperation(
                 action = opAction,
@@ -445,6 +460,99 @@ fun parsePatchOperations(element: JsonElement?): List<SummaryPatchOperation> {
             )
         } else null
     }
+}
+
+/**
+ * Leniently parses a [MemorySectionPatch] from raw LLM JSON output, tolerating
+ * key aliases such as `op`, `title`, `section_title`, `match`, and `content`.
+ */
+fun parseMemorySectionPatch(raw: String): MemorySectionPatch? {
+    if (raw.isBlank()) return null
+    val sanitized = sanitizeJsonString(raw)
+    if (sanitized.isBlank()) return null
+
+    runCatching {
+        val element = memorySummaryJsonFormat.parseToJsonElement(sanitized)
+        if (element is JsonObject) {
+            val rawAction = (element["action"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+                ?: (element["op"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+            val assistantReply = (element["assistant_reply"] as? JsonPrimitive)?.contentOrNull
+                ?: (element["assistantReply"] as? JsonPrimitive)?.contentOrNull
+            val operations = parsePatchOperations(element["operations"])
+            val lineEdits = parseLineEdits(element["line_edits"] ?: element["lineEdits"])
+            val rawMemoryUpdates = parseRawMemoryActions(element["raw_memory_updates"] ?: element["rawMemoryUpdates"])
+            val diveDeeperEl = element["dive_deeper"] ?: element["diveDeeper"]
+            val diveDeeper = if (diveDeeperEl != null) {
+                parseDiveDeeperActions(diveDeeperEl).ifEmpty { null }
+            } else {
+                null
+            }
+            val fullSummaryObj = (element["full_summary"] ?: element["fullSummary"]) as? JsonObject
+            val fullSummary = fullSummaryObj?.let(::parseMemorySummaryFromJsonObject)
+            val targetSection = (element["target_section"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+                ?: (element["target"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+                ?: (element["section_title"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+                ?: (element["title"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+
+            val hasSectionsArray = element["sections"] is JsonArray
+            val section = parseSectionFromElement(element["section"] as? JsonObject, defaultTitle = targetSection)
+                ?: if (!hasSectionsArray && operations.isEmpty() && fullSummary == null) {
+                    parseSectionFromElement(element, defaultTitle = targetSection)
+                } else {
+                    null
+                }
+
+            val resolvedAction = rawAction ?: when {
+                operations.isNotEmpty() -> "patch_operations"
+                fullSummary != null -> "full_rewrite"
+                lineEdits.isNotEmpty() || section != null -> "update_section"
+                else -> null
+            }
+
+            if (resolvedAction == null && rawMemoryUpdates.isEmpty() && assistantReply.isNullOrBlank()) {
+                return null
+            }
+            if (hasSectionsArray && rawAction == null && operations.isEmpty() && lineEdits.isEmpty() && fullSummary == null && section == null) {
+                return null
+            }
+
+            val patch = MemorySectionPatch(
+                action = resolvedAction ?: "update_section",
+                assistantReply = assistantReply,
+                operations = operations,
+                targetSection = targetSection ?: section?.title,
+                section = section,
+                lineEdits = lineEdits,
+                rawMemoryUpdates = rawMemoryUpdates,
+                diveDeeper = diveDeeper,
+                fullSummary = fullSummary,
+            )
+            val hasPayload = patch.operations.isNotEmpty() ||
+                patch.lineEdits.isNotEmpty() ||
+                patch.section != null ||
+                patch.targetSection != null ||
+                patch.fullSummary != null ||
+                patch.rawMemoryUpdates.isNotEmpty() ||
+                !patch.assistantReply.isNullOrBlank() ||
+                patch.action.equals("no_op", ignoreCase = true)
+            if (hasPayload) {
+                return patch
+            }
+        }
+    }
+
+    return runCatching {
+        val decoded = memorySummaryJsonFormat.decodeFromString<MemorySectionPatch>(sanitized)
+        val hasPayload = decoded.operations.isNotEmpty() ||
+            decoded.lineEdits.isNotEmpty() ||
+            decoded.section != null ||
+            decoded.targetSection != null ||
+            decoded.fullSummary != null ||
+            decoded.rawMemoryUpdates.isNotEmpty() ||
+            !decoded.assistantReply.isNullOrBlank() ||
+            decoded.action.equals("no_op", ignoreCase = true)
+        if (hasPayload) decoded else null
+    }.getOrNull()
 }
 
 /**

@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.TextToolbarStatus
 import androidx.compose.ui.text.AnnotatedString
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.memory.MemoryPointerParser
 import kotlin.math.roundToInt
@@ -172,10 +173,12 @@ internal class MemorySelectionContextMenuProvider(
                 closed.complete(Unit)
             }
         }
+        var startedMode: ActionMode? = null
         withContext(Dispatchers.Main.immediate) {
             currentMode?.finish()
             val callback = createCallback(session, dataProvider)
             val started = view.startActionMode(callback, ActionMode.TYPE_FLOATING)
+            startedMode = started
             currentMode = started
             if (started == null) {
                 session.close()
@@ -184,9 +187,9 @@ internal class MemorySelectionContextMenuProvider(
         try {
             closed.await()
         } finally {
-            withContext(Dispatchers.Main.immediate) {
-                if (currentMode != null) {
-                    currentMode?.finish()
+            withContext(NonCancellable + Dispatchers.Main.immediate) {
+                startedMode?.finish()
+                if (currentMode === startedMode) {
                     currentMode = null
                 }
             }

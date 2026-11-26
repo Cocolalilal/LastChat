@@ -50,6 +50,7 @@ import me.rerere.rikkahub.data.memory.SummaryPatchEngine
 import me.rerere.rikkahub.data.memory.TokenEstimator
 import me.rerere.rikkahub.data.memory.looksLikeRawJson
 import me.rerere.rikkahub.data.memory.parseAskOrUpdateResponse
+import me.rerere.rikkahub.data.memory.parseMemorySectionPatch
 import me.rerere.rikkahub.data.memory.parseMemorySummaryJson
 import me.rerere.rikkahub.data.memory.sanitizeMemorySummaryData
 import me.rerere.rikkahub.data.model.Assistant
@@ -353,7 +354,7 @@ class MemorySummaryService(
         )
 
         // 1. Try parsing as a structured patch
-        val patch = runCatching { parsePatchJson(rawResponse) }.getOrNull()
+        val patch = parseMemorySectionPatch(rawResponse)
         if (patch != null && (patch.operations.isNotEmpty() || patch.rawMemoryUpdates.isNotEmpty() || patch.action.isNotBlank())) {
             val allowFullRewrite = SummaryPatchEngine.userExplicitlyRequestedFullRewrite(userInstruction)
 
@@ -422,6 +423,9 @@ class MemorySummaryService(
         // 3. Conversational answer to user question
         val answer = rawResponse.trim()
             .removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        if (looksLikeRawJson(answer)) {
+            throw IllegalStateException("Failed to apply edit patch from model response.")
+        }
         answer to false
     }
 
@@ -911,11 +915,11 @@ class MemorySummaryService(
         appendLine(
             """
             Respond ONLY with a JSON object. You may return:
-            1. An updated MemorySummaryData object:
-               {"title": "...", "subtitle": "...", "sections": [{"icon": "heart", "title": "...", "content": "..."}], "dive_deeper": [...]}
+            1. A MemorySectionPatch object (preferred for edits):
+               {"action": "patch_operations", "operations": [{"action": "update_section", "target_section": "Section Title", "line_edits": [{"op": "replace", "find": "exact old bullet", "replace": "updated bullet [#ID]"}]}, {"action": "add_section", "section": {"icon": "star", "title": "New Title", "content": "- bullet [#ID]"}}, {"action": "delete_section", "target_section": "Section Title"}], "dive_deeper": [...]}
             OR
-            2. A MemorySectionPatch object:
-               {"operations": [...], "dive_deeper": [...]}
+            2. An updated MemorySummaryData object:
+               {"title": "...", "subtitle": "...", "sections": [{"icon": "heart", "title": "...", "content": "..."}], "dive_deeper": [...]}
             Ensure all cited claims retain or add exact [#ID] pointers.
             """.trimIndent()
         )
@@ -941,7 +945,8 @@ class MemorySummaryService(
     }
 
     private fun parsePatchJson(raw: String): MemorySectionPatch =
-        json.decodeFromString(extractJsonObject(raw))
+        parseMemorySectionPatch(raw)
+            ?: json.decodeFromString(extractJsonObject(raw))
 
     private fun parseSummaryJson(raw: String): MemorySummaryData {
         val cleaned = extractJsonObject(raw)
