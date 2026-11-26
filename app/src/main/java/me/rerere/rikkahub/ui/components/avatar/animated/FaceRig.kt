@@ -2,7 +2,6 @@ package me.rerere.rikkahub.ui.components.avatar.animated
 
 import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.max
@@ -265,46 +264,102 @@ class FaceRig(private val rng: Random) {
         /** Capsule rotation per unit of slant (sign chosen so + = inner corner lower). */
         const val SLANT_DEG = 14f
 
-        /** Move the lids and resize straight edges, retaining uniformly rounded corners. */
+        /**
+         * Shape a Generical outline (500 viewBox, y down) in place. [side] 0 = left.
+         *
+         * Engine21.1 eyelid model (Julian, from his Figma frames — Looking to the right,
+         * Bored, Suspicious, Angry, Happy):
+         *  - the upper lid comes down from the TOP; the eye's BOTTOM edge stays where it is,
+         *    level with the other eye. [slant] tilts the lid line across the eye.
+         *  - the lid flattens the corners it presses on: the top corners get smaller radii
+         *    (squashed vertically, pulled out toward the box), the bottom corners keep theirs.
+         *    Soft (sad / worried, slant < 0) lids flatten far less — those faces stay round.
+         *  - the lower lid (happy / glee squints) mirrors that from the bottom, top fixed.
+         *  - size changes grow / shrink the eye from its bottom edge, never from the centre.
+         */
         fun shapeOutline(xs: FloatArray, ys: FloatArray, side: Int, p: EyeShape) {
             if (p.isIdentity() || xs.isEmpty()) return
-            val originX = (xs.min() + xs.max()) / 2f
-            val originY = (ys.min() + ys.max()) / 2f
-            // Thin authored bars can already be rotated (Sleeping). Resize in their
-            // own frame so the circular end caps do not straddle the slice bands.
-            val aspect = (xs.max() - xs.min()) / (ys.max() - ys.min()).coerceAtLeast(0.01f)
-            val amount = ((aspect - 1.5f) / 1.5f).coerceIn(0f, 1f)
-            var xx = 0f; var xy = 0f; var yy = 0f
-            for (i in xs.indices) {
-                val x = xs[i] - originX; val y = ys[i] - originY
-                xx += x * x; xy += x * y; yy += y * y
+            val n = xs.size
+            var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
+            var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+            var sumX = 0f
+            for (i in 0 until n) {
+                minX = min(minX, xs[i]); maxX = max(maxX, xs[i]); minY = min(minY, ys[i]); maxY = max(maxY, ys[i]); sumX += xs[i]
             }
-            val authoredAngle = 0.5f * atan2(2f * xy, xx - yy) * amount * amount * (3f - 2f * amount)
-            val ac = cos(authoredAngle); val ass = sin(authoredAngle)
-            if (authoredAngle != 0f) for (i in xs.indices) {
-                val x = xs[i] - originX; val y = ys[i] - originY
-                xs[i] = originX + x * ac + y * ass
-                ys[i] = originY - x * ass + y * ac
-            }
-            val left = xs.min(); val right = xs.max()
-            val top = ys.min(); val bottom = ys.max()
-            val cx = (left + right) / 2f
-            // Lower lid rises from the bottom; the upper lid descends with the bottom fixed.
-            val lidBottom = top + (bottom - top) * p.lower.coerceIn(0.05f, 1f)
-            val width = ((right - left) * p.sx).coerceAtLeast(0.01f)
-            val height = ((lidBottom - top) * p.upper.coerceIn(0.05f, 1.25f) * p.sy).coerceAtLeast(0.01f)
-            EyeCornerGeometry.resize(xs, ys, cx - width / 2f, lidBottom - height, width, height)
-            // Seat a slanted lid by rotation rather than shearing its circular corners.
+            val cx = sumX / n
+            val h = max(1f, maxY - minY)
+            val hw = max(1f, (maxX - minX) / 2f)
             val inward = if (side == 0) 1f else -1f
-            val r = authoredAngle + Math.toRadians((p.rot + p.slant * SLANT_DEG * inward).toDouble()).toFloat()
-            val cr = cos(r); val sr = sin(r)
-            val pivotX = originX + (cx - originX) * ac - (lidBottom - originY) * ass
-            val pivotY = originY + (cx - originX) * ass + (lidBottom - originY) * ac
-            for (i in xs.indices) {
-                val x = xs[i] - cx; val y = ys[i] - lidBottom
-                xs[i] = pivotX + x * cr - y * sr + p.dx * 250f
-                ys[i] = pivotY + x * sr + y * cr + p.dy * 250f
+            // Smoothly blend into soft-lid shaping across slant in [-0.08, -0.02] so mood/accent
+            // transitions never snap when crossing -0.05.
+            val softU = ((-p.slant - 0.02f) / 0.06f).coerceIn(0f, 1f)
+            val softW = softU * softU * (3f - 2f * softU)
+            // Lower lid first (top fixed), then the upper lid on the result (bottom fixed).
+            val fl = p.lower.coerceIn(0.05f, 1.2f)
+            var bottom = maxY
+            if (fl < 1f) {
+                bottom = minY + fl * h
+                val keep = min(0.42f * h, 0.8f * fl * h)
+                val yk = minY + keep
+                val lowerFlat = 0.55f + (0.2f - 0.55f) * softW
+                for (i in 0 until n) if (ys[i] > yk) {
+                    val w = ((ys[i] - yk) / (maxY - yk)).coerceIn(0f, 1f)
+                    ys[i] = yk + (ys[i] - yk) * (bottom - yk) / (maxY - yk)
+                    xs[i] = flattenX(xs[i] - cx, hw, (1f - fl) * lowerFlat * w) + cx
+                }
             }
+            val maxUpper = max(1f, p.upper).coerceAtMost(1.25f)
+            for (i in 0 until n) {
+                val xn = ((xs[i] - cx) / hw).coerceIn(-1f, 1f) * inward // +1 = inner corner
+                val f = (p.upper - p.slant * xn).coerceIn(0.05f, maxUpper)
+                val hb = bottom - minY
+                if (f < 1f) {
+                    val top = bottom - f * hb
+                    val keep = min(0.42f * hb, 0.8f * f * hb)
+                    val yk = bottom - keep
+                    if (ys[i] < yk) {
+                        val yHard = top + (ys[i] - minY) * (yk - top) / (yk - minY).coerceAtLeast(1f)
+                        val w = ((yk - ys[i]) / (yk - minY).coerceAtLeast(1f)).coerceIn(0f, 1f)
+                        val xHard = flattenX(xs[i] - cx, hw, (1f - f) * 0.6f * w) + cx
+                        if (softW <= 0f) {
+                            ys[i] = yHard
+                            xs[i] = xHard
+                        } else {
+                            // Soft lids (sad / worried) slide the top down instead: the hand-made
+                            // round corners keep their radius, the straight sides shorten.
+                            val d = top - minY
+                            val u = ((yk - ys[i]) / (1.6f * d + 0.12f * hb)).coerceIn(0f, 1f)
+                            val ySoft = ys[i] + d * u * u * (3f - 2f * u)
+                            ys[i] = yHard + (ySoft - yHard) * softW
+                            xs[i] = xHard + (xs[i] - xHard) * softW
+                        }
+                    }
+                } else if (f > 1f && ys[i] < bottom) {
+                    ys[i] = bottom - (bottom - ys[i]) * f
+                }
+            }
+            // Size from the bottom edge; rotation about the bottom centre.
+            val r = Math.toRadians(p.rot.toDouble()).toFloat()
+            val cr = cos(r); val sr = sin(r)
+            for (i in 0 until n) {
+                val x0 = (xs[i] - cx) * p.sx
+                val y0 = (ys[i] - bottom) * p.sy
+                xs[i] = cx + x0 * cr - y0 * sr + p.dx * 250f
+                ys[i] = bottom + x0 * sr + y0 * cr + p.dy * 250f
+            }
+        }
+
+        /**
+         * Pull a point near a pressed corner out toward the bounding box: the corner's
+         * horizontal radius shrinks with [k] (0 = untouched). Only the outer 55 % of the
+         * width moves, so straight edges stay straight.
+         */
+        private fun flattenX(x: Float, hw: Float, k: Float): Float {
+            if (k <= 0f) return x
+            val a = abs(x) / hw
+            val mask = ((a - 0.45f) / 0.55f).coerceIn(0f, 1f)
+            val target = if (x >= 0f) hw else -hw
+            return x + (target - x) * (k * mask).coerceIn(0f, 0.85f)
         }
 
         /** Shape a Grok capsule: stays a capsule (scale, offset, rotation, openness). */

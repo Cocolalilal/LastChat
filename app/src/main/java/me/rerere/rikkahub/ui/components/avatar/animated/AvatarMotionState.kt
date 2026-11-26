@@ -449,6 +449,7 @@ internal class ExpressionDirector(@Suppress("unused") private val rng: Random) {
         val t = normalize(raw)
         val h = hint
         hint = null
+        swapLeft = 0f
         if (t == target) return
         val from = target
         target = t
@@ -462,6 +463,7 @@ internal class ExpressionDirector(@Suppress("unused") private val rng: Random) {
     /** Snap the face to [raw] with no motion (static avatars / tests). */
     fun jump(raw: String) {
         val t = normalize(raw)
+        swapLeft = 0f
         names.clear(); x.clear(); v.clear()
         names += t; x += 1f; v += 0f; target = t
     }
@@ -484,8 +486,8 @@ internal class ExpressionDirector(@Suppress("unused") private val rng: Random) {
         if (dt <= 0f) return false
         if (swapLeft > 0f) {
             swapLeft -= dt
-            if (lidsClosed >= 0.9f) {
-                // Lids shut: the new face is simply there when they open.
+            if (lidsClosed >= 0.95f) {
+                // Canonical closed mask is fully active: swap invisibly behind the shut lids.
                 val t = target
                 names.clear(); x.clear(); v.clear(); names += t; x += 1f; v += 0f
                 swapLeft = 0f; swaps++
@@ -620,6 +622,26 @@ internal class Blinker(private val rng: Random) {
     val fullBlinkActive: Boolean get() = phase >= 0f && depth >= 0.99f
 
     val closingFull: Boolean get() = phase >= 0f && phase < closeT && depth >= 0.99f
+
+    /** True only right at the start of a full blink, so attaching a mask never jumps maskBlink. */
+    val startingFull: Boolean get() = phase >= 0f && phase < closeT && depth >= 0.99f && closed <= 0.02f
+
+    /** Smoothly abort an in-flight blink into a brisk reopen from its exact current closure. */
+    fun openFast() {
+        repeats = 0
+        gapLeft = -1f
+        deferred = -1
+        if (phase < 0f) return
+        if (closed <= 1e-4f) {
+            phase = -1f
+            closed = 0f
+            return
+        }
+        val ratio = (closed / depth.coerceAtLeast(1e-4f)).coerceIn(0f, 1f)
+        val u = 1f - kotlin.math.cbrt(ratio.toDouble()).toFloat()
+        openT = min(openT, 0.06f)
+        phase = closeT + holdT + u * openT
+    }
 
     fun tryNow(minGap: Float = 1.2f): Boolean {
         if (quiet > 0f || phase >= 0f || gapLeft >= 0f || sinceLast < max(minGap, MIN_REQUEST_GAP) || !allow()) return false
@@ -788,6 +810,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
 
     var isGrok: Boolean = false
     private val happyTransition = HappyTransitionCoordinator()
+    /** Stays true through reopening whenever wantBehindBlink rides a full blink. */
+    private var blinkMaskActive = false
 
     val lifecycle: MarkLifecycle get() = director.lifecycle
 
@@ -1130,6 +1154,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
 
         // ---- body ----
         val body = director.update(dt)
+        if (director.takeSpinRequest() && live) trySpin("director spin")
         if (director.clipBlink) blink.request()
         director.takeGazeCue()?.let { c ->
             // A busy beat asked to look somewhere (turn, the pill, the text, away in thought).
@@ -1237,10 +1262,18 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                         expr.weights, expr.to, tgtN,
                         urgent = expr.hint == ExpressionDirector.Style.Snap || prio >= MindRules.P_USER || ctxForced,
                     )
-                    val hide = !topologyMask && animate && maskKind == TransitionRules.Mask.Blink && !drowsy && spT < 0f &&
-                        rng.nextFloat() < TransitionRules.maskChance(dEmo) && (blink.closingFull || blink.tryNow(minGap = TransitionRules.MASK_MIN_GAP))
+                    // Only attach a blink mask right as a fresh full blink begins (closed <= 0.02),
+                    // so maskBlink never jumps from 0 into the middle of an existing blink.
+                    val hide = !topologyMask && animate && settle <= 0.01f && startleHoldT <= 0f &&
+                        maskKind == TransitionRules.Mask.Blink && !drowsy && spT < 0f &&
+                        rng.nextFloat() < TransitionRules.maskChance(dEmo) &&
+                        (blink.startingFull || blink.tryNow(minGap = TransitionRules.MASK_MIN_GAP))
                     if (topologyMask) { log("Happy transition waits for blink → $target") }
-                    else if (hide) { expr.wantBehindBlink(target); log("face change behind a blink → $target") } else {
+                    else if (hide) {
+                        blinkMaskActive = true
+                        expr.wantBehindBlink(target)
+                        log("face change behind a blink → $target")
+                    } else {
                         if (animate) log("face morph direct → $target (${maskKind.name.lowercase()}, d=${"%.2f".format(dEmo)})")
                         expr.want(target)
                     }
@@ -1260,16 +1293,33 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         mind.pump(Lane.Spin) { !negativeNow() && spT < 0f && !drowsy }
         if (negativeName(expr.to) || negativeName(expr.from) || rig.accent in MindRules.NEGATIVE_ACCENTS) lastNegativeAt = time
         if (MotionDirector.isBusy(director.lifecycle)) busySec += dt
-        if (animate && happyTransition.awaitingBlink && spT < 0f &&
-            (blink.fullBlinkActive || blink.tryNow(minGap = TransitionRules.MASK_MIN_GAP))) {
+
+        // ---- blink + lids (run before expression commit so maskBlink matches this exact frame) ----
+        // Startle window: eyes open briskly and stay open (~0.55 s) without hard-cutting mid-blink.
+        if (director.startling && !wasStartling) {
+            startleHoldT = 0.6f
+            blink.openFast()
+        }
+        wasStartling = director.startling
+        startleHoldT -= dt
+        val inStartle = startleHoldT > 0f
+        if (animate && settle <= 0.01f && !inStartle && happyTransition.awaitingBlink && spT < 0f &&
+            (blink.startingFull || blink.tryNow(minGap = TransitionRules.MASK_MIN_GAP))) {
             happyTransition.beginMask()
         }
-        expr.update(dt, blink.closed)
+        blink.update(dt, director.lifecycle, drowsy)
+        // Blend toward the static rest pose (weight eased so it starts and lands softly).
+        val w = MotionDirector.easeInOutCubic(settle)
+        val keep = 1f - w
+        val maskBlinkNow = if (happyTransition.maskActive || blinkMaskActive) blink.closed * keep else 0f
+        // Only commit a hidden expression swap when the canonical closed-eye mask is 100% opaque
+        // on this rendered frame (smootherstep(0.95 / 0.85) == 1f).
+        val commitClosure = if (maskBlinkNow >= 0.95f) maskBlinkNow else 0f
+        expr.update(dt, commitClosure)
+        happyTransition.update(commitClosure, blink.busy)?.let { expr.jump(it) }
+        if (!blink.busy) blinkMaskActive = false
         director.exprMorphing = expr.morphing
 
-        // ---- blink + lids ----
-        blink.update(dt, director.lifecycle, drowsy)
-        happyTransition.update(blink.closed, blink.busy)?.let { expr.jump(it) }
         val pose = MarkLifecycleMapper.pose(director.lifecycle)
         val k = 1f - exp(-dt / 0.35f)
         lidKnob += (pose.lid - lidKnob) * k
@@ -1277,13 +1327,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         scaleKnob += (pose.eyeScale - scaleKnob) * k
         val drowsyTarget = if (drowsy) 0.55f else 1f
         drowsyLid += (drowsyTarget - drowsyLid) * (1f - exp(-dt / if (drowsy) 2.5f else 0.3f))
-        // Startle window: eyes snap wide open and stay open (~0.55 s) — no blink, no droop.
-        if (director.startling && !wasStartling) startleHoldT = 0.6f
-        wasStartling = director.startling
-        startleHoldT -= dt
-        val inStartle = startleHoldT > 0f
         // Engine19: the held lid (everything but the blink) is one spring; a startle retargets
-        // it wide open instead of stepping it, and the blink rides on top unchanged.
+        // it wide open instead of stepping it, and blink.openFast() smoothly opens any active blink.
         val lidHeldTarget = if (inStartle) 1f
             else (lidKnob.coerceAtMost(1f) * body.lidOpen * drowsyLid * momentLid * restLid * slowBlinkLid() * shakeLid).coerceIn(0f, 1f)
         run {
@@ -1292,7 +1337,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             val e = lidHeldX - lidHeldTarget; val c = lidHeldV + w0 * e
             lidHeldX = lidHeldTarget + (e + c * dt) * kk; lidHeldV = (lidHeldV - w0 * c * dt) * kk
         }
-        val lid = if (inStartle) lidHeldX.coerceIn(0f, 1f) else (lidHeldX * (1f - blink.closed)).coerceIn(0f, 1f)
+        val lid = (lidHeldX * (1f - blink.closed)).coerceIn(0f, 1f)
 
         // ---- mood + parametric face ----
         hourCheckIn -= dt
@@ -1316,9 +1361,6 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
 
         stage?.setCalm(stageId, calmLife && social == null && reaction == null && !drowsy)
 
-        // Blend toward the static rest pose (weight eased so it starts and lands softly).
-        val w = MotionDirector.easeInOutCubic(settle)
-        val keep = 1f - w
         val awakeLife = if (drowsy || director.lifecycle == MarkLifecycle.Sleeping) 0.5f else 1f
         humanUpdate(dt, live)
         // Breathing: slow sinusoid (≈ 4.2 s, slower when calm / tired), barely visible.
@@ -1376,12 +1418,27 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         // Eyes lag a head shake a touch (secondary motion) and lag a wiggle.
         var lx = ((gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f) * keep - (shakeYaw * 0.004f + wig * 0.003f) * keep
         var ly = ((gaze.eyeY - gaze.headY) * 0.06f + gaze.eyeY * 0.025f) * keep
-        // Dumbfounded freeze: snap, then rigid (stylistic stiffness) — the whole look holds.
+        // Dumbfounded freeze: hold rigid while active, then thaw smoothly so body and gaze
+        // never hard-cut back to where the underlying springs moved.
         if (freezeLeft > 0f) {
-            val fz = frozen
-            if (fz == null) frozen = FrozenLook(bodyOut, hx, hy, lx, ly)
-            else { bodyOut = fz.body.copy(squashX = fz.body.squashX, squashY = fz.body.squashY); hx = fz.hx; hy = fz.hy; lx = fz.lx; ly = fz.ly }
-        } else frozen = null
+            if (frozen == null) frozen = FrozenLook(bodyOut, hx, hy, lx, ly)
+            freezeAlpha = (freezeAlpha + dt / 0.06f).coerceAtMost(1f)
+            director.holdBeats(0.2f)
+        } else if (freezeAlpha > 0f) {
+            freezeAlpha = (freezeAlpha - dt / 0.35f).coerceAtLeast(0f)
+            if (freezeAlpha <= 0f) frozen = null
+        } else {
+            frozen = null
+        }
+        val fz = frozen
+        if (fz != null && freezeAlpha > 0f) {
+            val fk = MotionDirector.smootherstep(freezeAlpha)
+            bodyOut = bodyOut.lerpTo(fz.body, fk)
+            hx += (fz.hx - hx) * fk
+            hy += (fz.hy - hy) * fk
+            lx += (fz.lx - lx) * fk
+            ly += (fz.ly - ly) * fk
+        }
         // Up-right is a glance, never a rest: after ~0.75 s the up component eases out.
         val upNow = bodyOut.yaw + 18f * hx > 3f && bodyOut.pitch + 14f * hy < -2f
         upRightPause -= dt
@@ -1412,12 +1469,12 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             exprT = expr.eased,
             exprTop = expr.top,
             exprTopT = expr.topEased,
-            exprWeights = if (w > 0.999f) null else expr.weights,
+            exprWeights = expr.weights,
             lifecycle = director.lifecycle,
             eyeGap = gapKnob + (REST_FRAME.eyeGap - gapKnob) * w,
             eyeScale = scaleKnob + (REST_FRAME.eyeScale - scaleKnob) * w,
-            eyePop = if (Blinker.settleEnabled && live) blink.settle * keep else 0f,
-            maskBlink = if (happyTransition.maskActive) blink.closed * keep else 0f,
+            eyePop = if (Blinker.settleEnabled) blink.settle * keep else 0f,
+            maskBlink = maskBlinkNow,
             timeSec = time,
             face = lerpFace(faceLive, w),
             spinYaw = spinAngles().first * keep,
@@ -1645,10 +1702,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 if (rng.nextFloat() < 0.5f) accent(FaceAccent.Curious, peekLeft)
             }
             Moment.Stretch -> {
-                stretchU = 0f; stretchDur = rr(2.3f, 3f)
+                if (stretchU >= 1f) { stretchU = 0f; stretchDur = rr(2.3f, 3f) }
             }
             Moment.SleepyDrift -> {
-                driftU = 0f; driftDur = rr(3.5f, 5f); driftDepth = rr(7f, 11f)
+                if (driftU >= 1f) { driftU = 0f; driftDur = rr(3.5f, 5f); driftDepth = rr(7f, 11f) }
             }
             Moment.NoticePill -> {
                 val pill = targetCenter(AvatarStage.Target.ActivityPill)
@@ -1658,7 +1715,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 if (rng.nextFloat() < 0.35f) accent(FaceAccent.Glee, rr(0.9f, 1.4f))
             }
             Moment.Wiggle -> {
-                wiggleU = 0f; wiggleA = rr(3f, 5f) * side; wiggleDur = rr(0.7f, 0.95f)
+                if (wiggleU >= 1f) { wiggleU = 0f; wiggleA = rr(3f, 5f) * side; wiggleDur = rr(0.7f, 0.95f) }
                 remember("nice")
                 setReaction("Happy", rr(1.3f, 2f), ExpressionDirector.Style.Snap, cause = "nice message")
             }
@@ -1719,6 +1776,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private class FrozenLook(val body: BodyPose, val hx: Float, val hy: Float, val lx: Float, val ly: Float)
     private var frozen: FrozenLook? = null
     private var freezeLeft = 0f
+    private var freezeAlpha = 0f
     private var sighU = 1f
     private var sighIn = 40f
     private var fidgetIn = 12f
@@ -2939,6 +2997,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
      * strength (3.5…6.5), mapped onto the new swing size.
      */
     private fun wakeShake(amp: Float, cause: String = "wake") {
+        if (wsT >= 0f) return
         wsT = 0f
         wsAmp = (7.5f + (amp - 3.5f) * 0.9f).coerceIn(7.5f, 11f) * (0.92f + 0.16f * rng.nextFloat())
         wsHz = 1.7f + 0.4f * rng.nextFloat()
@@ -3120,7 +3179,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 { director.gesture(MotionDirector.Gesture.Nod); if (mood.valence > 0.05f) accent(FaceAccent.Glee, 0.9f, force = true) },
             ))
             Episode.ContentSlowBlink -> tell("content", 0f to "slow blink", 0.25f to "soft smile", acts = listOf(
-                { sbT = 0f },
+                { if (sbT < 0f) sbT = 0f },
                 { accent(FaceAccent.Glee, 1.6f) },
             ))
             Episode.ConcernGlance -> {
@@ -3140,7 +3199,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 { gaze.focus(0f, 0.02f, 1.4f, priority = 2) },
             ))
             Episode.Yawn -> {
-                yawnU = 0f; yawnDur = rr(2.6f, 3.2f)
+                if (yawnU >= 1f) { yawnU = 0f; yawnDur = rr(2.6f, 3.2f) }
                 val shake = rng.nextFloat() < 0.5f
                 val end = yawnDur
                 tell("yawn", 0.15f * end to "eyes squeeze", end * 0.98f to if (shake) "shake to wake up" else "eyes open slowly", end + 0.2f to if (shake) "squint" else "-", acts = listOf(

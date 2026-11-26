@@ -10,6 +10,7 @@ import kotlin.math.min
 import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.tan
 
 /**
  * Engine21.2 — Julian's rule: two eyes leaning the same way (// or \\) is never good. Mirrored
@@ -20,7 +21,8 @@ import kotlin.math.sqrt
  * the perspective lean of a diagonal Grok gaze. This guard measures each eye's tilt (+ = "/")
  * and removes only the part both eyes share (the "common lean"), continuously — a face with no
  * common lean is untouched, mirrored or one-eye tilts pass through, and nothing ever pops.
- *  - Generical: the common lean is removed by rotation, preserving the corner curves.
+ *  - Generical: the common lean of the two top lids is sheared out of the lids only (top moves,
+ *    the bottom edge stays level and in place).
  *  - Grok: each pill is turned about its own centre by the common lean, measured relative to the
  *    head roll (a tilted head tilts both eyes, which is fine).
  */
@@ -49,8 +51,7 @@ object TiltGuard {
         val bins = 10
         val by = FloatArray(bins) { Float.MAX_VALUE }
         val x0 = minX + 0.2f * w; val bw = 0.6f * w / bins
-        // Intersect the outline at uniform x positions. Picking the nearest sample
-        // mistakes unevenly sampled round caps for a slanted lid as an eye gets short.
+        // Intersect the outline at uniform x positions so topTilt varies continuously as vertices move.
         for (b in 0 until bins) {
             val sampleX = x0 + (b + 0.5f) * bw
             for (i in 0 until n) {
@@ -73,16 +74,17 @@ object TiltGuard {
         return -deg(atan(slope))
     }
 
-    /** Correct lean rigidly; a shear would squash the rounded corners again. */
-    private fun turnOutline(x: FloatArray, y: FloatArray, degrees: Float) {
-        val cx = (x.min() + x.max()) / 2f
-        val cy = (y.min() + y.max()) / 2f
-        val r = Math.toRadians(degrees.toDouble())
-        val c = cos(r).toFloat(); val s = sin(r).toFloat()
+    /** Shears the top of one eye by [deg] (top fully, bottom not at all); bottoms stay level. */
+    private fun shearTop(x: FloatArray, y: FloatArray, deg: Float) {
+        var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE; var cx = 0f
+        for (i in x.indices) { if (y[i] < minY) minY = y[i]; if (y[i] > maxY) maxY = y[i]; cx += x[i] }
+        cx /= x.size
+        val h = maxY - minY
+        if (h < 1e-3f) return
+        val t = tan(Math.toRadians(deg.toDouble())).toFloat()
         for (i in x.indices) {
-            val dx = x[i] - cx; val dy = y[i] - cy
-            x[i] = cx + dx * c - dy * s
-            y[i] = cy + dx * s + dy * c
+            val wTop = ((maxY - y[i]) / h).coerceIn(0f, 1f)
+            y[i] += t * (x[i] - cx) * wTop
         }
     }
 
@@ -91,7 +93,7 @@ object TiltGuard {
         repeat(2) {
             val m = common(topTilt(lx, ly), topTilt(rx, ry))
             if (m == 0f) return
-            turnOutline(lx, ly, m); turnOutline(rx, ry, m)
+            shearTop(lx, ly, m); shearTop(rx, ry, m)
         }
     }
 

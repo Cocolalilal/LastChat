@@ -431,7 +431,7 @@ private fun DrawScope.drawMarkInner(
         // gap; that centre spacing is baked in for every expression and pose, and expressions
         // only get the tiny never-touch guard below (no widening by tilts or wide arcs).
         val neutralExtra = NEUTRAL_GAP_CACHE.getOrPut("$shapeId|$bodyKind|$he|${f.eyeGap}|${f.eyeScale}") {
-            val np = WhSphereEyes.morphPair("Neutral", "Neutral", 1f, 1f).mapIndexed { i, e -> FaceRig.shapeCapsule(e, i, f.face.eye(i)) }
+            val np = WhSphereEyes.morphPair("Neutral", "Neutral", 1f, 1f)
             val (l0, r0) = WhEyeSeat.buildSeatedGrokEyes(
                 pickerId = shapeId, solidKind = bodyKind, he = he, gazeX = 0f, gazeY = 0f, lid = 1f,
                 eyeGap = f.eyeGap * 0.92f * WhEyeSeat.grokGapFix(shapeId), eyeScale = f.eyeScale,
@@ -475,7 +475,9 @@ private fun DrawScope.drawMarkInner(
             val b = p.getBounds()
             return b.width >= he * 0.02f && b.height >= he * 0.005f && b.width <= he * 1.6f && b.height <= he * 1.6f
         }
-        if (!(ok(left) && ok(right)) && bodyKind == "sphere") {
+        // Only fall back when front-facing and both eyes failed — during a spin one eye
+        // legitimately wraps behind the sphere limb and must not snap the other eye to neutral.
+        if (!ok(left) && !ok(right) && bodyKind == "sphere" && safety >= 0.99f) {
             val ss = WhSphereEyes.projectPair(WhSphereEyes.expressionPair("neutral", lidForPair), pitch, yaw, roll, he)
             left = ss.first; right = ss.second
         }

@@ -258,7 +258,8 @@ class MotionDirector(
     fun freezeBase(sec: Float) {
         // Hold where the body actually is (the spring's position), not where its target is
         // heading: mid-turn the target is ahead, and an idle clip may be on its way back to centre.
-        if (freezeLeft <= 0f && filterReady) { frozenPose = poseOf(fx); freezeW = 0f }
+        // Only snapshot and reset freezeW when no freeze is currently active or releasing.
+        if (frozenPose == null && filterReady) { frozenPose = poseOf(fx); freezeW = 0f }
         freezeLeft = maxOf(freezeLeft, sec); holdBeats(sec + 0.3f)
     }
     private var frozenPose: BodyPose? = null
@@ -270,6 +271,10 @@ class MotionDirector(
     private var freezeLeft = 0f
     private var tScale = 1f
     private var tScaleV = 0f
+    private var spinRequested = false
+
+    /** One-shot request for the owner to run a full spin via SpinTrajectory (never soft-capped BodyPose.yaw). */
+    fun takeSpinRequest(): Boolean = spinRequested.also { spinRequested = false }
 
     fun setDesired(l: MarkLifecycle) {
         desired = l
@@ -290,12 +295,9 @@ class MotionDirector(
         if (g != Gesture.Recoil && adds.any { it.name == name }) return false
         when (g) {
             Gesture.Spin -> {
-                val dir = if (rng.nextBoolean()) 1f else -1f
-                val d = range(1.45f, 1.8f)
-                adds += Add(name, d) { u, _ ->
-                    val e = easeInOutCubic(u)
-                    BodyPose(pitch = sin(PI.toFloat() * u) * 3f, yaw = dir * 360f * e, roll = -dir * sin(PI.toFloat() * u) * 4f)
-                }
+                // Route full 360° spins through AvatarMotionState's SpinTrajectory (added after
+                // softCap) so BodyPose.yaw never wraps across ±180° inside softCap.
+                spinRequested = true
             }
             Gesture.Hop -> {
                 val clip = clipLookup("Done_B") ?: return false
@@ -350,9 +352,13 @@ class MotionDirector(
             }
             Gesture.Attend -> {
                 // Settle the idle sway so a look at something reads as a deliberate look.
-                val d = holdSec.coerceIn(0.8f, 4f) + 0.4f
-                attendPose = poseOf(tgt).copy(pitch = MarkClipEngine.wrap180(tgt[0]) + 1f)
-                attendT = 0f; attendDur = d
+                // Never snap attendW back to 0 when re-triggered while active or releasing.
+                val d = holdSec.coerceIn(0.8f, 4f)
+                if (attendPose == null) {
+                    attendPose = poseOf(tgt).copy(pitch = MarkClipEngine.wrap180(tgt[0]) + 1f)
+                    attendRamp = 0f
+                }
+                attendLeft = maxOf(attendLeft, d)
             }
             Gesture.Droop -> {
                 val d = range(2.2f, 3.4f)
@@ -411,7 +417,7 @@ class MotionDirector(
         val top0 = layers.last()
         run {
             val t0 = top0.t
-            top0.t += bdt * top0.speed
+            top0.t = min(top0.tEnd, top0.t + bdt * top0.speed)
             top0.progress = min(1f, top0.progress + dt / top0.fadeIn.coerceAtLeast(0.02f))
             if (top0.source.blinkIn(t0, top0.t)) clipBlink = true
         }
@@ -451,8 +457,8 @@ class MotionDirector(
     /** Startle pops: [u, dur, amp]. */
     private val pops = ArrayList<FloatArray>()
     private var attendPose: BodyPose? = null
-    private var attendT = 0f
-    private var attendDur = 0f
+    private var attendLeft = 0f
+    private var attendRamp = 0f
 
     /** Base target (angles unwrapped) and its velocity / acceleration, per axis. */
     private val tgt = FloatArray(8)
@@ -495,10 +501,14 @@ class MotionDirector(
         val raw = FloatArray(8)
         arr(top.pose(), raw)
         if (!tgtReady) {
-            for (i in 0 until 8) { tgt[i] = raw[i]; base[i] = raw[i]; tgtV[i] = 0f; tgtA[i] = 0f }
-            for (a in 0..2) lastBaseRaw[a] = raw[a]
-            tgtReady = true; switched = false
-            return poseOf(tgt)
+            // Start from BodyPose.REST (what frame 0 shows) and ease into the first beat via
+            // inertialization so appearing on screen never snaps to an off-centre beat.
+            arr(BodyPose.REST, tgt)
+            arr(BodyPose.REST, base)
+            for (i in 0 until 8) { tgtV[i] = 0f; tgtA[i] = 0f }
+            for (a in 0..2) lastBaseRaw[a] = 0f
+            tgtReady = true
+            switched = true
         }
         if (switched) {
             switched = false
@@ -541,12 +551,17 @@ class MotionDirector(
             val k = 360f * kotlin.math.round(tgt[a] / 360f); tgt[a] -= k; base[a] -= k
         }
         var p = poseOf(tgt)
-        // Attend: ease the sway out toward a still look, and back (a smooth weight, not a cut).
+        // Attend: ease the sway out toward a still look, and back (a smooth ramp, never a cut).
         attendPose?.let { ap ->
-            attendT += dt
-            val w = window(attendT / attendDur, 0.25f / attendDur, 0.4f / attendDur) * 0.85f
-            p = p.lerpTo(ap, w)
-            if (attendT >= attendDur) attendPose = null
+            if (attendLeft > 0f) {
+                attendLeft -= dt
+                attendRamp = (attendRamp + dt / 0.25f).coerceAtMost(1f)
+            } else {
+                attendRamp = (attendRamp - dt / 0.4f).coerceAtLeast(0f)
+            }
+            val w = smootherstep(attendRamp) * 0.85f
+            if (w > 1e-4f) p = p.lerpTo(ap, w)
+            if (attendLeft <= 0f && attendRamp <= 0f) attendPose = null
         }
         return p
     }
@@ -808,12 +823,10 @@ class MotionDirector(
                 holdHere("bobHold", d + 0.2f, "bob")
             }
             "spin" -> {
-                val d = range(1.4f, 1.9f)
-                adds += Add("spinB", d) { u, _ ->
-                    val e = easeInOutCubic(u)
-                    BodyPose(pitch = sin(PI.toFloat() * u) * 3f, yaw = side * 360f * e, roll = -side * sin(PI.toFloat() * u) * 4f)
-                }
-                holdHere("spinHold", d + 0.2f, "spin")
+                // Route full 360° spins through SpinTrajectory (added after softCap) rather than
+                // BodyPose.yaw, which softCap would snap across ±180°.
+                spinRequested = true
+                holdHere("spinHold", 0.5f, "spin")
             }
             else -> hold("pause", BodyPose(pitch = range(0f, 4f), yaw = gauss(3f).coerceIn(-6f, 6f), roll = gauss(2f).coerceIn(-4f, 4f)),
                 logRange(0.5f, 1.8f), range(0.7f, 1.3f), kind = "pause")

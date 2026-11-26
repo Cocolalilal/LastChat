@@ -1576,19 +1576,17 @@ private fun AssistantMessageTurn(
             ),
         spacing = if (showAssistantBubbles) elementSpacing else 3.dp,
     ) {
+        AssistantTurnHeader(
+            showIcon = showIcon,
+            avatarVisible = avatarVisible,
+            avatarName = avatarName,
+            avatarValue = avatarValue,
+            loading = loading,
+            showModelName = showModelName,
+            nameAlpha = nameAlpha,
+            pill = assistantPill,
+        )
         if (showAssistantBubbles) {
-            AssistantTurnHeader(
-                showIcon = showIcon,
-                avatarVisible = avatarVisible,
-                avatarName = avatarName,
-                avatarValue = avatarValue,
-                loading = loading,
-                showModelName = showModelName,
-                nameAlpha = nameAlpha,
-                pill = assistantPill,
-            )
-
-
             AssistantBubbleStack(
                 group = group,
                 assistant = assistant,
@@ -1599,18 +1597,6 @@ private fun AssistantMessageTurn(
                 onCitationClick = onCitationClick,
             )
         } else {
-            // No bubbles: same header as bubble mode ([avatar] [name / pill]), then text.
-            AssistantTurnHeader(
-                showIcon = showIcon,
-                avatarVisible = avatarVisible,
-                avatarName = avatarName,
-                avatarValue = avatarValue,
-                loading = loading,
-                showModelName = showModelName,
-                nameAlpha = nameAlpha,
-                pill = assistantPill,
-            )
-
             AttachmentRow(
                 attachments = attachments,
                 alignEnd = false,
@@ -2037,20 +2023,11 @@ internal fun AssistantTurnHeader(
             }
         }
     }
-    if (pill != null) {
-        Column {
-            // Top-anchored: the collapsed pill is as tall as the avatar (36dp), so they
-            // line up, and when the pill expands into its panel the avatar stays put
-            // on that first row instead of re-centring on the tall panel.
-            Row(verticalAlignment = Alignment.Top) {
-                avatar()
-                pill()
-            }
-        }
-    } else {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            avatar()
-        }
+    // Keep avatar() in a single composition slot whether or not the activity pill is present,
+    // so reasoning/tool pills appearing or disappearing never destroy and reset AnimatedMarkAvatar.
+    Row(verticalAlignment = if (pill != null) Alignment.Top else Alignment.CenterVertically) {
+        avatar()
+        pill?.invoke()
     }
 }
 
