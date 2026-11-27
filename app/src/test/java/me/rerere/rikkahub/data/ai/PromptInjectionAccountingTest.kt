@@ -13,6 +13,8 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.InstructionItem
 import me.rerere.rikkahub.data.model.Skill
+import me.rerere.rikkahub.data.repository.StudioHubItem
+import me.rerere.rikkahub.data.repository.StudioItemType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -66,6 +68,7 @@ class PromptInjectionAccountingTest {
         assertTrue(bundle.featurePromptSegments.any { it.id == "feature:artifacts" })
         assertTrue(bundle.featurePromptSegments.any { it.id == "feature:tmdb" })
         assertTrue(bundle.featurePromptSegments.any { it.id == "feature:voice_memos" })
+        assertTrue(bundle.featurePromptSegments.any { it.id == "studio_hub" })
         assertTrue(bundle.featurePromptSegments.any { it.id == "feature:time_awareness" })
         assertTrue(bundle.featurePromptSegments.any { it.id == "feature:visual_privacy" })
 
@@ -127,6 +130,8 @@ class PromptInjectionAccountingTest {
 
         assertTrue("search_web" in accounting.toolNames)
         assertTrue("search_media" in accounting.toolNames)
+        assertTrue("studio_list_items" in accounting.toolNames)
+        assertTrue("studio_create_item" in accounting.toolNames)
         assertTrue("create_memory" in accounting.toolNames)
         assertTrue("get_memories" in accounting.toolNames)
         assertTrue("manage_memory_summary" in accounting.toolNames)
@@ -192,8 +197,28 @@ class PromptInjectionAccountingTest {
         assertTrue(entries.any { it.category == ContextMapCategory.MEMORIES && it.id == "memories" })
         assertTrue(entries.any { it.category == ContextMapCategory.CONVERSATION_SUMMARY && it.id == "conversation_summary" })
         assertTrue(entries.any { it.category == ContextMapCategory.FEATURE_PROMPTS && it.id == "feature:artifacts" })
+        assertTrue(entries.any { it.category == ContextMapCategory.FEATURE_PROMPTS && it.id == "studio_hub" })
         assertTrue(entries.any { it.category == ContextMapCategory.CONVERSATION && it.id == "conversation" })
         assertEquals(120, entries.first { it.id == "memory_summary" }.tokens)
         assertTrue(ContextTokenEstimator.textTokens("Be direct.", model) > 0)
+    }
+
+    @Test
+    fun buildStudioHubCatalogSegment_capsTokenSizeAndListsRemainingCount() {
+        val model = Model(modelId = "test", contextWindowTokens = 32_000)
+        val manyItems = (1..25).map { idx ->
+            StudioHubItem(
+                id = "item-$idx",
+                type = if (idx % 2 == 0) StudioItemType.TASK_LIST else StudioItemType.NOTE,
+                title = "Studio Item Number $idx With Descriptive Title",
+                body = "Detailed note content explaining project milestones and reminders for entry $idx.",
+                briefSummary = "Detailed note content explaining project milestones and reminders for entry $idx.",
+                isPinned = idx <= 2,
+                updatedAt = idx.toLong(),
+            )
+        }
+        val segment = buildStudioHubCatalogSegment(manyItems, model)
+        assertTrue(ContextTokenEstimator.textTokens(segment, model) <= STUDIO_HUB_CATALOG_TOKEN_CAP)
+        assertTrue(segment.contains("more items in /workspace/studio/index.json"))
     }
 }

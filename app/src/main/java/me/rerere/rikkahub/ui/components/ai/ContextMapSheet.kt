@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Compress
 import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -878,6 +879,9 @@ private fun resolveEntryTarget(
     entry.id == "feature:voice_memos" ->
         ContextMapTarget.Route(Screen.VoiceMemos)
 
+    entry.id == "studio_hub" ->
+        ContextMapTarget.Route(Screen.Studio())
+
     entry.id == "feature:time_awareness" ->
         ContextMapTarget.Route(Screen.AssistantDetail(id = assistantId, startRoute = AssistantDetailRoutes.ADVANCED))
 
@@ -909,6 +913,7 @@ private fun iconForEntry(entry: ContextMapEntry): ImageVector = when {
     entry.id == "feature:artifacts" -> Icons.Rounded.AutoAwesome
     entry.id == "feature:tmdb" -> Icons.Rounded.Movie
     entry.id == "feature:voice_memos" -> Icons.Rounded.GraphicEq
+    entry.id == "studio_hub" -> Icons.Rounded.EditNote
     entry.id == "feature:time_awareness" -> Icons.Rounded.Schedule
     entry.id == "feature:visual_privacy" -> Icons.Rounded.Shield
     entry.id == "tools:local" -> Icons.Rounded.Build

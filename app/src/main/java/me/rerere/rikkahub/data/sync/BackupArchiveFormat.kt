@@ -16,6 +16,7 @@ enum class BackupContentOption(
     WORKSPACES(R.string.backup_content_workspaces, R.string.backup_content_workspaces_desc),
     SKILLS(R.string.backup_content_skills, R.string.backup_content_skills_desc),
     LOREBOOKS(R.string.backup_content_lorebooks, R.string.backup_content_lorebooks_desc),
+    STUDIO(R.string.backup_content_studio, R.string.backup_content_studio_desc),
     SETTINGS(R.string.backup_content_settings, R.string.backup_content_settings_desc),
 }
 
@@ -57,6 +58,10 @@ internal object BackupArchiveFormat {
         "lorebook_attachments",
         "skills",
         "tool_outputs",
+        "studio",
+        "studio_attachments",
+        "voice_memos_meta",
+        "stories",
         WORKSPACES_DIR,
     )
 

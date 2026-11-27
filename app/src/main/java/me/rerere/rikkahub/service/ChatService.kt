@@ -666,6 +666,7 @@ class ChatService(
     val mcpManager: McpManager,
     private val platformHttpClient: PlatformHttpClient,
     private val pythonPluginManager: me.rerere.rikkahub.data.repository.PythonPluginManager? = null,
+    private val studioHubRepository: me.rerere.rikkahub.data.repository.StudioHubRepository? = null,
 ) {
     // 存储每个对话的状态
     private val conversationsLock = Any()
@@ -1739,6 +1740,7 @@ class ChatService(
                         settings = settings,
                         memoryRevision = memoryRevision,
                         memorySummaryRevision = memorySummaryRevision,
+                        studioHubRevision = studioHubRepository?.revisionFlow?.value ?: 0,
                     )
                 } else {
                     null
@@ -1980,10 +1982,14 @@ class ChatService(
                 is AssistantSearchMode.Off -> Unit
             }
 
-            val effectiveLocalTools = if (settings.tmdbSetting.enabled && !assistant.localTools.contains(LocalToolOption.Tmdb)) {
-                assistant.localTools + LocalToolOption.Tmdb
-            } else {
-                assistant.localTools
+            val effectiveLocalTools = buildList {
+                addAll(assistant.localTools)
+                if (settings.tmdbSetting.enabled && !contains(LocalToolOption.Tmdb)) {
+                    add(LocalToolOption.Tmdb)
+                }
+                if (settings.enableStudioHubBridge && !contains(LocalToolOption.StudioHub)) {
+                    add(LocalToolOption.StudioHub)
+                }
             }
 
             addAll(

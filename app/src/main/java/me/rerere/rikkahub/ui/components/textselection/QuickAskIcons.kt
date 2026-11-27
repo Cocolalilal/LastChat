@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.components.textselection
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.FactCheck
@@ -37,6 +38,7 @@ internal val QUICK_ASK_ICON_OPTIONS: List<QuickAskIconOption> = listOf(
     QuickAskIconOption("MenuBook", Icons.Rounded.MenuBook),
     QuickAskIconOption("QuestionAnswer", Icons.Rounded.QuestionAnswer),
     QuickAskIconOption("Bolt", Icons.Rounded.Bolt),
+    QuickAskIconOption("BookmarkAdd", Icons.Rounded.BookmarkAdd),
 )
 
 internal fun quickAskIconForName(name: String): ImageVector {

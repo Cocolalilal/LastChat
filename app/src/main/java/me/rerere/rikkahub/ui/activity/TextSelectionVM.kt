@@ -25,6 +25,8 @@ import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.TextSelectionAction
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.repository.StudioHubRepository
+import me.rerere.rikkahub.data.repository.StudioItemType
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.defaultChatInputTransformers
 import me.rerere.rikkahub.service.defaultChatOutputTransformers
@@ -64,6 +66,12 @@ sealed interface TextSelectionState {
         val message: String,
         val action: TextSelectionAction? = null,
     ) : TextSelectionState
+
+    data class SavedToStudio(
+        val itemId: String,
+        val title: String,
+        val isSummarizing: Boolean = false,
+    ) : TextSelectionState
 }
 
 class TextSelectionVM(
@@ -72,6 +80,7 @@ class TextSelectionVM(
     private val memoryRepository: MemoryRepository,
     private val templateTransformer: TemplateTransformer,
     private val chatService: ChatService,
+    private val studioHubRepository: StudioHubRepository? = null,
 ) : ViewModel() {
 
     internal var inputData by mutableStateOf(QuickAskInputData())
@@ -136,7 +145,7 @@ class TextSelectionVM(
 
     fun submitCustomPrompt() {
         val action = activeAction ?: return
-        if (customPrompt.isNotBlank()) {
+        if (customPrompt.isNotBlank() || action.saveToStudio) {
             executeAction(action, customPrompt)
         }
     }
@@ -223,6 +232,11 @@ class TextSelectionVM(
         generatedMessages = emptyList()
         reasoningStartWallMs = null
         isThinkingExpandedUserOverride = null
+
+        if (action.saveToStudio) {
+            executeSaveToStudio(action, customPromptText)
+            return
+        }
 
         val settings = settingsStore.settingsFlow.value
         val config = settings.textSelectionConfig
@@ -465,6 +479,131 @@ class TextSelectionVM(
             isReasoning = isStillReasoning,
             isThinkingExpanded = expanded,
         )
+    }
+
+    private fun executeSaveToStudio(action: TextSelectionAction, noteText: String) {
+        val repo = studioHubRepository
+        if (repo == null) {
+            state = TextSelectionState.Error("Studio Hub is unavailable.", action = action)
+            return
+        }
+        val settings = settingsStore.settingsFlow.value
+        val assistant = resolveAssistant(settings)
+        val model = settings.getTextSelectionActionModel(action = action, assistant = assistant)
+
+        currentJob = viewModelScope.launch {
+            try {
+                val trimmedNote = noteText.trim()
+                val trimmedInput = inputData.text.trim()
+                val imageAttachments = inputData.attachments.filter {
+                    it.mimeType?.startsWith("image/") == true
+                }
+                val attachmentSources = (imageAttachments.ifEmpty { inputData.attachments }).map { it.uri }
+                val sourceUrl = Regex("""https?://\S+""").find(trimmedInput)?.value
+                val derivedTitle = trimmedNote.lineSequence().firstOrNull()?.trim()?.take(60)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: trimmedInput.lineSequence().firstOrNull()?.trim()?.take(60)
+                        ?.takeIf { it.isNotBlank() }
+                    ?: if (imageAttachments.isNotEmpty()) "Shared Image Note" else "Quick Ask Clip"
+                val mergedBody = buildString {
+                    if (trimmedNote.isNotBlank()) appendLine(trimmedNote)
+                    if (trimmedInput.isNotBlank()) {
+                        if (isNotEmpty()) appendLine()
+                        append(trimmedInput)
+                    }
+                }.trim()
+
+                val saved = repo.createItem(
+                    type = if (imageAttachments.isNotEmpty()) StudioItemType.IMAGE_NOTE else StudioItemType.NOTE,
+                    title = derivedTitle,
+                    body = mergedBody,
+                    attachmentSources = attachmentSources,
+                    sourceUrl = sourceUrl,
+                    createdBy = "quick_ask",
+                )
+
+                val shouldSummarize = action.autoSummarizeOnSave && model != null && mergedBody.isNotBlank()
+                state = TextSelectionState.SavedToStudio(
+                    itemId = saved.id,
+                    title = saved.title.ifBlank { "Saved to Studio" },
+                    isSummarizing = shouldSummarize,
+                )
+
+                if (shouldSummarize && model != null) {
+                    runCatching {
+                        val prompt = buildString {
+                            appendLine("Create a concise 3-6 word title on the first line (`TITLE: ...`) and a crisp 1-sentence summary (<= 130 chars) on the second line (`SUMMARY: ...`) for this saved note:")
+                            appendLine(mergedBody.take(2000))
+                        }
+                        val isolatedAssistant = assistant.copy(
+                            systemPrompt = "You summarize saved clips concisely.",
+                            enableMemory = false,
+                            enableMemorySummary = false,
+                            enableRecentChatsReference = false,
+                            enableMemorySearchTool = false,
+                            enableTimeAwareness = false,
+                            learningMode = false,
+                            localTools = emptyList(),
+                            mcpServers = emptySet(),
+                            enabledSkillIds = emptySet(),
+                            enabledLorebookIds = emptySet(),
+                            enabledInstructionIds = emptySet(),
+                            searchMode = AssistantSearchMode.Off,
+                            streamOutput = false,
+                        )
+                        var responseText = ""
+                        generationHandler.generateText(
+                            settings = settings,
+                            model = model,
+                            messages = listOf(UIMessage.user(prompt)),
+                            inputTransformers = defaultChatInputTransformers,
+                            outputTransformers = defaultChatOutputTransformers,
+                            assistant = isolatedAssistant,
+                            memories = emptyList(),
+                            maxSteps = 1,
+                            quickAskIsolation = QuickAskIsolationOptions(
+                                allowMemoryTools = false,
+                                allowMemoryWriteTools = false,
+                                allowSkillTool = false,
+                                allowGlobalPromptInjections = false,
+                            ),
+                        ).collect { chunk ->
+                            if (chunk is GenerationChunk.Messages) {
+                                responseText = chunk.messages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                                    ?.toContentText().orEmpty()
+                            }
+                        }
+                        val parsedTitle = Regex("""(?im)^TITLE:\s*(.+)$""").find(responseText)?.groupValues?.get(1)?.trim()
+                        val parsedSummary = Regex("""(?im)^SUMMARY:\s*(.+)$""").find(responseText)?.groupValues?.get(1)?.trim()
+                        if (!parsedTitle.isNullOrBlank() || !parsedSummary.isNullOrBlank()) {
+                            val updated = repo.upsertItem(
+                                saved.copy(
+                                    title = parsedTitle ?: saved.title,
+                                    briefSummary = parsedSummary ?: saved.briefSummary,
+                                )
+                            )
+                            val cur = state
+                            if (cur is TextSelectionState.SavedToStudio && cur.itemId == saved.id) {
+                                state = cur.copy(title = updated.title, isSummarizing = false)
+                            }
+                        }
+                    }.onFailure {
+                        val cur = state
+                        if (cur is TextSelectionState.SavedToStudio && cur.itemId == saved.id) {
+                            state = cur.copy(isSummarizing = false)
+                        }
+                    }
+                    val cur = state
+                    if (cur is TextSelectionState.SavedToStudio && cur.itemId == saved.id && cur.isSummarizing) {
+                        state = cur.copy(isSummarizing = false)
+                    }
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.e(TAG, "Failed saving Quick Ask to Studio", e)
+                state = TextSelectionState.Error(e.message ?: "Failed to save to Studio", action = action)
+            }
+        }
     }
 
     private fun resolveAssistant(settings: Settings): Assistant {

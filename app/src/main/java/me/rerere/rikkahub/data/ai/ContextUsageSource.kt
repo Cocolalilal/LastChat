@@ -14,6 +14,7 @@ internal fun contextUsageSourceKey(
     memoryRevision: Int = 0,
     memorySummaryRevision: Int = 0,
     pythonExtensionsRevision: Int = 0,
+    studioHubRevision: Int = 0,
 ): Int = listOf(
     conversation.currentMessages,
     conversation.truncateIndex,
@@ -45,6 +46,7 @@ internal fun contextUsageSourceKey(
     memoryRevision,
     memorySummaryRevision,
     pythonExtensionsRevision,
+    studioHubRevision,
     assistant.maxHistoryMessages,
     assistant.maxSearchResultsRetained,
     assistant.archiveImagesAfterMessageAge,
@@ -68,6 +70,7 @@ internal fun contextUsageSourceKey(
     settings.displaySetting.inWorldArtifactsPrompt,
     settings.tmdbSetting.enabled,
     settings.enableVoiceMemosMemoryBridge,
+    settings.enableStudioHubBridge,
     settings.assistantOverlayConfig,
     settings.providers,
     model.id,

@@ -744,6 +744,8 @@
     <string name="backup_content_skills_desc">Custom skills and tool outputs</string>
     <string name="backup_content_lorebooks">Lorebooks</string>
     <string name="backup_content_lorebooks_desc">World info lorebooks, entries, and attachments</string>
+    <string name="backup_content_studio">Studio Hub &amp; Creations</string>
+    <string name="backup_content_studio_desc">Notes, tasks, reminders, attachments, voice memo metadata, and stories</string>
     <string name="backup_content_settings">App Settings</string>
     <string name="backup_content_settings_desc">Display, theme, font, network, and audio preferences</string>
     <string name="backup_export_no_content_selected">Please select at least one item to export.</string>

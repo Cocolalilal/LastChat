@@ -911,6 +911,9 @@ private fun ActionCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        if (action.saveToStudio) {
+                            ActionBadgePill("Save to Studio")
+                        }
                         if (action.isCustomPrompt) {
                             ActionBadgePill("Input")
                         }
@@ -1035,6 +1038,8 @@ private fun EditActionDialog(
     var allowContinueInChat by remember(action.id) { mutableStateOf(action.allowContinueInChat) }
     var memoryOverride by remember(action.id) { mutableStateOf(action.enableMemoryReadOverride) }
     var toolsOverride by remember(action.id) { mutableStateOf(action.enableToolsOverride) }
+    var saveToStudio by remember(action.id) { mutableStateOf(action.saveToStudio) }
+    var autoSummarizeOnSave by remember(action.id) { mutableStateOf(action.autoSummarizeOnSave) }
     val haptics = rememberPremiumHaptics()
 
     AlertDialog(
@@ -1192,6 +1197,52 @@ private fun EditActionDialog(
                     )
                 }
 
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Save to Studio Hub",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Save selected text or shared images directly to Studio",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    HapticSwitch(
+                        checked = saveToStudio,
+                        onCheckedChange = { saveToStudio = it }
+                    )
+                }
+
+                if (saveToStudio) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Auto-summarize with AI",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "Enrich title & summary asynchronously after saving",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        HapticSwitch(
+                            checked = autoSummarizeOnSave,
+                            onCheckedChange = { autoSummarizeOnSave = it }
+                        )
+                    }
+                }
+
                 OverrideTriStateRow(
                     title = "Memory read override",
                     value = memoryOverride,
@@ -1246,6 +1297,8 @@ private fun EditActionDialog(
                             allowContinueInChat = allowContinueInChat,
                             enableMemoryReadOverride = memoryOverride,
                             enableToolsOverride = toolsOverride,
+                            saveToStudio = saveToStudio,
+                            autoSummarizeOnSave = saveToStudio && autoSummarizeOnSave,
                         )
                     )
                 },

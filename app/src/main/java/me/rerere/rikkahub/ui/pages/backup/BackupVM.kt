@@ -31,6 +31,9 @@ class BackupVM(
     private val modelMetadataResolver: ModelMetadataResolver,
     private val conversationRepository: me.rerere.rikkahub.data.repository.ConversationRepository,
     private val environmentManager: WorkspaceEnvironmentManager,
+    private val studioHubRepository: me.rerere.rikkahub.data.repository.StudioHubRepository,
+    private val storyStudioRepository: me.rerere.rikkahub.data.repository.StoryStudioRepository,
+    private val voiceMemoRepository: me.rerere.rikkahub.data.repository.VoiceMemoRepository,
 ) : ViewModel() {
     val settings = settingsStore.settingsFlow
 
@@ -75,6 +78,7 @@ class BackupVM(
     suspend fun restore(item: WebDavBackupItem): WebdavSync.RestoreResult {
         val result = webdavSync.restoreFromWebDav(webDavConfig = settings.value.webDavConfig, item = item)
         environmentManager.autoRestoreWorkspaces(result.workspacesMetadata)
+        refreshStudioRepositoriesAfterRestore()
         return result
     }
 
@@ -96,7 +100,18 @@ class BackupVM(
     suspend fun restoreFromLocalFile(file: File): WebdavSync.RestoreResult {
         val result = webdavSync.restoreFromLocalFile(file, settings.value.webDavConfig)
         environmentManager.autoRestoreWorkspaces(result.workspacesMetadata)
+        refreshStudioRepositoriesAfterRestore()
         return result
+    }
+
+    private suspend fun refreshStudioRepositoriesAfterRestore() {
+        runCatching {
+            studioHubRepository.refreshSync()
+            studioHubRepository.reschedulePendingReminders()
+            studioHubRepository.syncAllToWorkspace()
+        }
+        runCatching { storyStudioRepository.refresh() }
+        runCatching { voiceMemoRepository.refresh() }
     }
 
     suspend fun getAssistantsSnapshot(): List<Assistant> {

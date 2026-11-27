@@ -344,7 +344,7 @@ fun ChatDrawerContent(
                         LastChatDrawerQuickAction(
                             label = stringResource(R.string.chat_drawer_studio),
                             onClick = {
-                                navController.navigate(Screen.Studio)
+                                navController.navigate(Screen.Studio())
                                 dismissDrawerAfterSelection()
                             },
                             onHaptic = { haptics.perform(HapticPattern.Tick) },

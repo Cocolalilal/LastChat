@@ -666,6 +666,7 @@ class GenerationHandler(
     private val runtimeInfo: GenerationRuntimeInfo = AndroidGenerationRuntimeInfo(),
     private val memoryDAO: MemoryDAO? = null,
     private val memorySummaryService: MemorySummaryService? = null,
+    private val studioHubRepository: me.rerere.rikkahub.data.repository.StudioHubRepository? = null,
 ) {
     fun generateText(
         settings: Settings,
@@ -1222,6 +1223,7 @@ class GenerationHandler(
             hasVisualToolResults = hasVisualToolResults,
             conversationEnabledInstructionIds = conversationEnabledInstructionIds,
             allowGlobalPromptInjections = allowGlobalPromptInjections,
+            studioItems = studioHubRepository?.itemsFlow?.value.orEmpty(),
         )
 
         prePromptBundle.artifactsPromptText?.let {
@@ -1233,6 +1235,10 @@ class GenerationHandler(
             baseSystemPromptBuilder.append(it)
         }
         prePromptBundle.tmdbPromptText?.let {
+            baseSystemPromptBuilder.appendLine()
+            baseSystemPromptBuilder.append(it)
+        }
+        prePromptBundle.studioHubPromptText?.let {
             baseSystemPromptBuilder.appendLine()
             baseSystemPromptBuilder.append(it)
         }
@@ -1564,6 +1570,7 @@ class GenerationHandler(
             hasVisualToolResults = hasVisualToolResults,
             conversationEnabledInstructionIds = conversationEnabledInstructionIds,
             allowGlobalPromptInjections = allowGlobalPromptInjections,
+            studioItems = studioHubRepository?.itemsFlow?.value.orEmpty(),
         )
         val timeAwarenessPrompt = promptBundle.timeAwarenessPromptText
         val rawBuiltMessages = buildList {

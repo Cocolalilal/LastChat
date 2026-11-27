@@ -32,6 +32,9 @@ import me.rerere.rikkahub.data.model.InstructionItem
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.LorebookEntry
 import me.rerere.rikkahub.data.model.Skill
+import me.rerere.rikkahub.data.repository.StudioHubItem
+import me.rerere.rikkahub.data.repository.StudioHubRepository
+import me.rerere.rikkahub.data.repository.StudioItemType
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
 import java.io.File
@@ -43,6 +46,95 @@ internal val VISUAL_TOOL_NAMES = setOf(
     "workspace_read_file",
     "look_at_screen",
 )
+
+internal const val STUDIO_HUB_CATALOG_TOKEN_CAP = 350
+
+internal val STUDIO_HUB_INSTRUCTION_PROMPT = """
+    ## Studio Hub (Notes, Tasks, Reminders & Creations)
+    - The user's unified Studio items are mirrored at `/workspace/studio/` (master catalog `/workspace/studio/index.json`).
+    - Use `studio_list_items`, `studio_read_item`, `studio_create_item`, `studio_update_item`, and `studio_delete_item` to inspect, create, check off, or remind directly.
+""".trimIndent()
+
+internal fun buildStudioHubCatalogSegment(
+    items: List<StudioHubItem>,
+    model: Model,
+    nowMillis: Long = System.currentTimeMillis(),
+): String {
+    val active = items.filter { !it.isArchived }
+    if (active.isEmpty()) {
+        return STUDIO_HUB_INSTRUCTION_PROMPT
+    }
+
+    val seenIds = HashSet<String>()
+    val prioritized = mutableListOf<StudioHubItem>()
+    fun addUnique(candidates: List<StudioHubItem>) {
+        candidates.forEach { item ->
+            if (seenIds.add(item.id)) prioritized += item
+        }
+    }
+
+    // 1. Pinned items
+    addUnique(active.filter { it.isPinned }.sortedByDescending { it.updatedAt })
+    // 2. Upcoming or overdue reminders
+    addUnique(
+        active.filter {
+            (it.type == StudioItemType.REMINDER || it.reminderAtMillis != null) && !it.isCompleted
+        }.sortedBy { it.reminderAtMillis ?: Long.MAX_VALUE }
+    )
+    // 3. Open task lists
+    addUnique(
+        active.filter { it.type == StudioItemType.TASK_LIST && !it.isCompleted }
+            .sortedByDescending { it.updatedAt }
+    )
+    // 4. Up to 6 most recent remaining items
+    addUnique(active.sortedByDescending { it.updatedAt }.filter { it.id !in seenIds }.take(6))
+
+    val baseHeader = "$STUDIO_HUB_INSTRUCTION_PROMPT\n### Brief Studio Catalog"
+    val lines = mutableListOf<String>()
+    val includedIds = HashSet<String>()
+
+    for (item in prioritized) {
+        val flags = buildList {
+            if (item.isPinned) add("pinned")
+            if (item.isCompleted) add("done")
+            if (item.reminderAtMillis != null && !item.isCompleted && item.reminderAtMillis <= nowMillis) {
+                add("overdue")
+            }
+        }.joinToString(",")
+        val flagTag = if (flags.isNotEmpty()) ",$flags" else ""
+        val title = item.title.ifBlank { item.type.name.lowercase().replace('_', ' ') }
+            .replace('\n', ' ')
+            .take(48)
+        val summary = item.briefSummary.ifBlank { StudioHubRepository.generateBriefSummary(item) }
+            .replace('\n', ' ')
+            .take(96)
+        val line = "- [${item.id}] (${item.type.name}$flagTag) $title: $summary"
+
+        val candidate = buildString {
+            appendLine(baseHeader)
+            lines.forEach { appendLine(it) }
+            appendLine(line)
+            val remaining = active.size - (includedIds.size + 1)
+            if (remaining > 0) {
+                append("+$remaining more items in /workspace/studio/index.json")
+            }
+        }
+        if (ContextTokenEstimator.textTokens(candidate, model) > STUDIO_HUB_CATALOG_TOKEN_CAP && lines.isNotEmpty()) {
+            break
+        }
+        lines += line
+        includedIds += item.id
+    }
+
+    val omittedCount = (active.size - includedIds.size).coerceAtLeast(0)
+    return buildString {
+        appendLine(baseHeader)
+        lines.forEach { appendLine(it) }
+        if (omittedCount > 0) {
+            append("+$omittedCount more items in /workspace/studio/index.json")
+        }
+    }.trimEnd()
+}
 
 internal val VOICE_MEMOS_MEMORY_BRIDGE_PROMPT = """
     ## Voice Memos & Audio Transcripts
@@ -212,6 +304,7 @@ internal data class PromptInjectionBundle(
     val artifactsPromptText: String?,
     val voiceMemosPromptText: String?,
     val tmdbPromptText: String?,
+    val studioHubPromptText: String? = null,
     val visualPrivacyPromptText: String?,
     val timeAwarenessPromptText: String?,
     val featurePromptsText: String,
@@ -231,6 +324,7 @@ internal fun buildPromptInjectionBundle(
     },
     conversationEnabledInstructionIds: Set<Uuid>? = null,
     allowGlobalPromptInjections: Boolean = true,
+    studioItems: List<StudioHubItem> = emptyList(),
 ): PromptInjectionBundle {
     val systemPromptText = buildString {
         append(assistant.systemPrompt)
@@ -264,6 +358,11 @@ internal fun buildPromptInjectionBundle(
     }
     val tmdbPrompt = if (allowGlobalPromptInjections && settings.tmdbSetting.enabled) {
         TMDB_MEDIA_PROMPT
+    } else {
+        null
+    }
+    val studioHubPrompt = if (allowGlobalPromptInjections && settings.enableStudioHubBridge) {
+        buildStudioHubCatalogSegment(studioItems, model)
     } else {
         null
     }
@@ -317,6 +416,16 @@ internal fun buildPromptInjectionBundle(
                 )
             )
         }
+        studioHubPrompt?.let {
+            add(
+                NamedPromptSegment(
+                    id = "studio_hub",
+                    label = "Studio Hub Catalog",
+                    subtitle = "Notes, tasks, reminders & /workspace/studio/index.json",
+                    text = it,
+                )
+            )
+        }
         timeAwarenessPrompt?.let {
             add(
                 NamedPromptSegment(
@@ -348,6 +457,7 @@ internal fun buildPromptInjectionBundle(
         artifactsPromptText = artifactsPrompt,
         voiceMemosPromptText = voiceMemosPrompt,
         tmdbPromptText = tmdbPrompt,
+        studioHubPromptText = studioHubPrompt,
         visualPrivacyPromptText = visualPrivacyPrompt,
         timeAwarenessPromptText = timeAwarenessPrompt,
         featurePromptsText = featurePromptsText,
@@ -600,14 +710,15 @@ internal fun computePreRequestToolAccounting(
         }
     }
 
-    // 2. Local tools + auto-injected TMDB
-    val effectiveLocalTools = if (
-        settings.tmdbSetting.enabled &&
-        LocalToolOption.Tmdb !in assistant.localTools
-    ) {
-        assistant.localTools + LocalToolOption.Tmdb
-    } else {
-        assistant.localTools
+    // 2. Local tools + auto-injected TMDB & Studio Hub
+    val effectiveLocalTools = buildList {
+        addAll(assistant.localTools)
+        if (settings.tmdbSetting.enabled && LocalToolOption.Tmdb !in this) {
+            add(LocalToolOption.Tmdb)
+        }
+        if (settings.enableStudioHubBridge && LocalToolOption.StudioHub !in this) {
+            add(LocalToolOption.StudioHub)
+        }
     }
     effectiveLocalTools.flatMap { it.toDefinitionPreviews() }.forEach { preview ->
         if (takeUnique(preview.name)) {

@@ -200,6 +200,12 @@ class WebdavSync(
                     add("lorebook_covers")
                     add("lorebook_attachments")
                 }
+                if (BackupContentOption.STUDIO in selectedContent) {
+                    add("studio")
+                    add("studio_attachments")
+                    add("voice_memos_meta")
+                    add("stories")
+                }
             }.filter { BackupArchiveFormat.MANAGED_FILE_DIRS.contains(it) }
         }
 

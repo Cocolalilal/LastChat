@@ -20,9 +20,13 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import me.rerere.ai.provider.ImageGenerationParams
 import me.rerere.ai.provider.ImageGenerationMethod
 import me.rerere.ai.provider.Modality
@@ -34,12 +38,22 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.repository.GenMediaRepository
+import me.rerere.rikkahub.data.repository.StudioChecklistEntry
+import me.rerere.rikkahub.data.repository.StudioHubItem
+import me.rerere.rikkahub.data.repository.StudioHubRepository
+import me.rerere.rikkahub.data.repository.StudioItemType
 import me.rerere.rikkahub.data.datastore.TtsFilterMode
 import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
 import me.rerere.rikkahub.utils.stripMarkdown
 import me.rerere.tts.controller.TtsController
 import me.rerere.tts.controller.AudioPlayer
 import me.rerere.tts.provider.android.TTSManager
+import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.util.Date
+import java.util.Locale
 import kotlin.uuid.Uuid
 
 @Serializable
@@ -71,6 +85,10 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("tmdb")
     data object Tmdb : LocalToolOption()
+
+    @Serializable
+    @SerialName("studio_hub")
+    data object StudioHub : LocalToolOption()
 }
 
 object LocalToolOptionListSerializer :
@@ -351,6 +369,154 @@ fun LocalToolOption.toDefinitionPreviews(): List<LocalToolDefinitionPreview> = w
             )
         )
     )
+    LocalToolOption.StudioHub -> listOf(
+        LocalToolDefinitionPreview(
+            name = "studio_list_items",
+            description = "List matching Studio Hub items (notes, task lists, reminders, voice memos, and stories) with IDs, titles, tags, status, and brief summaries.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("type", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Optional filter: NOTE, TASK_LIST, REMINDER, IMAGE_NOTE, VOICE_MEMO, STORY, or ALL")
+                    })
+                    put("query", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Optional search text across titles, summaries, bodies, checklists, and tags")
+                    })
+                    put("includeArchived", buildJsonObject {
+                        put("type", "boolean")
+                        put("description", "Whether to include archived items (default false)")
+                    })
+                    put("limit", buildJsonObject {
+                        put("type", "integer")
+                        put("description", "Maximum results to return (default 20)")
+                    })
+                },
+                required = emptyList()
+            )
+        ),
+        LocalToolDefinitionPreview(
+            name = "studio_read_item",
+            description = "Read the full content, checklist entries, attachments, and metadata of a Studio Hub item by ID.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("id", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Studio item ID")
+                    })
+                },
+                required = listOf("id")
+            )
+        ),
+        LocalToolDefinitionPreview(
+            name = "studio_create_item",
+            description = "Create a new Note, Task List, or Reminder in the user's unified Studio Hub feed.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("type", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Item type: NOTE, TASK_LIST, or REMINDER")
+                    })
+                    put("title", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Title of the note, task list, or reminder")
+                    })
+                    put("body", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Optional body text")
+                    })
+                    putJsonObject("checklist") {
+                        put("type", "array")
+                        put("description", "Optional list of checklist item strings")
+                        putJsonObject("items") { put("type", "string") }
+                    }
+                    putJsonObject("tags") {
+                        put("type", "array")
+                        put("description", "Optional list of tags")
+                        putJsonObject("items") { put("type", "string") }
+                    }
+                    put("reminderAtIso", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Optional ISO-8601 timestamp (e.g. 2026-11-28T09:00:00 or 2026-11-28T09:00:00Z) to schedule a reminder notification")
+                    })
+                    put("pinned", buildJsonObject {
+                        put("type", "boolean")
+                        put("description", "Whether to pin the item to the top")
+                    })
+                    put("color", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Optional subtle tonal color: amber, sage, sky, rose, or lavender")
+                    })
+                },
+                required = listOf("type", "title")
+            )
+        ),
+        LocalToolDefinitionPreview(
+            name = "studio_update_item",
+            description = "Update an existing Studio Hub item's title, body, checklist entries, tags, reminder, pin, completion, or archive state.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("id", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Studio item ID to update")
+                    })
+                    put("title", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Updated title")
+                    })
+                    put("body", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Updated body")
+                    })
+                    putJsonObject("addChecklistItems") {
+                        put("type", "array")
+                        put("description", "Checklist item texts to append")
+                        putJsonObject("items") { put("type", "string") }
+                    }
+                    putJsonObject("toggleChecklistItemTexts") {
+                        put("type", "array")
+                        put("description", "Checklist item texts (exact or substring match) to toggle checked state")
+                        putJsonObject("items") { put("type", "string") }
+                    }
+                    putJsonObject("tags") {
+                        put("type", "array")
+                        put("description", "Replacement tag list")
+                        putJsonObject("items") { put("type", "string") }
+                    }
+                    put("reminderAtIso", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Updated ISO-8601 reminder time, or empty string to clear")
+                    })
+                    put("pinned", buildJsonObject {
+                        put("type", "boolean")
+                        put("description", "Updated pinned state")
+                    })
+                    put("completed", buildJsonObject {
+                        put("type", "boolean")
+                        put("description", "Updated completion state")
+                    })
+                    put("archived", buildJsonObject {
+                        put("type", "boolean")
+                        put("description", "Updated archived state")
+                    })
+                },
+                required = listOf("id")
+            )
+        ),
+        LocalToolDefinitionPreview(
+            name = "studio_delete_item",
+            description = "Delete a Studio Hub item by ID.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("id", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Studio item ID to delete")
+                    })
+                },
+                required = listOf("id")
+            )
+        )
+    )
 }
 
 internal fun scheduledMessageToolJson(result: ScheduledLocalToolMessage): JsonObject {
@@ -399,6 +565,9 @@ class LocalTools(
         genMediaRepository = genMediaRepository,
     ),
     private val tmdbService: me.rerere.rikkahub.data.service.TmdbService? = null,
+    private val studioHubRepository: StudioHubRepository? = null,
+    private val storyStudioRepository: me.rerere.rikkahub.data.repository.StoryStudioRepository? = null,
+    private val voiceMemoRepository: me.rerere.rikkahub.data.repository.VoiceMemoRepository? = null,
 ) {
     val askUserTool by lazy {
         Tool(
@@ -1025,6 +1194,306 @@ class LocalTools(
             tools.add(mediaRecommendationsTool.withAlias("tmdb_get_recommendations"))
             tools.add(mediaWatchlistTool.withAlias("tmdb_watchlist"))
         }
+        if (options.contains(LocalToolOption.StudioHub) && studioHubRepository != null) {
+            tools.addAll(
+                buildStudioHubTools(
+                    studioHubRepository = studioHubRepository,
+                    storyStudioRepository = storyStudioRepository,
+                    voiceMemoRepository = voiceMemoRepository,
+                )
+            )
+        }
         return tools
     }
+}
+
+internal fun buildStudioHubTools(
+    studioHubRepository: StudioHubRepository,
+    storyStudioRepository: me.rerere.rikkahub.data.repository.StoryStudioRepository? = null,
+    voiceMemoRepository: me.rerere.rikkahub.data.repository.VoiceMemoRepository? = null,
+): List<Tool> {
+    val previews = LocalToolOption.StudioHub.toDefinitionPreviews().associateBy { it.name }
+    fun parseIsoMillis(raw: String): Long? {
+        return runCatching { Instant.parse(raw).toEpochMilli() }.getOrNull()
+            ?: runCatching {
+                LocalDateTime.parse(raw).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            }.getOrNull()
+    }
+    fun formatIso(millis: Long): String {
+        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(millis))
+    }
+
+    val listDef = previews.getValue("studio_list_items")
+    val listTool = Tool(
+        name = listDef.name,
+        description = listDef.description,
+        parameters = { listDef.schema },
+        execute = { args ->
+            val params = args.jsonObject
+            val typeFilter = params["type"]?.jsonPrimitive?.contentOrNull?.trim()?.uppercase()
+            val query = params["query"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase().orEmpty()
+            val includeArchived = params["includeArchived"]?.jsonPrimitive?.booleanOrNull ?: false
+            val limit = (params["limit"]?.jsonPrimitive?.intOrNull ?: 20).coerceIn(1, 100)
+
+            val hubItems = studioHubRepository.getItems().filter { item ->
+                (includeArchived || !item.isArchived) &&
+                    (typeFilter.isNullOrBlank() || typeFilter == "ALL" || item.type.name == typeFilter) &&
+                    (query.isBlank() ||
+                        item.title.lowercase().contains(query) ||
+                        item.body.lowercase().contains(query) ||
+                        item.briefSummary.lowercase().contains(query) ||
+                        item.tags.any { it.lowercase().contains(query) } ||
+                        item.checklist.any { it.text.lowercase().contains(query) })
+            }
+
+            val voiceMemos = if (typeFilter.isNullOrBlank() || typeFilter == "ALL" || typeFilter == "VOICE_MEMO") {
+                voiceMemoRepository?.recordingsFlow?.value.orEmpty().filter { memo ->
+                    query.isBlank() ||
+                        memo.title.lowercase().contains(query) ||
+                        memo.summary?.lowercase()?.contains(query) == true ||
+                        memo.transcript?.lowercase()?.contains(query) == true
+                }
+            } else emptyList()
+
+            val stories = if (typeFilter.isNullOrBlank() || typeFilter == "ALL" || typeFilter == "STORY") {
+                storyStudioRepository?.projectsFlow?.value.orEmpty().filter { story ->
+                    query.isBlank() ||
+                        story.title.lowercase().contains(query) ||
+                        story.premise.lowercase().contains(query) ||
+                        story.genre.lowercase().contains(query)
+                }
+            } else emptyList()
+
+            buildJsonObject {
+                putJsonArray("items") {
+                    hubItems.take(limit).forEach { item ->
+                        add(buildJsonObject {
+                            put("id", item.id)
+                            put("type", item.type.name)
+                            put("title", item.title)
+                            put("brief_summary", item.briefSummary)
+                            put("pinned", item.isPinned)
+                            put("completed", item.isCompleted)
+                            put("archived", item.isArchived)
+                            put("workspace_path", "/workspace/studio/${item.id}.md")
+                            if (item.reminderAtMillis != null) {
+                                put("reminder_at", formatIso(item.reminderAtMillis))
+                            }
+                            putJsonArray("tags") { item.tags.forEach { add(JsonPrimitive(it)) } }
+                        })
+                    }
+                }
+                if (voiceMemos.isNotEmpty()) {
+                    putJsonArray("voice_memos") {
+                        voiceMemos.take(limit).forEach { memo ->
+                            add(buildJsonObject {
+                                put("id", memo.id)
+                                put("type", "VOICE_MEMO")
+                                put("title", memo.title)
+                                put("brief_summary", (memo.summary ?: memo.transcript ?: "").take(140))
+                                put("workspace_path", "/workspace/transcripts/${memo.id}.md")
+                            })
+                        }
+                    }
+                }
+                if (stories.isNotEmpty()) {
+                    putJsonArray("stories") {
+                        stories.take(limit).forEach { story ->
+                            add(buildJsonObject {
+                                put("id", story.id)
+                                put("type", "STORY")
+                                put("title", story.title)
+                                put("status", story.status.name)
+                                put("total_words", story.totalWords)
+                                put("brief_summary", story.premise.take(140))
+                                put("workspace_path", "/workspace/studio/stories/${story.id}.md")
+                            })
+                        }
+                    }
+                }
+            }
+        }
+    )
+
+    val readDef = previews.getValue("studio_read_item")
+    val readTool = Tool(
+        name = readDef.name,
+        description = readDef.description,
+        parameters = { readDef.schema },
+        execute = { args ->
+            val id = args.jsonObject["id"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            val item = studioHubRepository.getItem(id)
+            if (item != null) {
+                buildJsonObject {
+                    put("id", item.id)
+                    put("type", item.type.name)
+                    put("title", item.title)
+                    put("body", item.body)
+                    put("brief_summary", item.briefSummary)
+                    put("pinned", item.isPinned)
+                    put("completed", item.isCompleted)
+                    put("archived", item.isArchived)
+                    put("created_by", item.createdBy)
+                    put("workspace_path", "/workspace/studio/${item.id}.md")
+                    item.colorToken?.let { put("color", it) }
+                    item.sourceUrl?.let { put("source_url", it) }
+                    item.reminderAtMillis?.let { put("reminder_at", formatIso(it)) }
+                    putJsonArray("tags") { item.tags.forEach { add(JsonPrimitive(it)) } }
+                    putJsonArray("attachments") { item.attachmentPaths.forEach { add(JsonPrimitive(it)) } }
+                    putJsonArray("checklist") {
+                        item.checklist.forEach { entry ->
+                            add(buildJsonObject {
+                                put("id", entry.id)
+                                put("text", entry.text)
+                                put("checked", entry.isChecked)
+                            })
+                        }
+                    }
+                }
+            } else {
+                buildJsonObject {
+                    put("error", "Studio item '$id' not found. Check /workspace/studio/index.json or call studio_list_items.")
+                }
+            }
+        }
+    )
+
+    val createDef = previews.getValue("studio_create_item")
+    val createTool = Tool(
+        name = createDef.name,
+        description = createDef.description,
+        parameters = { createDef.schema },
+        execute = { args ->
+            val params = args.jsonObject
+            val rawType = params["type"]?.jsonPrimitive?.contentOrNull?.trim()?.uppercase() ?: "NOTE"
+            val type = runCatching { StudioItemType.valueOf(rawType) }.getOrDefault(StudioItemType.NOTE)
+            val title = params["title"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val body = params["body"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val checklist = params["checklist"]?.jsonArray?.mapNotNull { el ->
+                el.jsonPrimitive.contentOrNull?.trim()?.takeIf { it.isNotBlank() }?.let {
+                    StudioChecklistEntry(text = it)
+                }
+            }.orEmpty()
+            val tags = params["tags"]?.jsonArray?.mapNotNull {
+                it.jsonPrimitive.contentOrNull?.trim()?.takeIf { t -> t.isNotBlank() }
+            }.orEmpty()
+            val reminderIso = params["reminderAtIso"]?.jsonPrimitive?.contentOrNull?.trim()
+            val reminderMillis = reminderIso?.takeIf { it.isNotBlank() }?.let(::parseIsoMillis)
+            if (!reminderIso.isNullOrBlank() && reminderMillis == null) {
+                return@Tool buildJsonObject {
+                    put("error", "Invalid reminderAtIso '$reminderIso'. Use ISO-8601 format like 2026-11-28T09:00:00 or 2026-11-28T09:00:00Z.")
+                }
+            }
+            val pinned = params["pinned"]?.jsonPrimitive?.booleanOrNull ?: false
+            val color = params["color"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase()
+                ?.takeIf { it in setOf("amber", "sage", "sky", "rose", "lavender") }
+
+            val created = studioHubRepository.createItem(
+                type = type,
+                title = title,
+                body = body,
+                checklist = checklist,
+                tags = tags,
+                colorToken = color,
+                isPinned = pinned,
+                reminderAtMillis = reminderMillis,
+                createdBy = "assistant",
+            )
+            buildJsonObject {
+                put("status", "created")
+                put("id", created.id)
+                put("type", created.type.name)
+                put("title", created.title)
+                put("brief_summary", created.briefSummary)
+                put("workspace_path", "/workspace/studio/${created.id}.md")
+            }
+        }
+    )
+
+    val updateDef = previews.getValue("studio_update_item")
+    val updateTool = Tool(
+        name = updateDef.name,
+        description = updateDef.description,
+        parameters = { updateDef.schema },
+        execute = { args ->
+            val params = args.jsonObject
+            val id = params["id"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            val existing = studioHubRepository.getItem(id) ?: return@Tool buildJsonObject {
+                put("error", "Studio item '$id' not found.")
+            }
+
+            val newTitle = params["title"]?.jsonPrimitive?.contentOrNull ?: existing.title
+            val newBody = params["body"]?.jsonPrimitive?.contentOrNull ?: existing.body
+            val addItems = params["addChecklistItems"]?.jsonArray?.mapNotNull {
+                it.jsonPrimitive.contentOrNull?.trim()?.takeIf { s -> s.isNotBlank() }?.let { txt ->
+                    StudioChecklistEntry(text = txt)
+                }
+            }.orEmpty()
+            val toggleTargets = params["toggleChecklistItemTexts"]?.jsonArray?.mapNotNull {
+                it.jsonPrimitive.contentOrNull?.trim()?.lowercase()?.takeIf { s -> s.isNotBlank() }
+            }.orEmpty()
+
+            val updatedChecklist = (existing.checklist + addItems).map { entry ->
+                if (toggleTargets.any { target -> entry.text.lowercase().contains(target) }) {
+                    entry.copy(isChecked = !entry.isChecked)
+                } else {
+                    entry
+                }
+            }
+
+            val newTags = params["tags"]?.jsonArray?.mapNotNull {
+                it.jsonPrimitive.contentOrNull?.trim()?.takeIf { t -> t.isNotBlank() }
+            } ?: existing.tags
+
+            val hasReminderParam = params.containsKey("reminderAtIso")
+            val reminderMillis = if (hasReminderParam) {
+                val raw = params["reminderAtIso"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                if (raw.isBlank()) {
+                    null
+                } else {
+                    parseIsoMillis(raw) ?: return@Tool buildJsonObject {
+                        put("error", "Invalid reminderAtIso '$raw'. Use ISO-8601 format.")
+                    }
+                }
+            } else {
+                existing.reminderAtMillis
+            }
+
+            val updated = studioHubRepository.upsertItem(
+                existing.copy(
+                    title = newTitle,
+                    body = newBody,
+                    checklist = updatedChecklist,
+                    tags = newTags,
+                    reminderAtMillis = reminderMillis,
+                    isPinned = params["pinned"]?.jsonPrimitive?.booleanOrNull ?: existing.isPinned,
+                    isCompleted = params["completed"]?.jsonPrimitive?.booleanOrNull ?: existing.isCompleted,
+                    isArchived = params["archived"]?.jsonPrimitive?.booleanOrNull ?: existing.isArchived,
+                )
+            )
+            buildJsonObject {
+                put("status", "updated")
+                put("id", updated.id)
+                put("title", updated.title)
+                put("brief_summary", updated.briefSummary)
+            }
+        }
+    )
+
+    val deleteDef = previews.getValue("studio_delete_item")
+    val deleteTool = Tool(
+        name = deleteDef.name,
+        description = deleteDef.description,
+        parameters = { deleteDef.schema },
+        execute = { args ->
+            val id = args.jsonObject["id"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            val deleted = studioHubRepository.deleteItem(id)
+            buildJsonObject {
+                put("status", if (deleted) "deleted" else "not_found")
+                put("id", id)
+            }
+        }
+    )
+
+    return listOf(listTool, readTool, createTool, updateTool, deleteTool)
 }

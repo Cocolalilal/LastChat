@@ -40,6 +40,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.ErrorOutline
@@ -112,6 +114,7 @@ fun TextSelectionSheet(
     viewModel: TextSelectionVM,
     onDismiss: () -> Unit,
     onContinueInApp: () -> Unit,
+    onOpenInStudio: (String) -> Unit = {},
 ) {
     val amoledMode by rememberAmoledDarkMode()
     val isDarkMode = LocalDarkMode.current
@@ -239,6 +242,7 @@ fun TextSelectionSheet(
                                 CustomPromptContent(
                                     action = state.action,
                                     selectedText = viewModel.selectedText,
+                                    attachments = viewModel.inputData.attachments,
                                     prompt = viewModel.customPrompt,
                                     assistantModelBadge = defaultBadge,
                                     onPromptChange = { viewModel.updateCustomPrompt(it) },
@@ -283,6 +287,14 @@ fun TextSelectionSheet(
                                         }
                                     },
                                     onBack = { viewModel.backToActionSelection() },
+                                    onDismiss = onDismiss,
+                                )
+                            }
+
+                            is TextSelectionState.SavedToStudio -> {
+                                SavedToStudioContent(
+                                    state = state,
+                                    onOpenInStudio = { onOpenInStudio(state.itemId) },
                                     onDismiss = onDismiss,
                                 )
                             }
@@ -581,6 +593,7 @@ private fun QuickActionButton(
 private fun CustomPromptContent(
     action: TextSelectionAction,
     selectedText: String,
+    attachments: List<QuickAskAttachment>,
     prompt: String,
     assistantModelBadge: String,
     onPromptChange: (String) -> Unit,
@@ -588,6 +601,7 @@ private fun CustomPromptContent(
     onBack: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val canSubmit = prompt.isNotBlank() || action.saveToStudio
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -631,29 +645,56 @@ private fun CustomPromptContent(
             }
         }
 
+        attachments.forEach { attachment ->
+            if (attachment.mimeType?.startsWith("image/") == true) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = QuickAskInnerShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    AsyncImage(
+                        model = attachment.uri,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 150.dp)
+                    )
+                }
+            } else {
+                DocumentChip(
+                    fileName = attachment.fileName,
+                    mimeType = attachment.mimeType,
+                    shape = QuickAskInnerShape
+                )
+            }
+        }
+
         OutlinedTextField(
             value = prompt,
             onValueChange = onPromptChange,
             modifier = Modifier.fillMaxWidth(),
             placeholder = {
-                Text(stringResource(R.string.text_selection_custom_placeholder))
+                Text(
+                    if (action.saveToStudio) "Add an optional note (or tap send to save)…"
+                    else stringResource(R.string.text_selection_custom_placeholder)
+                )
             },
             shape = QuickAskInnerShape,
             maxLines = 4,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
             keyboardActions = KeyboardActions(
-                onSend = { if (prompt.isNotBlank()) onSubmit() }
+                onSend = { if (canSubmit) onSubmit() }
             ),
             trailingIcon = {
                 TactileIconButton(
                     onClick = onSubmit,
-                    enabled = prompt.isNotBlank(),
+                    enabled = canSubmit,
                     contentDescription = stringResource(R.string.send)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.Send,
                         contentDescription = null,
-                        tint = if (prompt.isNotBlank()) {
+                        tint = if (canSubmit) {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
@@ -1083,6 +1124,130 @@ private fun QuickAskThinkingCard(
                         text = reasoningText,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SavedToStudioContent(
+    state: TextSelectionState.SavedToStudio,
+    onOpenInStudio: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Saved to Studio",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = state.title,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            TactileIconButton(
+                onClick = onDismiss,
+                contentDescription = stringResource(R.string.close),
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+
+        if (state.isSummarizing) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LoadingIndicator(modifier = Modifier.size(16.dp))
+                Text(
+                    text = "Generating AI title & summary…",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TactileActionSurface(
+                modifier = Modifier.weight(1f),
+                shape = QuickAskInnerShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                onClick = onOpenInStudio,
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Open in Studio",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+            }
+
+            TactileActionSurface(
+                modifier = Modifier.weight(0.7f),
+                shape = QuickAskInnerShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                onClick = onDismiss,
+            ) {
+                Box(
+                    modifier = Modifier.padding(12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "Done",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }

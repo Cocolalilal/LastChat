@@ -80,7 +80,18 @@ class TextSelectionActivity : ComponentActivity() {
                                 startActivity(routeIntent)
                                 finish()
                             }
-                        }
+                        },
+                        onOpenInStudio = { itemId ->
+                            val routeIntent = Intent(this@TextSelectionActivity, RouteActivity::class.java).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                putExtra(RouteActivity.EXTRA_OPEN_STUDIO, true)
+                                putExtra(RouteActivity.EXTRA_STUDIO_ITEM_ID, itemId)
+                            }
+                            startActivity(routeIntent)
+                            finish()
+                        },
                     )
                     AppToasterHost(state = toastState)
                 }

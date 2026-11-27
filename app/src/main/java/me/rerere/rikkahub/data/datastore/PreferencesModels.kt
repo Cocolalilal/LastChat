@@ -106,6 +106,7 @@ data class Settings(
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
     val assistantOverlayConfig: AssistantOverlayConfig = AssistantOverlayConfig(),
     val enableVoiceMemosMemoryBridge: Boolean = true,
+    val enableStudioHubBridge: Boolean = true,
     val smartMicProfiles: List<SmartMicProfile> = DEFAULT_SMART_MIC_PROFILES,
     val selectedSmartMicProfileId: String = "raw_dictation",
     val tmdbSetting: TmdbSetting = TmdbSetting(),

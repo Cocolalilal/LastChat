@@ -33,6 +33,7 @@ val viewModelModule = module {
             modelMetadataResolver = get(),
             workspaceRepository = get(),
             pythonPluginManager = get(),
+            studioHubRepository = getOrNull(),
         )
     }
     viewModel<SettingVM> {
@@ -99,6 +100,7 @@ val viewModelModule = module {
             memoryRepository = get(),
             templateTransformer = get(),
             chatService = get(),
+            studioHubRepository = getOrNull(),
         )
     }
     viewModel<me.rerere.rikkahub.ui.activity.AssistantOverlayVM> {

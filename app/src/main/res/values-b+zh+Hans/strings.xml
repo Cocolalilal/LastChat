@@ -652,6 +652,8 @@
   <string name="backup_content_skills_desc">自定义技能与工具输出文件</string>
   <string name="backup_content_lorebooks">知识库 (Lorebooks)</string>
   <string name="backup_content_lorebooks_desc">世界设定集、词条与附件</string>
+  <string name="backup_content_studio">创意工作室与笔记</string>
+  <string name="backup_content_studio_desc">笔记、任务清单、提醒、附件、语音备忘录元数据与故事项目</string>
   <string name="backup_content_settings">应用设置</string>
   <string name="backup_content_settings_desc">显示、主题、字体、网络与音频偏好设置</string>
   <string name="backup_export_no_content_selected">请至少选择一项要导出的内容。</string>

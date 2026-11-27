@@ -272,6 +272,7 @@ val dataSourceModule = module {
             secretKeyManager = get(),
             memoryDAO = get(),
             memorySummaryService = get(),
+            studioHubRepository = getOrNull(),
         )
     }
 

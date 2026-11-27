@@ -24,6 +24,11 @@ class BackupArchiveFormatTest {
         assertEquals(BackupArchiveFormat.CURRENT_FORMAT_VERSION, decoded.formatVersion)
         assertEquals(BackupArchiveFormat.MANAGED_FILE_DIRS, decoded.managedFileDirs)
         assertEquals(BackupArchiveFormat.PORTABLE_SHARED_PREF_STORES, decoded.sharedPrefsStores)
+        assertTrue("studio" in BackupArchiveFormat.MANAGED_FILE_DIRS)
+        assertTrue("studio_attachments" in BackupArchiveFormat.MANAGED_FILE_DIRS)
+        assertTrue("voice_memos_meta" in BackupArchiveFormat.MANAGED_FILE_DIRS)
+        assertTrue("stories" in BackupArchiveFormat.MANAGED_FILE_DIRS)
+        assertTrue(BackupContentOption.STUDIO in BackupContentOption.entries)
     }
 
     @Test

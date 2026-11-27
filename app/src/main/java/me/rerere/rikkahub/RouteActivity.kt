@@ -319,6 +319,8 @@ class RouteActivity : ComponentActivity() {
     private var pendingConversationId by mutableStateOf<String?>(null)
     private var pendingResolvedSpontaneousTarget by mutableStateOf<ResolvedSpontaneousChatTarget?>(null)
     private var pendingShareIntent by mutableStateOf<ResolvedSharePayload?>(null)
+    private var pendingOpenStudio by mutableStateOf(false)
+    private var pendingStudioItemId by mutableStateOf<String?>(null)
     private var initialChatScreen by mutableStateOf<Screen.Chat?>(null)
     private var hasSuccessfulReplyBeforeSetup by mutableStateOf<Boolean?>(null)
 
@@ -359,6 +361,10 @@ class RouteActivity : ComponentActivity() {
                 null
             }
             val intentWebServerSettings = intent?.getBooleanExtra("webServerSettings", false) == true
+            if (intent?.getBooleanExtra(EXTRA_OPEN_STUDIO, false) == true) {
+                pendingOpenStudio = true
+                pendingStudioItemId = intent?.getStringExtra(EXTRA_STUDIO_ITEM_ID)
+            }
             pendingTextSelection = intent?.readQuickAskContinuationData()
             pendingShareIntent = intent?.readResolvedSharePayload()
             lifecycleScope.launch {
@@ -399,6 +405,16 @@ class RouteActivity : ComponentActivity() {
                         LaunchedEffect(intentWebServerSettings) {
                             if (intentWebServerSettings) {
                                 navStack.navigate(Screen.SettingWeb)
+                            }
+                        }
+                        LaunchedEffect(pendingOpenStudio, pendingStudioItemId) {
+                            if (pendingOpenStudio) {
+                                val targetItemId = pendingStudioItemId
+                                pendingOpenStudio = false
+                                pendingStudioItemId = null
+                                navStack.navigate(Screen.Studio(itemId = targetItemId)) {
+                                    launchSingleTop = true
+                                }
                             }
                         }
                     }
@@ -634,6 +650,11 @@ class RouteActivity : ComponentActivity() {
             navStack?.navigate(Screen.SettingWeb)
             return
         }
+        if (intent.getBooleanExtra(EXTRA_OPEN_STUDIO, false)) {
+            pendingStudioItemId = intent.getStringExtra(EXTRA_STUDIO_ITEM_ID)
+            pendingOpenStudio = true
+            return
+        }
         intent.toSpontaneousNotificationData()?.let { notification ->
             lifecycleScope.launch {
                 resolveSpontaneousChatTarget(notification)?.let { target ->
@@ -693,6 +714,8 @@ class RouteActivity : ComponentActivity() {
     companion object {
         const val EXTRA_CONVERSATION_ID = "conversationId"
         const val EXTRA_ASSISTANT_ID = "assistantId"
+        const val EXTRA_OPEN_STUDIO = "openStudio"
+        const val EXTRA_STUDIO_ITEM_ID = "studioItemId"
     }
 
     @Composable
@@ -953,8 +976,9 @@ class RouteActivity : ComponentActivity() {
                         ImageGenPage()
                     }
 
-                    composable<Screen.Studio> {
-                        StudioPage()
+                    composable<Screen.Studio> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.Studio>()
+                        StudioPage(initialItemId = route.itemId)
                     }
 
                     composable<Screen.StoryStudio> { backStackEntry ->
@@ -1447,7 +1471,7 @@ sealed interface Screen {
     data object ImageGen : Screen
 
     @Serializable
-    data object Studio : Screen
+    data class Studio(val itemId: String? = null) : Screen
 
     @Serializable
     data class StoryStudio(val storyId: String? = null) : Screen

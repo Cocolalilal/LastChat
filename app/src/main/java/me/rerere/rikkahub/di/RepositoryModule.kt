@@ -169,6 +169,15 @@ val repositoryModule = module {
     }
 
     single {
+        me.rerere.rikkahub.data.repository.StudioHubRepository(
+            context = get(),
+            workspaceDao = get(),
+            storyStudioRepository = get(),
+            voiceMemoRepository = get(),
+        )
+    }
+
+    single {
         me.rerere.rikkahub.data.repository.AssistantMediaRepository(
             context = get(),
             tmdbService = get(),

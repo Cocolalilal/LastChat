@@ -165,6 +165,7 @@ class SettingsStore(
 
         // Voice Memos & Smart Mic
         val ENABLE_VOICE_MEMOS_MEMORY_BRIDGE = booleanPreferencesKey("enable_voice_memos_memory_bridge")
+        val ENABLE_STUDIO_HUB_BRIDGE = booleanPreferencesKey("enable_studio_hub_bridge")
         val SMART_MIC_PROFILES = stringPreferencesKey("smart_mic_profiles")
         val SELECTED_SMART_MIC_PROFILE = stringPreferencesKey("selected_smart_mic_profile")
 
@@ -281,6 +282,7 @@ class SettingsStore(
                         AssistantOverlayConfig(),
                     ),
                     enableVoiceMemosMemoryBridge = preferences[ENABLE_VOICE_MEMOS_MEMORY_BRIDGE] ?: true,
+                    enableStudioHubBridge = preferences[ENABLE_STUDIO_HUB_BRIDGE] ?: true,
                     smartMicProfiles = decodePreferenceList(preferences[SMART_MIC_PROFILES]) ?: DEFAULT_SMART_MIC_PROFILES,
                     selectedSmartMicProfileId = preferences[SELECTED_SMART_MIC_PROFILE] ?: "raw_dictation",
                     tmdbSetting = decodePreferenceValue(preferences[TMDB_SETTING], TmdbSetting()),
@@ -750,6 +752,7 @@ class SettingsStore(
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
             preferences[ASSISTANT_OVERLAY_CONFIG] = JsonInstant.encodeToString(normalizedSettings.assistantOverlayConfig)
             preferences[ENABLE_VOICE_MEMOS_MEMORY_BRIDGE] = normalizedSettings.enableVoiceMemosMemoryBridge
+            preferences[ENABLE_STUDIO_HUB_BRIDGE] = normalizedSettings.enableStudioHubBridge
             preferences[SMART_MIC_PROFILES] = JsonInstant.encodeToString(normalizedSettings.smartMicProfiles)
             preferences[SELECTED_SMART_MIC_PROFILE] = normalizedSettings.selectedSmartMicProfileId
             preferences[TMDB_SETTING] = JsonInstant.encodeToString(normalizedSettings.tmdbSetting)

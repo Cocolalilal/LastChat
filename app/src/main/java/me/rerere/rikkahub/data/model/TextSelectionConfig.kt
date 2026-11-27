@@ -36,6 +36,8 @@ data class TextSelectionAction(
     // Optional per-preset overrides (null = inherit from TextSelectionConfig)
     val enableMemoryReadOverride: Boolean? = null,
     val enableToolsOverride: Boolean? = null,
+    val saveToStudio: Boolean = false,
+    val autoSummarizeOnSave: Boolean = false,
 )
 
 val DEFAULT_TEXT_SELECTION_ACTIONS = listOf(
@@ -76,5 +78,14 @@ val DEFAULT_TEXT_SELECTION_ACTIONS = listOf(
             User's question: {{custom_prompt}}
         """.trimIndent(),
         isCustomPrompt = true,
-    )
+    ),
+    TextSelectionAction(
+        id = "save_to_studio",
+        name = "Save to Studio",
+        icon = "BookmarkAdd",
+        prompt = "Save the selected text or shared image directly to Studio Hub.",
+        isCustomPrompt = true,
+        allowContinueInChat = false,
+        saveToStudio = true,
+    ),
 )

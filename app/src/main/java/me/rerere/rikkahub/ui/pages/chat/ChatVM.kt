@@ -59,6 +59,8 @@ import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.PythonPluginManager
+import me.rerere.rikkahub.data.repository.StudioHubItem
+import me.rerere.rikkahub.data.repository.StudioHubRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.service.ChatService
@@ -92,6 +94,7 @@ class ChatVM(
     private val modelMetadataResolver: ModelMetadataResolver,
     private val workspaceRepository: WorkspaceRepository,
     private val pythonPluginManager: PythonPluginManager,
+    private val studioHubRepository: StudioHubRepository? = null,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
@@ -223,6 +226,12 @@ class ChatVM(
                 servers.keys,
             ).hashCode()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    val studioHubItems: StateFlow<List<StudioHubItem>> =
+        studioHubRepository?.itemsFlow ?: MutableStateFlow(emptyList())
+
+    val studioHubRevision: StateFlow<Int> =
+        studioHubRepository?.revisionFlow ?: MutableStateFlow(0)
 
     // 网络搜索 - 从当前会话助手的searchMode派生
     val enableWebSearch = conversationContext.map { context ->

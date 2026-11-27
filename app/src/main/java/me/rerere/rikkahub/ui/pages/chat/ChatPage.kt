@@ -172,6 +172,7 @@ import me.rerere.rikkahub.data.ai.buildContextMapEntries
 import me.rerere.rikkahub.data.ai.buildPromptInjectionBundle
 import me.rerere.rikkahub.data.ai.computePreRequestToolAccounting
 import me.rerere.rikkahub.data.ai.contextUsageSourceKey
+import me.rerere.rikkahub.data.repository.StudioHubItem
 import me.rerere.rikkahub.data.ai.formatSkillsAccountingText
 import me.rerere.rikkahub.data.ai.renderMemorySummarySection
 import me.rerere.rikkahub.data.ai.resolveActiveSkillIds
@@ -1085,7 +1086,7 @@ fun ChatPage(
                                             current = conversation,
                                             settings = setting,
                                             onExpand = { isWidePanelCollapsed = false },
-                                            onOpenImageGen = { navController.navigate(Screen.Studio) },
+                                            onOpenImageGen = { navController.navigate(Screen.Studio()) },
                                             onOpenStatistics = { navController.navigate(Screen.Menu) },
                                             onOpenSettings = { navController.navigate(Screen.Setting) },
                                             onOpenAssistant = {
@@ -1383,6 +1384,8 @@ private fun ChatPageContent(
     val assistantMemorySummary by vm.assistantMemorySummary.collectAsStateWithLifecycle()
     val boundWorkspace by vm.boundWorkspace.collectAsStateWithLifecycle()
     val pythonExtensionsRevision by vm.pythonExtensionsRevision.collectAsStateWithLifecycle()
+    val studioHubItems by vm.studioHubItems.collectAsStateWithLifecycle()
+    val studioHubRevision by vm.studioHubRevision.collectAsStateWithLifecycle()
     val contextMeterUsage = rememberContextMeterUsage(
         enabled = setting.displaySetting.showContextTokenSummary,
         model = currentChatModel,
@@ -1393,6 +1396,8 @@ private fun ChatPageContent(
         memorySummary = assistantMemorySummary,
         boundWorkspace = boundWorkspace,
         pythonExtensionsRevision = pythonExtensionsRevision,
+        studioHubItems = studioHubItems,
+        studioHubRevision = studioHubRevision,
         persistenceMode = activePersistenceMode,
         pendingParts = inputState.getContents(),
         requestUsage = requestContextUsage,
@@ -3232,6 +3237,8 @@ private fun rememberContextMeterUsage(
     memorySummary: MemorySummaryEntity? = null,
     boundWorkspace: WorkspaceEntity? = null,
     pythonExtensionsRevision: Int = 0,
+    studioHubItems: List<StudioHubItem> = emptyList(),
+    studioHubRevision: Int = 0,
 ): ContextUsageBreakdown? {
     if (!enabled) return null
     val activeModel = model?.takeIf { (it.contextCapacityTokens ?: 0) > 0 } ?: return null
@@ -3291,6 +3298,7 @@ private fun rememberContextMeterUsage(
         memoryRevision,
         memorySummaryRevision,
         pythonExtensionsRevision,
+        studioHubRevision,
     ) {
         contextUsageSourceKey(
             conversation = conversation,
@@ -3300,6 +3308,7 @@ private fun rememberContextMeterUsage(
             memoryRevision = memoryRevision,
             memorySummaryRevision = memorySummaryRevision,
             pythonExtensionsRevision = pythonExtensionsRevision,
+            studioHubRevision = studioHubRevision,
         )
     }
     val matchingRequestUsage = requestUsage?.takeIf { usage -> usage.sourceKey == sourceKey }
@@ -3484,6 +3493,7 @@ private fun rememberContextMeterUsage(
         messages,
         toolAccounting.toolNames,
         conversation.enabledInstructionIds,
+        studioHubItems,
     ) {
         buildPromptInjectionBundle(
             assistant = assistant,
@@ -3494,6 +3504,7 @@ private fun rememberContextMeterUsage(
             hasVisualTool = toolAccounting.toolNames.any { it in VISUAL_TOOL_NAMES },
             conversationEnabledInstructionIds = conversation.enabledInstructionIds,
             allowGlobalPromptInjections = true,
+            studioItems = studioHubItems,
         )
     }
     val memorySummaryText = remember(memoryContextEnabled, assistant.enableMemorySummary, memorySummary) {

@@ -32,7 +32,17 @@ val appModule = module {
     }
 
     single {
-        LocalTools(get(), get(), get(), get(), get(), tmdbService = getOrNull())
+        LocalTools(
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            tmdbService = getOrNull(),
+            studioHubRepository = getOrNull(),
+            storyStudioRepository = getOrNull(),
+            voiceMemoRepository = getOrNull(),
+        )
     }
 
     single {
@@ -79,6 +89,7 @@ val appModule = module {
             mcpManager = get(),
             platformHttpClient = get(),
             pythonPluginManager = get(),
+            studioHubRepository = getOrNull(),
         )
     }
 

@@ -314,6 +314,24 @@ private fun DefaultSTTModelSetting(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
 
+                // Studio Hub AI Bridge Toggle
+                FormItem(
+                    label = { Text("Studio Hub AI Bridge") },
+                    description = { Text("Allow AI assistants to view your Studio Hub catalog and manage notes, tasks, and reminders") },
+                    tail = {
+                        me.rerere.rikkahub.ui.components.ui.HapticSwitch(
+                            checked = settings.enableStudioHubBridge,
+                            onCheckedChange = { newValue ->
+                                vm.updateSettings { current ->
+                                    current.copy(enableStudioHubBridge = newValue)
+                                }
+                            }
+                        )
+                    }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
                 // Smart Mic Profiles Heading & Add Button
                 Row(
                     modifier = Modifier.fillMaxWidth(),

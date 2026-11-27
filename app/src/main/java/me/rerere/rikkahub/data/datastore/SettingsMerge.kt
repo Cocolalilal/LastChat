@@ -161,6 +161,11 @@ fun mergeSettingsEdit(base: Settings, edited: Settings, latest: Settings): Setti
             edited.enableVoiceMemosMemoryBridge,
             latest.enableVoiceMemosMemoryBridge,
         ),
+        enableStudioHubBridge = selectEditedValue(
+            base.enableStudioHubBridge,
+            edited.enableStudioHubBridge,
+            latest.enableStudioHubBridge,
+        ),
         smartMicProfiles = mergeSettingsValue(
             base.smartMicProfiles,
             edited.smartMicProfiles,
