@@ -821,3 +821,62 @@ On `composeBom = "2025.11.00"` (foundation 1.9.x) `SelectionContainer` reads **`
 - **Cadence pill alignment:** the hero metadata `FlowRow` uses `itemVerticalAlignment = Alignment.CenterVertically` and wraps the tappable pill in `CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified)`; otherwise Material's 48dp minimum touch target makes the `Auto: …` pill taller than its sibling pills and breaks the row baseline.
 - **Regression test:** `parseMemorySectionPatch_acceptsAliasKeysAndAppliesPatch` in `shared/src/commonTest/kotlin/me/rerere/rikkahub/data/memory/MemorySummaryModelsTest.kt` feeds the exact alias payload the model emitted — `{"action":"patch_operations","operations":[{"op":"delete_section","title":"..."},{"op":"update_section","title":"...","line_edits":[{"op":"replace","match":"...","content":"..."}]}]}` — through `parseMemorySectionPatch()` + `SummaryPatchEngine.applyPatch()`, asserting the section is deleted, the `match`/`content` edit lands, and untouched bullets keep their `[#ID]` pointers.
 - **Verification receipt (2026-11-26):** `de88c9aa` ran green on both workflows — Build Stable Release APK run `45857731038`, Build Debug APK run `45857730809`. Zero local Gradle invocations; per §21.8 the tablet cannot compile, CI for the pushed SHA is the only proof.
+
+---
+
+## 22. Architecture: Ask LastChat Overhaul & Interactive Full Context Map
+
+**Commit:** `c2ea5333` on `feat/memory-summary` (Build Stable Release APK run `46022856658`, completed success).
+
+### 1. Mandatory Context Map Invariant (Critical Rule)
+> **HARD RULE:** Every new feature or prompt injection that introduces content, instructions, tools, or memory into the model's context window MUST be registered in `PromptInjectionAccounting.kt`, tracked in `ContextUsageBreakdown`, and surfaced with its token share in the interactive Full Context Map (`ContextMapSheet.kt`). Zero silent leakage into `conversationTokens` is permitted.
+
+### 2. Part 1 — Ask LastChat (Text Selection & Share Quick-Ask) Overhaul
+1. **Live Thinking & Reasoning Trace Capture (`TextSelectionVM.kt`, `TextSelectionSheet.kt`):**
+   - Captured both `UIMessagePart.Reasoning` and `UIMessagePart.Thinking` into `TextSelectionState.Result` with `reasoningStartedAtMs`, `reasoningFinishedAtMs`, `reasoningDurationMs`, `isReasoning`, and `isThinkingExpanded`.
+   - Replaced static `"..."` in `TextSelectionSheet.kt` with an interactive `QuickAskThinkingCard` featuring Jakub Antalik's `ThinkingOrb` (animated particle orbits while reasoning, settled icon when complete), live elapsed seconds countdown (`Thinking… Xs` / `Thought for Xs`), faded single-line preview of the latest reasoning delta when collapsed, and smooth spring-eased expandable markdown trace.
+2. **Dedicated Conversation Continuation Contract (`QuickAskSupport.kt`, `RouteActivity.kt`):**
+   - Eliminated race conditions and chat appending on recent conversations (`conversationRepo.getRecentConversations`).
+   - Prior to launching `RouteActivity`, `viewModel.persistAndPrepareChatContinuation()` constructs and persists a clean `Conversation` via `chatService.saveConversation(conversationId, conversation)` preserving the user prompt, attachments, `UIMessagePart.Reasoning`, `UIMessagePart.Text`, and a clean generated title (`ActionName: Text snippet`).
+   - Launches `RouteActivity` with `FLAG_ACTIVITY_NEW_TASK or FLAG_ACTIVITY_CLEAR_TOP or FLAG_ACTIVITY_SINGLE_TOP`, passing `EXTRA_CONVERSATION_ID` and `EXTRA_ASSISTANT_ID`. Handled in both `onCreate` and `onNewIntent` to select the character and navigate directly to `Screen.Chat`.
+3. **Execution Isolation & Low-Latency Quick Ask (`QuickAskIsolationOptions`, `GenerationHandler.kt`):**
+   - Quick Ask defaults to isolated mode (`enableMemoryRead = false`, `enableMemoryWrite = false`, `enableTools = false`, `enableExtraPromptInjections = false`, `inheritAssistantSystemPrompt = false`, `maxSteps = 1`).
+   - When memory read is off, skips RAG embeddings and database loading entirely.
+   - When tools are off, disables memory mutation tools (`create_memory`, `edit_memory`, `delete_memory`, `manage_memory_summary`, `manage_skills`), preventing accidental memory pollution from quick selections.
+   - When prompt injections are off, strips global feature prompts (Artifacts, TMDB, Voice Memos, Instructions, Time Awareness, Learning Mode).
+4. **Explicit Assistant Selection:**
+   - Added `isTextSelectionFollowingActiveAssistant` and updated `SettingAndroidIntegrationPage.kt` so the selector shows `"Active (<AssistantName>)"` when `assistantId == null`, matching runtime fallback behavior 100%.
+5. **Dynamic Presets & Full Preset CRUD:**
+   - Dropped hardcoded 4-item `QuickAction` enum from the floating sheet; drove grid dynamically from `settings.textSelectionConfig.actions.filter { it.enabled }`.
+   - Upgraded `SettingAndroidIntegrationPage.kt` with live `PreviewCard`, "Add Preset" button, `PhysicsSwipeToDelete` with Undo toast, reorder controls (`Move Up`/`Move Down`), icon picker (14 curated Material icons via `QuickAskIcons.kt`), prompt editor with `{{language}}` and `{{custom_prompt}}` chips, user input requirement switch (`isCustomPrompt`), continue-in-chat switch (`allowContinueInChat`), and per-preset Memory/Tools overrides (`Inherit`, `On`, `Off`).
+
+### 3. Part 2 — Context Window Accuracy & Interactive Full Context Map
+1. **Unified Prompt Accounting (`PromptInjectionAccounting.kt`):**
+   - Extracted shared prompt measurement logic called from **both** `GenerationHandler.buildMessages(...)` and `ChatPage.rememberContextMeterUsage(...)` so pre-request estimates and post-request accounting agree without drift.
+   - Fixed missing and leaking injections:
+     - **Custom Instructions** (`customInstructionsTokens`, `ContextMapCategory.CUSTOM_INSTRUCTIONS`)
+     - **Memory Summary Profile** (`memorySummaryTokens`, `ContextMapCategory.MEMORY_SUMMARY`)
+     - **In-World Visual Artifacts** (`featurePromptsTokens`, `ContextMapCategory.FEATURE_PROMPTS`)
+     - **TMDB Media Tools & Prompt** (`featurePromptsTokens` + pre-request tools accounting)
+     - **Voice Memos Memory Bridge** (`featurePromptsTokens`)
+     - **Time Awareness Block** (`featurePromptsTokens`)
+     - **Visual Tool Privacy Guidelines** (`featurePromptsTokens`)
+     - **Skill Bundled Resources Manifest** (counted in `skillTokens`)
+     - **Tool Definitions** (pre-request accounting includes Local, Search, MCP, Workspace, and Python extensions)
+2. **Context Window Indicator & Full Context Map UI (`ContextMapSheet.kt`, `ChatPage.kt`):**
+   - Added `"Full context map"` action pill at the bottom of `ContextUsagePopupContent` and enabled tapping any legend item to open the map focused on that category.
+   - `ContextMapSheet.kt` presents an animated proportional hero bar, total used / usable / reserved / free summary, confidence badge, and labeled section cards with sub-item drilldown and one-tap deep-link navigation:
+     - *System Prompt & Learning Mode* $\rightarrow$ `Screen.AssistantDetail(id, startRoute = PROMPTS)`
+     - *Custom Instructions* $\rightarrow$ `Screen.SettingInstructions`
+     - *Memory Summary Profile* $\rightarrow$ `Screen.MemorySummary(assistantId)`
+     - *Long-Term Memories* $\rightarrow$ `Screen.AssistantDetail(id, startRoute = MEMORY)`
+     - *Conversation Summary* $\rightarrow$ `ContextManagementDialog`
+     - *Skills & Modes* $\rightarrow$ `Screen.SettingSkills` (with chip to assistant skills tab)
+     - *Lorebooks* $\rightarrow$ `Screen.SettingLorebooks` / `Screen.SettingLorebookDetail(id)`
+     - *Built-in Feature Prompts* $\rightarrow$ deep-links to Artifacts, TMDB, Voice Memos, and Advanced settings
+     - *Tool Definitions* $\rightarrow$ Local Tools, MCP, Workspaces
+     - *Conversation History / Tool Calls / Media* $\rightarrow$ `ContextManagementDialog`
+     - *Reserved Output & Safety Buffer* $\rightarrow$ `Screen.AssistantDetail(id, startRoute = MODEL)` or context limit editor.
+3. **Deep-Linking Architecture (`AssistantDetailPage.kt`):**
+   - Exposed `AssistantDetailRoutes.DEEP_LINK_ROUTES` (`PROMPTS`, `MODEL`, `CONTEXT_MANAGEMENT`, `LOREBOOKS`, `SKILLS`, `TOOLS`, `MEMORY`, `UI`, `ADVANCED`) so `startRoute` navigation works cleanly across all sub-pages.
+
