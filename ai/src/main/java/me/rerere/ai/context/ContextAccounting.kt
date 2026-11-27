@@ -33,23 +33,55 @@ private fun saturatedTokenSum(values: Iterable<Int>): Int = values
     .coerceAtMost(Int.MAX_VALUE.toLong())
     .toInt()
 
+enum class ContextMapCategory {
+    SYSTEM_PROMPT,
+    CUSTOM_INSTRUCTIONS,
+    MEMORY_SUMMARY,
+    MEMORIES,
+    CONVERSATION_SUMMARY,
+    SKILLS_MODES,
+    LOREBOOKS,
+    FEATURE_PROMPTS,
+    TOOL_DEFINITIONS,
+    TOOL_CALLS,
+    CONVERSATION,
+    MEDIA,
+    RESERVED,
+}
+
+data class ContextMapEntry(
+    val category: ContextMapCategory,
+    val id: String,
+    val label: String,
+    val subtitle: String? = null,
+    val tokens: Int,
+    val itemCount: Int? = null,
+    val isEstimated: Boolean = false,
+)
+
 data class ContextUsageBreakdown(
     val conversationTokens: Int = 0,
     val systemPromptTokens: Int = 0,
+    val customInstructionsTokens: Int = 0,
+    val memorySummaryTokens: Int = 0,
     val summaryTokens: Int = 0,
     val memoryTokens: Int = 0,
     val skillTokens: Int = 0,
     val lorebookTokens: Int = 0,
+    val featurePromptsTokens: Int = 0,
     val toolDefinitionTokens: Int = 0,
     val toolCallTokens: Int = 0,
     val mediaTokens: Int = 0,
     val usedTokens: Int = saturatedTokenSum(
         conversationTokens,
         systemPromptTokens,
+        customInstructionsTokens,
+        memorySummaryTokens,
         summaryTokens,
         memoryTokens,
         skillTokens,
         lorebookTokens,
+        featurePromptsTokens,
         toolDefinitionTokens,
         toolCallTokens,
         mediaTokens,
@@ -61,6 +93,7 @@ data class ContextUsageBreakdown(
     val maxImages: Int? = null,
     val confidence: ContextCountConfidence = ContextCountConfidence.ESTIMATED,
     val sourceKey: Int? = null,
+    val mapEntries: List<ContextMapEntry> = emptyList(),
 ) {
     /** Capacity intentionally unavailable to prompt content (response reserve, safety, input cap). */
     val reservedTokens: Int get() = (totalTokens - usableInputTokens).coerceAtLeast(0)
@@ -100,36 +133,57 @@ object ContextTokenEstimator {
         fun scaled(value: Int) = (value * scale).toInt().coerceAtLeast(0)
         val conversation = scaled(breakdown.conversationTokens)
         val system = scaled(breakdown.systemPromptTokens)
+        val customInstructions = scaled(breakdown.customInstructionsTokens)
+        val memorySummary = scaled(breakdown.memorySummaryTokens)
         val summary = scaled(breakdown.summaryTokens)
         val memory = scaled(breakdown.memoryTokens)
         val skills = scaled(breakdown.skillTokens)
         val lorebook = scaled(breakdown.lorebookTokens)
+        val featurePrompts = scaled(breakdown.featurePromptsTokens)
         val toolDefinitions = scaled(breakdown.toolDefinitionTokens)
         val toolCalls = scaled(breakdown.toolCallTokens)
         val media = scaled(breakdown.mediaTokens)
         val roundingResidual = (promptTokens - saturatedTokenSum(
             conversation,
             system,
+            customInstructions,
+            memorySummary,
             summary,
             memory,
             skills,
             lorebook,
+            featurePrompts,
             toolDefinitions,
             toolCalls,
             media,
         )).coerceAtLeast(0)
+        val scaledEntries = if (breakdown.mapEntries.isEmpty()) {
+            emptyList()
+        } else {
+            breakdown.mapEntries.map { entry ->
+                if (entry.category == ContextMapCategory.RESERVED) {
+                    entry
+                } else {
+                    entry.copy(tokens = scaled(entry.tokens))
+                }
+            }
+        }
         return breakdown.copy(
             conversationTokens = conversation + roundingResidual,
             systemPromptTokens = system,
+            customInstructionsTokens = customInstructions,
+            memorySummaryTokens = memorySummary,
             summaryTokens = summary,
             memoryTokens = memory,
             skillTokens = skills,
             lorebookTokens = lorebook,
+            featurePromptsTokens = featurePrompts,
             toolDefinitionTokens = toolDefinitions,
             toolCallTokens = toolCalls,
             mediaTokens = media,
             usedTokens = promptTokens,
             confidence = confidence,
+            mapEntries = scaledEntries,
         )
     }
 
@@ -255,21 +309,28 @@ object ContextTokenEstimator {
         messages: List<UIMessage>,
         model: Model,
         systemPromptText: String = "",
+        customInstructionsText: String = "",
+        memorySummaryText: String = "",
         summaryText: String = "",
         memoryText: String = "",
         skillText: String = "",
         lorebookText: String = "",
+        featurePromptsText: String = "",
         toolDefinitionText: String = "",
         embeddedToolText: String = "",
         namedContextEmbeddedInMessages: Boolean = false,
         pendingParts: List<UIMessagePart> = emptyList(),
+        customInstructionsTokensOverride: Int? = null,
+        memorySummaryTokensOverride: Int? = null,
         memoryTokensOverride: Int? = null,
         skillTokensOverride: Int? = null,
         lorebookTokensOverride: Int? = null,
+        featurePromptsTokensOverride: Int? = null,
         toolDefinitionTokensOverride: Int? = null,
         providerPromptTokens: Int? = null,
         usableInputTokens: Int? = null,
         sourceKey: Int? = null,
+        mapEntries: List<ContextMapEntry> = emptyList(),
     ): ContextUsageBreakdown {
         var messageText = 0
         var toolCalls = 0
@@ -308,10 +369,16 @@ object ContextTokenEstimator {
             .toInt()
         messageText = saturatedTokenSum(messageText, framingTokens)
         val systemPrompt = textTokens(systemPromptText, model)
+        val customInstructions = customInstructionsTokensOverride?.coerceAtLeast(0)
+            ?: textTokens(customInstructionsText, model)
+        val memorySummary = memorySummaryTokensOverride?.coerceAtLeast(0)
+            ?: textTokens(memorySummaryText, model)
         val summary = textTokens(summaryText, model)
         val memories = memoryTokensOverride?.coerceAtLeast(0) ?: textTokens(memoryText, model)
         val skills = skillTokensOverride?.coerceAtLeast(0) ?: textTokens(skillText, model)
         val lorebook = lorebookTokensOverride?.coerceAtLeast(0) ?: textTokens(lorebookText, model)
+        val featurePrompts = featurePromptsTokensOverride?.coerceAtLeast(0)
+            ?: textTokens(featurePromptsText, model)
         val embeddedTools = textTokens(embeddedToolText, model)
         val toolDefinitions = saturatedTokenSum(
             toolDefinitionTokensOverride?.coerceAtLeast(0)
@@ -321,7 +388,17 @@ object ContextTokenEstimator {
         // Request accounting names text already embedded in built messages; live UI accounting
         // supplies raw conversation messages, so its named context must be added independently.
         val embeddedNamedTokens = if (namedContextEmbeddedInMessages) {
-            systemPrompt + summary + memories + skills + lorebook + embeddedTools
+            saturatedTokenSum(
+                systemPrompt,
+                customInstructions,
+                memorySummary,
+                summary,
+                memories,
+                skills,
+                lorebook,
+                featurePrompts,
+                embeddedTools,
+            )
         } else {
             0
         }
@@ -329,10 +406,13 @@ object ContextTokenEstimator {
         val estimatedTotal = saturatedTokenSum(
             conversation,
             systemPrompt,
+            customInstructions,
+            memorySummary,
             summary,
             memories,
             skills,
             lorebook,
+            featurePrompts,
             toolDefinitions,
             toolCalls,
             media,
@@ -340,13 +420,27 @@ object ContextTokenEstimator {
         val confirmedTotal = providerPromptTokens?.takeIf { it > 0 }
         val scale = if (confirmedTotal != null && estimatedTotal > 0) confirmedTotal.toDouble() / estimatedTotal else 1.0
         fun scaled(value: Int) = (value * scale).toInt().coerceAtLeast(0)
+        val scaledEntries = if (mapEntries.isEmpty() || scale == 1.0) {
+            mapEntries
+        } else {
+            mapEntries.map { entry ->
+                if (entry.category == ContextMapCategory.RESERVED) {
+                    entry
+                } else {
+                    entry.copy(tokens = scaled(entry.tokens))
+                }
+            }
+        }
         return ContextUsageBreakdown(
             conversationTokens = scaled(conversation),
             systemPromptTokens = scaled(systemPrompt),
+            customInstructionsTokens = scaled(customInstructions),
+            memorySummaryTokens = scaled(memorySummary),
             summaryTokens = scaled(summary),
             memoryTokens = scaled(memories),
             skillTokens = scaled(skills),
             lorebookTokens = scaled(lorebook),
+            featurePromptsTokens = scaled(featurePrompts),
             toolDefinitionTokens = scaled(toolDefinitions),
             toolCallTokens = scaled(toolCalls),
             mediaTokens = scaled(media),
@@ -360,6 +454,7 @@ object ContextTokenEstimator {
             maxImages = model.maxImagesInContext?.takeIf { it > 0 },
             confidence = if (confirmedTotal != null) ContextCountConfidence.PROVIDER_COUNTED else ContextCountConfidence.ESTIMATED,
             sourceKey = sourceKey,
+            mapEntries = scaledEntries,
         )
     }
 

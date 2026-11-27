@@ -81,7 +81,7 @@ import me.rerere.rikkahub.ui.components.ui.ToastAction
 
 
 // Sub-routes within assistant detail
-private object AssistantDetailRoutes {
+internal object AssistantDetailRoutes {
     const val HOME = "home"
     const val PROFILE = "profile"
     const val MODEL = "model"
@@ -93,6 +93,19 @@ private object AssistantDetailRoutes {
     const val MEMORY = "memory"
     const val UI = "ui"
     const val ADVANCED = "advanced"
+
+    val DEEP_LINK_ROUTES = setOf(
+        PROFILE,
+        MODEL,
+        PROMPTS,
+        CONTEXT_MANAGEMENT,
+        LOREBOOKS,
+        SKILLS,
+        TOOLS,
+        MEMORY,
+        UI,
+        ADVANCED,
+    )
 }
 
 @Composable
@@ -194,11 +207,12 @@ fun AssistantDetailPage(
         }
     }
     
-    // Auto-navigate to start route if specified (e.g., for deep linking to memory)
+    // Auto-navigate to start route if specified (e.g., deep linking from Context Map or Memory)
     LaunchedEffect(startRoute) {
-        if (startRoute == AssistantDetailRoutes.MEMORY) {
-            navController.navigate(AssistantDetailRoutes.MEMORY) {
+        if (startRoute != null && startRoute in AssistantDetailRoutes.DEEP_LINK_ROUTES) {
+            navController.navigate(startRoute) {
                 popUpTo(AssistantDetailRoutes.HOME) { inclusive = false }
+                launchSingleTop = true
             }
         }
     }

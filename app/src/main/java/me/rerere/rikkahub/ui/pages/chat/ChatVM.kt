@@ -52,10 +52,14 @@ import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.replaceRegexes
+import me.rerere.rikkahub.data.db.entity.MemorySummaryEntity
+import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.repository.PythonPluginManager
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
@@ -86,6 +90,8 @@ class ChatVM(
     private val appScope: me.rerere.rikkahub.AppScope,
     private val appStorageRepository: AppStorageRepository,
     private val modelMetadataResolver: ModelMetadataResolver,
+    private val workspaceRepository: WorkspaceRepository,
+    private val pythonPluginManager: PythonPluginManager,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
@@ -94,6 +100,11 @@ class ChatVM(
         .distinctUntilChanged()
         .flatMapLatest(memoryRepository::getCombinedMemoriesFlow)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val assistantMemorySummary: StateFlow<MemorySummaryEntity?> = conversation
+        .map { current -> current.assistantId.toString() }
+        .distinctUntilChanged()
+        .flatMapLatest(memoryRepository::getMemorySummaryFlow)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val contextUsage: StateFlow<ContextUsageBreakdown?> = chatService.contextUsage
         .map { usageByConversation -> usageByConversation[_conversationId] }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -189,6 +200,29 @@ class ChatVM(
         conversationContext
             .map { it.assistant }
             .stateIn(viewModelScope, SharingStarted.Lazily, conversationContext.value.assistant)
+
+    val boundWorkspace: StateFlow<WorkspaceEntity?> =
+        combine(
+            conversationAssistant.map { it.workspaceId?.toString() }.distinctUntilChanged(),
+            workspaceRepository.listFlow(),
+        ) { workspaceId, workspaces ->
+            workspaceId?.let { id -> workspaces.firstOrNull { it.id == id } }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val pythonExtensionsRevision: StateFlow<Int> =
+        combine(
+            boundWorkspace,
+            pythonPluginManager.uiState,
+            pythonPluginManager.runningServers,
+        ) { workspace, uiState, servers ->
+            listOf(
+                workspace?.id,
+                workspace?.shellStatus,
+                workspace?.updatedAt,
+                uiState,
+                servers.keys,
+            ).hashCode()
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     // 网络搜索 - 从当前会话助手的searchMode派生
     val enableWebSearch = conversationContext.map { context ->

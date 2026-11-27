@@ -1694,6 +1694,11 @@ class ChatService(
                     val memoryRevision = memoryRevisionCandidates.map { memory ->
                         listOf(memory.id, memory.content, memory.type, memory.timestamp)
                     }.hashCode()
+                    val memorySummaryRevision = if (assistant.enableMemory && assistant.enableMemorySummary) {
+                        memoryRepo.getMemorySummary(assistant.id.toString())?.let { summary ->
+                            listOf(summary.rawMarkdown, summary.updatedAt).hashCode()
+                        } ?: 0
+                    } else 0
                     // start generating
                     generationHandler.generateText(
                 settings = settings,
@@ -1727,7 +1732,14 @@ class ChatService(
                 contextSummaryUpToIndex = conversation.contextSummaryUpToIndex,
                 contextBudgetScale = contextBudgetScale,
                 contextUsageSourceKey = if (assistantRegeneration == null && messageRange == null) {
-                    contextUsageSourceKey(conversation, assistant, model, settings, memoryRevision)
+                    contextUsageSourceKey(
+                        conversation = conversation,
+                        assistant = assistant,
+                        model = model,
+                        settings = settings,
+                        memoryRevision = memoryRevision,
+                        memorySummaryRevision = memorySummaryRevision,
+                    )
                 } else {
                     null
                 },

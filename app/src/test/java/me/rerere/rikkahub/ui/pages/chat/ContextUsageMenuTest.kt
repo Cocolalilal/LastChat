@@ -18,6 +18,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import dev.chrisbanes.haze.rememberHazeState
+import me.rerere.ai.context.ContextMapCategory
 import me.rerere.ai.context.ContextUsageBreakdown
 import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.ui.hooks.PremiumHaptics
@@ -57,6 +58,56 @@ class ContextUsageMenuTest {
 
     @Test fun topMenuRetainsBreakdownAndLimitEditor() = exerciseMenu(ChatToolbarPlacement.Top, true)
     @Test fun bottomMenuRetainsBreakdownAndLimitEditor() = exerciseMenu(ChatToolbarPlacement.Bottom, false)
+
+    @Test
+    fun usageMenuDisplaysNewBucketsAndOpensFullContextMap() {
+        val usage = ContextUsageBreakdown(
+            conversationTokens = 2_000,
+            systemPromptTokens = 400,
+            customInstructionsTokens = 300,
+            memorySummaryTokens = 500,
+            featurePromptsTokens = 600,
+            totalTokens = 32_000,
+            usableInputTokens = 28_000,
+        )
+        val openedFocus = mutableListOf<ContextMapCategory?>()
+        compose.setContent {
+            var open by remember { mutableStateOf(true) }
+            val haze = rememberHazeState()
+            MaterialTheme(
+                colorScheme = findPresetTheme(SeafoamMintThemeId).getColorScheme(true),
+                shapes = Shapes,
+                typography = Typography,
+            ) {
+                CompositionLocalProvider(
+                    LocalLastChatBlur provides LastChatBlur(false, haze),
+                    LocalMotionPolicy provides MotionPolicy(reduceMotion = true),
+                    LocalDarkMode provides true,
+                ) {
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                        ContextUsageMenu(
+                            visible = open,
+                            usage = usage,
+                            model = Model(modelId = "chat", contextWindowTokens = 32_000),
+                            placement = ChatToolbarPlacement.Top,
+                            onUpdateModelLimit = {},
+                            onOpenContextMap = { focus -> openedFocus += focus },
+                            onDismissRequest = { open = false },
+                            haptics = noHaptics,
+                        )
+                    }
+                }
+            }
+        }
+        compose.mainClock.autoAdvance = false
+        frames()
+        compose.onNodeWithText("Instructions 300").assertIsDisplayed()
+        compose.onNodeWithText("Memory profile 500").assertIsDisplayed()
+        compose.onNodeWithText("Features 600").assertIsDisplayed()
+        compose.onNodeWithText("Full context map").performClick()
+        frames()
+        assertEquals(listOf<ContextMapCategory?>(null), openedFocus)
+    }
 
     private fun exerciseMenu(placement: ChatToolbarPlacement, dark: Boolean) {
         val usage = ContextUsageBreakdown(conversationTokens = 4_000, systemPromptTokens = 800,

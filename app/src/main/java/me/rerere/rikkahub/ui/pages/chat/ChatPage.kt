@@ -116,6 +116,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -140,6 +141,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.context.ContextCountConfidence
+import me.rerere.ai.context.ContextMapCategory
+import me.rerere.ai.context.ContextMapEntry
+import me.rerere.ai.context.ContextTokenEstimator
+import me.rerere.ai.context.ContextUsageBreakdown
 import me.rerere.ai.context.ContextTokenEstimator
 import me.rerere.ai.context.ContextUsageBreakdown
 import me.rerere.ai.context.calculateMinSafeFloorTokens
@@ -164,12 +169,17 @@ import me.rerere.rikkahub.data.datastore.TtsAutoplayMode
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
 import me.rerere.rikkahub.data.datastore.getEffectiveTtsAutoplayMode
+import me.rerere.rikkahub.data.ai.VISUAL_TOOL_NAMES
+import me.rerere.rikkahub.data.ai.buildContextMapEntries
+import me.rerere.rikkahub.data.ai.buildPromptInjectionBundle
+import me.rerere.rikkahub.data.ai.computePreRequestToolAccounting
 import me.rerere.rikkahub.data.ai.contextUsageSourceKey
-import me.rerere.rikkahub.data.ai.buildTimeAwarenessBlock
+import me.rerere.rikkahub.data.ai.formatSkillsAccountingText
+import me.rerere.rikkahub.data.ai.renderMemorySummarySection
 import me.rerere.rikkahub.data.ai.resolveActiveSkillIds
-import me.rerere.rikkahub.data.ai.tools.toDefinitionPreviews
 import me.rerere.rikkahub.data.ai.selectSmartMemoryContext
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
+import me.rerere.rikkahub.data.db.entity.MemorySummaryEntity
+import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Conversation
@@ -178,7 +188,13 @@ import me.rerere.rikkahub.data.model.ModeAttachmentType
 import me.rerere.rikkahub.navigation.CHAT_ROUTE_TARGET_KEY
 import me.rerere.rikkahub.navigation.ChatRouteTarget
 import me.rerere.rikkahub.data.repository.ChatAttachmentManager
+import me.rerere.rikkahub.ui.components.ai.ContextManagementDialog
+import me.rerere.rikkahub.ui.components.ai.ContextMapSheet
+import me.rerere.rikkahub.ui.components.ai.ContextOptimizationGlyph
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
+import me.rerere.rikkahub.ui.components.ai.contextCategoryColor
+import me.rerere.workspace.WorkspaceShellStatus
+import java.io.File
 import me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage
 import me.rerere.rikkahub.ui.components.avatar.animated.LocalAvatarStage
 import me.rerere.rikkahub.ui.components.avatar.animated.avatarTarget
@@ -1244,6 +1260,10 @@ private fun ChatPageContent(
     var pendingUserRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     var showToolbarOverflowMenu by remember { mutableStateOf(false) }
     var showContextUsagePopup by remember { mutableStateOf(false) }
+    var showContextMapSheet by remember(conversation.id) { mutableStateOf(false) }
+    var contextMapFocusCategory by remember { mutableStateOf<ContextMapCategory?>(null) }
+    var openUsagePopupInLimitEditMode by remember { mutableStateOf(false) }
+    var showContextManagementFromMap by remember(conversation.id) { mutableStateOf(false) }
     var isChatShareSelecting by rememberSaveable { mutableStateOf(false) }
     var selectedChatShareItems by remember(conversation.id) { mutableStateOf<Set<Uuid>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
@@ -1362,6 +1382,9 @@ private fun ChatPageContent(
     val requestContextUsage by vm.contextUsage.collectAsStateWithLifecycle()
     val contextCompressionStatus by vm.contextCompressionStatus.collectAsStateWithLifecycle()
     val assistantMemories by vm.assistantMemories.collectAsStateWithLifecycle()
+    val assistantMemorySummary by vm.assistantMemorySummary.collectAsStateWithLifecycle()
+    val boundWorkspace by vm.boundWorkspace.collectAsStateWithLifecycle()
+    val pythonExtensionsRevision by vm.pythonExtensionsRevision.collectAsStateWithLifecycle()
     val contextMeterUsage = rememberContextMeterUsage(
         enabled = setting.displaySetting.showContextTokenSummary,
         model = currentChatModel,
@@ -1369,6 +1392,9 @@ private fun ChatPageContent(
         assistant = currentAssistant,
         settings = setting,
         memoryCandidates = assistantMemories,
+        memorySummary = assistantMemorySummary,
+        boundWorkspace = boundWorkspace,
+        pythonExtensionsRevision = pythonExtensionsRevision,
         persistenceMode = activePersistenceMode,
         pendingParts = inputState.getContents(),
         requestUsage = requestContextUsage,
@@ -1376,7 +1402,10 @@ private fun ChatPageContent(
     )
 
     LaunchedEffect(contextMeterUsage) {
-        if (contextMeterUsage == null) showContextUsagePopup = false
+        if (contextMeterUsage == null) {
+            showContextUsagePopup = false
+            showContextMapSheet = false
+        }
     }
 
     LaunchedEffect(conversation.id) {
@@ -2114,10 +2143,57 @@ private fun ChatPageContent(
                     usage = usage,
                     model = currentChatModel,
                     placement = toolbarPlacement,
+                    initialEditingLimit = openUsagePopupInLimitEditMode,
                     onUpdateModelLimit = { limit ->
                         currentChatModel?.let { vm.updateModelContextLimit(it.id, limit) }
                     },
-                    onDismissRequest = { showContextUsagePopup = false },
+                    onOpenContextMap = { focusCategory ->
+                        openUsagePopupInLimitEditMode = false
+                        showContextUsagePopup = false
+                        contextMapFocusCategory = focusCategory
+                        showContextMapSheet = true
+                    },
+                    onDismissRequest = {
+                        openUsagePopupInLimitEditMode = false
+                        showContextUsagePopup = false
+                    },
+                )
+            }
+
+            if (showContextMapSheet && contextMeterUsage != null) {
+                ContextMapSheet(
+                    usage = contextMeterUsage,
+                    assistant = currentAssistant,
+                    model = currentChatModel,
+                    initialFocusCategory = contextMapFocusCategory,
+                    onNavigate = { screen ->
+                        showContextMapSheet = false
+                        navController.navigate(screen)
+                    },
+                    onOpenContextManagement = {
+                        showContextMapSheet = false
+                        showContextManagementFromMap = true
+                    },
+                    onOpenLimitEditor = {
+                        showContextMapSheet = false
+                        openUsagePopupInLimitEditMode = true
+                        showContextUsagePopup = true
+                    },
+                    onDismiss = { showContextMapSheet = false },
+                )
+            }
+
+            if (showContextManagementFromMap) {
+                ContextManagementDialog(
+                    conversation = conversation,
+                    assistant = currentAssistant,
+                    model = currentChatModel,
+                    usage = contextMeterUsage,
+                    status = contextCompressionStatus,
+                    onSummarize = vm::optimizeContext,
+                    onCancel = vm::cancelContextOptimization,
+                    onUpdateConversation = { vm.updateConversation(it) },
+                    onDismiss = { showContextManagementFromMap = false },
                 )
             }
 
@@ -3155,9 +3231,14 @@ private fun rememberContextMeterUsage(
     pendingParts: List<UIMessagePart>,
     requestUsage: ContextUsageBreakdown?,
     isGenerating: Boolean = false,
+    memorySummary: MemorySummaryEntity? = null,
+    boundWorkspace: WorkspaceEntity? = null,
+    pythonExtensionsRevision: Int = 0,
 ): ContextUsageBreakdown? {
     if (!enabled) return null
     val activeModel = model?.takeIf { (it.contextCapacityTokens ?: 0) > 0 } ?: return null
+    val context = LocalContext.current
+    val skillsRoot = remember(context) { File(context.filesDir, "skills") }
     var lastStableUsage by remember(conversation.id) { mutableStateOf<ContextUsageBreakdown?>(null) }
     val hasPendingInput = pendingParts.any { part ->
         part !is UIMessagePart.Text || part.text.isNotBlank()
@@ -3197,8 +3278,31 @@ private fun rememberContextMeterUsage(
             listOf(memory.id, memory.content, memory.type, memory.timestamp)
         }.hashCode()
     }
-    val sourceKey = remember(conversation, assistant, activeModel, settings, memoryRevision) {
-        contextUsageSourceKey(conversation, assistant, activeModel, settings, memoryRevision)
+    val memorySummaryRevision = remember(memoryContextEnabled, assistant.enableMemorySummary, memorySummary) {
+        if (memoryContextEnabled && assistant.enableMemorySummary && memorySummary != null) {
+            listOf(memorySummary.rawMarkdown, memorySummary.updatedAt).hashCode()
+        } else {
+            0
+        }
+    }
+    val sourceKey = remember(
+        conversation,
+        assistant,
+        activeModel,
+        settings,
+        memoryRevision,
+        memorySummaryRevision,
+        pythonExtensionsRevision,
+    ) {
+        contextUsageSourceKey(
+            conversation = conversation,
+            assistant = assistant,
+            model = activeModel,
+            settings = settings,
+            memoryRevision = memoryRevision,
+            memorySummaryRevision = memorySummaryRevision,
+            pythonExtensionsRevision = pythonExtensionsRevision,
+        )
     }
     val matchingRequestUsage = requestUsage?.takeIf { usage -> usage.sourceKey == sourceKey }
     if (!hasPendingInput && matchingRequestUsage != null) return matchingRequestUsage
@@ -3219,8 +3323,9 @@ private fun rememberContextMeterUsage(
         .filter { skill -> skill.isAvailableForAssistant(assistant.id) }
         .map { skill -> skill.id }
         .toSet()
+    val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(assistantAvailableSkillIds)
     val activeSkillIds = resolveActiveSkillIds(
-        assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(assistantAvailableSkillIds),
+        assistantDefaultSkillIds = assistantDefaultSkillIds,
         conversationSkillIds = conversation.enabledModeIds,
         turnScopedSkillIds = emptySet(),
         allSkillIds = allSkillIds,
@@ -3229,32 +3334,43 @@ private fun rememberContextMeterUsage(
             .map { skill -> skill.id }
             .toSet(),
     )
-    val activeLorebookIds = conversation.enabledLorebookIds ?: assistant.enabledLorebookIds
-    val activeLoreEntries = remember(settings.lorebooks, activeLorebookIds) {
-        settings.lorebooks
-            .filter { lorebook -> lorebook.enabled && lorebook.id in activeLorebookIds }
-            .flatMap { lorebook -> lorebook.entries.filter { it.enabled } }
+    val enabledSkills = remember(availableSkills, activeSkillIds) {
+        availableSkills.filter { skill -> skill.id in activeSkillIds }
     }
-    val deterministicLoreEntries = remember(activeLoreEntries, rawMessages) {
+    val activeLorebookIds = conversation.enabledLorebookIds ?: assistant.enabledLorebookIds
+    val activeLorebooks = remember(settings.lorebooks, activeLorebookIds) {
+        settings.lorebooks.filter { lorebook -> lorebook.enabled && lorebook.id in activeLorebookIds }
+    }
+    val activeLoreEntries = remember(activeLorebooks) {
+        activeLorebooks.flatMap { lorebook -> lorebook.entries.filter { it.enabled } }
+    }
+    val deterministicLoreEntriesWithBook = remember(activeLorebooks, rawMessages) {
         val recentText = rawMessages.takeLast(10).joinToString(" ") { message -> message.toText() }
-        activeLoreEntries.filter { entry ->
-            when (entry.activationType) {
-                LorebookActivationType.ALWAYS -> true
-                LorebookActivationType.RAG -> false
-                LorebookActivationType.KEYWORDS -> entry.keywords.any { keyword ->
-                    if (entry.useRegex) {
-                        runCatching {
-                            val options = if (entry.caseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
-                            Regex(keyword, options).containsMatchIn(recentText)
-                        }.getOrDefault(false)
-                    } else if (entry.caseSensitive) {
-                        recentText.contains(keyword)
-                    } else {
-                        recentText.contains(keyword, ignoreCase = true)
+        activeLorebooks.flatMap { lorebook ->
+            lorebook.entries
+                .filter { entry ->
+                    entry.enabled && when (entry.activationType) {
+                        LorebookActivationType.ALWAYS -> true
+                        LorebookActivationType.RAG -> false
+                        LorebookActivationType.KEYWORDS -> entry.keywords.any { keyword ->
+                            if (entry.useRegex) {
+                                runCatching {
+                                    val options = if (entry.caseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
+                                    Regex(keyword, options).containsMatchIn(recentText)
+                                }.getOrDefault(false)
+                            } else if (entry.caseSensitive) {
+                                recentText.contains(keyword)
+                            } else {
+                                recentText.contains(keyword, ignoreCase = true)
+                            }
+                        }
                     }
                 }
-            }
+                .map { entry -> lorebook to entry }
         }
+    }
+    val deterministicLoreEntries = remember(deterministicLoreEntriesWithBook) {
+        deterministicLoreEntriesWithBook.map { it.second }
     }
     fun loreEntryTokenCost(entry: me.rerere.rikkahub.data.model.LorebookEntry): Int =
         ContextTokenEstimator.textTokens(entry.prompt, activeModel) +
@@ -3305,15 +3421,8 @@ private fun rememberContextMeterUsage(
         conditionalContextCandidateTokens = conditionalContextCandidateTokens,
         observedConditionalTokenTotals = observedConditionalTokenTotals,
     )
-    val skillText = remember(availableSkills, activeSkillIds) {
-        buildString {
-            availableSkills
-                .filter { skill -> skill.id in activeSkillIds }
-                .forEach { skill ->
-                    appendLine(skill.name)
-                    appendLine(skill.instructions)
-                }
-        }
+    val skillText = remember(enabledSkills, skillsRoot) {
+        formatSkillsAccountingText(skillsRoot, enabledSkills)
     }
     val lorebookText = remember(deterministicLoreEntries) {
         deterministicLoreEntries.joinToString("\n") { entry -> entry.prompt }
@@ -3330,13 +3439,10 @@ private fun rememberContextMeterUsage(
         ModeAttachmentType.AUDIO -> UIMessagePart.Audio(url)
         ModeAttachmentType.DOCUMENT -> UIMessagePart.Document(url, fileName, mime)
     }
-    val knownContextAttachments = remember(availableSkills, activeSkillIds, deterministicLoreEntries) {
+    val knownContextAttachments = remember(enabledSkills, deterministicLoreEntries) {
         buildList {
-            availableSkills
-                .filter { skill -> skill.id in activeSkillIds }
-                .flatMapTo(this) { skill -> skill.attachments.map { it.toContextPart() } }
-            deterministicLoreEntries
-                .flatMapTo(this) { entry -> entry.attachments.map { it.toContextPart() } }
+            enabledSkills.flatMapTo(this) { skill -> skill.attachments.map { it.toContextPart() } }
+            deterministicLoreEntries.flatMapTo(this) { entry -> entry.attachments.map { it.toContextPart() } }
         }
     }
     val knownContextMediaTokens = remember(knownContextAttachments, activeModel) {
@@ -3344,84 +3450,82 @@ private fun rememberContextMeterUsage(
             ContextTokenEstimator.partTokens(part, activeModel)
         }
     }
+    val workspaceReady = boundWorkspace?.shellStatus == WorkspaceShellStatus.READY.name
     val toolAccounting = remember(
         activeModel,
-        assistant.localTools,
-        assistant.mcpServers,
-        settings.mcpServers,
+        assistant,
+        settings,
+        memoryContextEnabled,
+        availableSkills,
+        assistantDefaultSkillIds,
+        conversation.enabledModeIds,
+        workspaceReady,
+        pythonExtensionsRevision,
     ) {
-        if (ModelAbility.TOOL !in activeModel.abilities) return@remember "" to 0
-        val activeMcpTools = settings.mcpServers
-            .filter { server -> server.commonOptions.enable && server.id in assistant.mcpServers }
-            .flatMap { server -> server.commonOptions.tools.filter { tool -> tool.enable } }
-        val localPreviews = assistant.localTools.flatMap { it.toDefinitionPreviews() }
-        val definitionText = buildString {
-            localPreviews.forEach { tool ->
-                appendLine(
-                    ContextTokenEstimator.toolDefinitionText(
-                        name = tool.name,
-                        description = tool.description,
-                        schema = tool.schema,
-                    )
-                )
-            }
-            activeMcpTools.forEach { tool ->
-                appendLine(
-                    ContextTokenEstimator.toolDefinitionText(
-                        name = tool.name,
-                        description = tool.description.orEmpty(),
-                        schema = tool.inputSchema,
-                    )
-                )
-            }
-        }
-        val localTokens = localPreviews.sumOf { tool ->
-            ContextTokenEstimator.toolDefinitionTokens(
-                name = tool.name,
-                description = tool.description,
-                schema = tool.schema,
-                model = activeModel,
-            ).toLong()
-        }
-        val mcpTokens = activeMcpTools.sumOf { tool ->
-            ContextTokenEstimator.toolDefinitionTokens(
-                name = tool.name,
-                description = tool.description.orEmpty(),
-                schema = tool.inputSchema,
-                model = activeModel,
-            ).toLong()
-        }
-        definitionText to (localTokens + mcpTokens)
-            .coerceAtMost(Int.MAX_VALUE.toLong())
-            .toInt()
+        computePreRequestToolAccounting(
+            model = activeModel,
+            assistant = assistant,
+            settings = settings,
+            includeMemoryTools = memoryContextEnabled,
+            availableSkills = availableSkills,
+            assistantDefaultSkillIds = assistantDefaultSkillIds,
+            conversationSkillIds = conversation.enabledModeIds,
+            workspaceReady = workspaceReady,
+            includePythonTools = true,
+        )
     }
-    val toolDefinitionText = toolAccounting.first
-    // Once a request has resolved runtime/local/MCP/memory tools, retain that exact definition
-    // cost while typing instead of falling back to the necessarily incomplete settings preview.
-    val toolDefinitionTokens = matchingRequestUsage?.toolDefinitionTokens ?: toolAccounting.second
-    val systemPromptText = buildString {
-        append(assistant.systemPrompt)
-        if (assistant.learningMode) {
-            appendLine()
-            append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
-        }
-        buildTimeAwarenessBlock(
-            enabled = assistant.enableTimeAwareness,
-            fullMessages = rawMessages,
+    val toolDefinitionText = toolAccounting.toolDefinitionText
+    val embeddedToolText = if (matchingRequestUsage != null) "" else toolAccounting.embeddedToolText
+    val toolDefinitionTokens = matchingRequestUsage?.toolDefinitionTokens ?: toolAccounting.toolDefinitionTokens
+
+    val promptBundle = remember(
+        assistant,
+        settings,
+        activeModel,
+        rawMessages,
+        messages,
+        toolAccounting.toolNames,
+        conversation.enabledInstructionIds,
+    ) {
+        buildPromptInjectionBundle(
+            assistant = assistant,
+            settings = settings,
+            model = activeModel,
+            rawMessages = rawMessages,
             retainedMessages = messages,
-        )?.let { block ->
-            appendLine()
-            append(block)
+            hasVisualTool = toolAccounting.toolNames.any { it in VISUAL_TOOL_NAMES },
+            conversationEnabledInstructionIds = conversation.enabledInstructionIds,
+            allowGlobalPromptInjections = true,
+        )
+    }
+    val memorySummaryText = remember(memoryContextEnabled, assistant.enableMemorySummary, memorySummary) {
+        if (memoryContextEnabled && assistant.enableMemorySummary) {
+            renderMemorySummarySection(memorySummary?.rawMarkdown)
+        } else {
+            ""
         }
+    }
+    val customInstructionsTokens = remember(promptBundle.customInstructionsText, activeModel) {
+        ContextTokenEstimator.textTokens(promptBundle.customInstructionsText, activeModel)
+    }
+    val memorySummaryTokens = remember(memorySummaryText, activeModel) {
+        ContextTokenEstimator.textTokens(memorySummaryText, activeModel)
+    }
+    val featurePromptsTokens = remember(promptBundle.featurePromptsText, activeModel) {
+        ContextTokenEstimator.textTokens(promptBundle.featurePromptsText, activeModel)
     }
     val baseSmartInputBudget = if (smartActive) {
         smartInputBudget(activeModel, assistant.maxTokens)
     } else {
         null
     }
-    val deterministicContextTokens = ContextTokenEstimator.textTokens(systemPromptText, activeModel) +
+    val deterministicContextTokens = ContextTokenEstimator.textTokens(promptBundle.systemPromptText, activeModel) +
+        customInstructionsTokens +
+        memorySummaryTokens +
         ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), activeModel) +
-        skillTokens + lorebookTokens + toolDefinitionTokens + knownContextMediaTokens
+        skillTokens + lorebookTokens + featurePromptsTokens +
+        toolDefinitionTokens + ContextTokenEstimator.textTokens(embeddedToolText, activeModel) +
+        knownContextMediaTokens
     val fixedMemorySelection = remember(
         eligibleMemoryCandidates,
         activeModel,
@@ -3454,10 +3558,55 @@ private fun rememberContextMeterUsage(
         (budget - probableTemporaryTokens).coerceAtLeast(1)
     }
 
+    val toolMapEntries = remember(toolAccounting) {
+        buildList {
+            if (toolAccounting.localAndSearchTokens > 0) {
+                add(
+                    ContextMapEntry(
+                        category = ContextMapCategory.TOOL_DEFINITIONS,
+                        id = "tools:local",
+                        label = "Local Tools & Search",
+                        subtitle = "${toolAccounting.localAndSearchCount} active ${if (toolAccounting.localAndSearchCount == 1) "tool" else "tools"}",
+                        tokens = toolAccounting.localAndSearchTokens,
+                        itemCount = toolAccounting.localAndSearchCount,
+                    )
+                )
+            }
+            if (toolAccounting.mcpTokens > 0) {
+                add(
+                    ContextMapEntry(
+                        category = ContextMapCategory.TOOL_DEFINITIONS,
+                        id = "tools:mcp",
+                        label = "MCP & Extensions",
+                        subtitle = "${toolAccounting.mcpCount} active MCP ${if (toolAccounting.mcpCount == 1) "tool" else "tools"}",
+                        tokens = toolAccounting.mcpTokens,
+                        itemCount = toolAccounting.mcpCount,
+                    )
+                )
+            }
+            if (toolAccounting.workspaceTokens > 0) {
+                add(
+                    ContextMapEntry(
+                        category = ContextMapCategory.TOOL_DEFINITIONS,
+                        id = "tools:workspace",
+                        label = "Workspace Tools",
+                        subtitle = "${toolAccounting.workspaceCount} active workspace ${if (toolAccounting.workspaceCount == 1) "tool" else "tools"}",
+                        tokens = toolAccounting.workspaceTokens,
+                        itemCount = toolAccounting.workspaceCount,
+                    )
+                )
+            }
+        }
+    }
+
     val baseBreakdown = remember(
         messages,
         activeModel,
-        systemPromptText,
+        promptBundle,
+        customInstructionsTokens,
+        memorySummaryText,
+        memorySummaryTokens,
+        featurePromptsTokens,
         conversation.contextSummary,
         fixedMemoryText,
         fixedMemoryTokens,
@@ -3466,16 +3615,20 @@ private fun rememberContextMeterUsage(
         skillTokens,
         lorebookTokens,
         toolDefinitionText,
+        embeddedToolText,
         toolDefinitionTokens,
         knownContextAttachments,
         effectiveSmartInputBudget,
         sourceKey,
+        toolMapEntries,
     ) {
         val messagesToCount = if (smartActive) {
-            val namedTokens = ContextTokenEstimator.textTokens(systemPromptText, activeModel) +
+            val namedTokens = ContextTokenEstimator.textTokens(promptBundle.systemPromptText, activeModel) +
+                customInstructionsTokens +
+                memorySummaryTokens +
                 ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), activeModel) +
-                fixedMemoryTokens + skillTokens + lorebookTokens +
-                toolDefinitionTokens +
+                fixedMemoryTokens + skillTokens + lorebookTokens + featurePromptsTokens +
+                toolDefinitionTokens + ContextTokenEstimator.textTokens(embeddedToolText, activeModel) +
                 knownContextMediaTokens
             val messageBudget = ((effectiveSmartInputBudget ?: Int.MAX_VALUE) - namedTokens)
                 .coerceAtLeast(1)
@@ -3487,10 +3640,14 @@ private fun rememberContextMeterUsage(
         } else {
             messages
         }
-        ContextTokenEstimator.breakdown(
+        val raw = ContextTokenEstimator.breakdown(
             messages = messagesToCount,
             model = activeModel,
-            systemPromptText = systemPromptText,
+            systemPromptText = promptBundle.systemPromptText,
+            customInstructionsText = promptBundle.customInstructionsText,
+            customInstructionsTokensOverride = customInstructionsTokens,
+            memorySummaryText = memorySummaryText,
+            memorySummaryTokensOverride = memorySummaryTokens,
             summaryText = conversation.contextSummary.orEmpty(),
             memoryText = fixedMemoryText,
             memoryTokensOverride = fixedMemoryTokens,
@@ -3498,11 +3655,35 @@ private fun rememberContextMeterUsage(
             lorebookText = lorebookText,
             skillTokensOverride = skillTokens,
             lorebookTokensOverride = lorebookTokens,
+            featurePromptsText = promptBundle.featurePromptsText,
+            featurePromptsTokensOverride = featurePromptsTokens,
             toolDefinitionText = toolDefinitionText,
             toolDefinitionTokensOverride = toolDefinitionTokens,
+            embeddedToolText = embeddedToolText,
             pendingParts = knownContextAttachments,
             usableInputTokens = effectiveSmartInputBudget,
             sourceKey = sourceKey,
+        )
+        raw.copy(
+            mapEntries = buildContextMapEntries(
+                model = activeModel,
+                assistant = assistant,
+                bundle = promptBundle,
+                memorySummaryTokens = raw.memorySummaryTokens,
+                memoryTokens = raw.memoryTokens,
+                memoryCount = fixedMemorySelection?.memories?.size ?: 0,
+                summaryTokens = raw.summaryTokens,
+                enabledSkills = enabledSkills,
+                skillsRoot = skillsRoot,
+                activatedLorebookEntries = deterministicLoreEntriesWithBook,
+                toolEntries = toolMapEntries,
+                toolCallTokens = raw.toolCallTokens,
+                conversationTokens = raw.conversationTokens,
+                conversationMessageCount = messagesToCount.size,
+                mediaTokens = raw.mediaTokens,
+                imageCount = raw.imageCount,
+                isMemoryEstimated = assistant.useRagMemoryRetrieval && fixedMemorySelection == null,
+            )
         )
     }
 
@@ -3532,10 +3713,12 @@ private fun rememberContextMeterUsage(
 
         if (smartActive && estimatedTotalTokens > budgetLimit) {
             val pendingMessage = UIMessage(role = MessageRole.USER, parts = pendingParts)
-            val namedTokens = ContextTokenEstimator.textTokens(systemPromptText, activeModel) +
+            val namedTokens = ContextTokenEstimator.textTokens(promptBundle.systemPromptText, activeModel) +
+                customInstructionsTokens +
+                memorySummaryTokens +
                 ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), activeModel) +
-                fixedMemoryTokens + skillTokens + lorebookTokens +
-                toolDefinitionTokens +
+                fixedMemoryTokens + skillTokens + lorebookTokens + featurePromptsTokens +
+                toolDefinitionTokens + ContextTokenEstimator.textTokens(embeddedToolText, activeModel) +
                 knownContextMediaTokens
             val messageBudget = (budgetLimit - namedTokens).coerceAtLeast(1)
             val messagesToCount = smartFitContext(
@@ -3543,10 +3726,14 @@ private fun rememberContextMeterUsage(
                 model = activeModel,
                 messageBudgetTokens = messageBudget,
             )
-            ContextTokenEstimator.breakdown(
+            val raw = ContextTokenEstimator.breakdown(
                 messages = messagesToCount,
                 model = activeModel,
-                systemPromptText = systemPromptText,
+                systemPromptText = promptBundle.systemPromptText,
+                customInstructionsText = promptBundle.customInstructionsText,
+                customInstructionsTokensOverride = customInstructionsTokens,
+                memorySummaryText = memorySummaryText,
+                memorySummaryTokensOverride = memorySummaryTokens,
                 summaryText = conversation.contextSummary.orEmpty(),
                 memoryText = fixedMemoryText,
                 memoryTokensOverride = fixedMemoryTokens,
@@ -3554,18 +3741,52 @@ private fun rememberContextMeterUsage(
                 lorebookText = lorebookText,
                 skillTokensOverride = skillTokens,
                 lorebookTokensOverride = lorebookTokens,
+                featurePromptsText = promptBundle.featurePromptsText,
+                featurePromptsTokensOverride = featurePromptsTokens,
                 toolDefinitionText = toolDefinitionText,
                 toolDefinitionTokensOverride = toolDefinitionTokens,
+                embeddedToolText = embeddedToolText,
                 pendingParts = knownContextAttachments,
                 usableInputTokens = effectiveSmartInputBudget,
                 sourceKey = sourceKey,
             )
+            raw.copy(
+                mapEntries = buildContextMapEntries(
+                    model = activeModel,
+                    assistant = assistant,
+                    bundle = promptBundle,
+                    memorySummaryTokens = raw.memorySummaryTokens,
+                    memoryTokens = raw.memoryTokens,
+                    memoryCount = fixedMemorySelection?.memories?.size ?: 0,
+                    summaryTokens = raw.summaryTokens,
+                    enabledSkills = enabledSkills,
+                    skillsRoot = skillsRoot,
+                    activatedLorebookEntries = deterministicLoreEntriesWithBook,
+                    toolEntries = toolMapEntries,
+                    toolCallTokens = raw.toolCallTokens,
+                    conversationTokens = raw.conversationTokens,
+                    conversationMessageCount = messagesToCount.size,
+                    mediaTokens = raw.mediaTokens,
+                    imageCount = raw.imageCount,
+                    isMemoryEstimated = assistant.useRagMemoryRetrieval && fixedMemorySelection == null,
+                )
+            )
         } else {
+            val nextConversationTokens = baseBreakdown.conversationTokens + pendingTextTokens + framingDelta
+            val nextMediaTokens = baseBreakdown.mediaTokens + pendingMediaTokens
+            val nextImageCount = baseBreakdown.imageCount + pendingImages
             baseBreakdown.copy(
-                conversationTokens = baseBreakdown.conversationTokens + pendingTextTokens + framingDelta,
-                mediaTokens = baseBreakdown.mediaTokens + pendingMediaTokens,
-                imageCount = baseBreakdown.imageCount + pendingImages,
+                conversationTokens = nextConversationTokens,
+                mediaTokens = nextMediaTokens,
+                imageCount = nextImageCount,
                 usedTokens = estimatedTotalTokens,
+                mapEntries = baseBreakdown.mapEntries.map { entry ->
+                    when (entry.category) {
+                        ContextMapCategory.CONVERSATION -> entry.copy(tokens = nextConversationTokens)
+                        ContextMapCategory.MEDIA -> entry.copy(tokens = nextMediaTokens, itemCount = nextImageCount)
+                        else -> entry
+                    }
+                },
             )
         }
     }
@@ -3583,6 +3804,8 @@ internal fun ContextUsageMenu(
     onUpdateModelLimit: (Int?) -> Unit,
     onDismissRequest: () -> Unit,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics = rememberPremiumHaptics(),
+    initialEditingLimit: Boolean = false,
+    onOpenContextMap: ((ContextMapCategory?) -> Unit)? = null,
 ) {
     val reduceMotion = LocalMotionPolicy.current.reduceMotion
     val visibility = remember {
@@ -3599,8 +3822,14 @@ internal fun ContextUsageMenu(
             label = "chat_context_usage_popup_scale",
         ) { state -> if (reduceMotion || state == EnterExitState.Visible) 1f else 0.96f }
         ContextUsageOverlay(
-            usage = usage, placement = placement, popupScale = popupScale, model = model,
-            onUpdateModelLimit = onUpdateModelLimit, onDismissRequest = onDismissRequest,
+            usage = usage,
+            placement = placement,
+            popupScale = popupScale,
+            model = model,
+            initialEditingLimit = initialEditingLimit,
+            onUpdateModelLimit = onUpdateModelLimit,
+            onOpenContextMap = onOpenContextMap,
+            onDismissRequest = onDismissRequest,
             haptics = haptics,
         )
     }
@@ -3612,7 +3841,9 @@ private fun ContextUsageOverlay(
     placement: ChatToolbarPlacement,
     popupScale: Float,
     model: Model? = null,
+    initialEditingLimit: Boolean = false,
     onUpdateModelLimit: ((Int?) -> Unit)? = null,
+    onOpenContextMap: ((ContextMapCategory?) -> Unit)? = null,
     onDismissRequest: () -> Unit,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
 ) {
@@ -3671,7 +3902,14 @@ private fun ContextUsageOverlay(
                     .verticalScroll(rememberScrollState()).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                ContextUsagePopupContent(usage, model, onUpdateModelLimit, haptics)
+                ContextUsagePopupContent(
+                    usage = usage,
+                    model = model,
+                    initialEditingLimit = initialEditingLimit,
+                    onUpdateModelLimit = onUpdateModelLimit,
+                    onOpenContextMap = onOpenContextMap,
+                    haptics = haptics,
+                )
 
             }
         }
@@ -3784,7 +4022,9 @@ private fun ContextMeterButton(
 private fun ContextUsagePopupContent(
     usage: ContextUsageBreakdown,
     model: Model? = null,
+    initialEditingLimit: Boolean = false,
     onUpdateModelLimit: ((Int?) -> Unit)? = null,
+    onOpenContextMap: ((ContextMapCategory?) -> Unit)? = null,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
 ) {
     val tokenAnimation = spring<Int>(dampingRatio = 0.82f, stiffness = 260f)
@@ -3793,16 +4033,19 @@ private fun ContextUsagePopupContent(
     val animatedReserved by animateIntAsState(usage.reservedTokens, tokenAnimation, label = "context_reserved")
     val animatedConversation by animateIntAsState(usage.conversationTokens, tokenAnimation, label = "context_conversation")
     val animatedSystemPrompt by animateIntAsState(usage.systemPromptTokens, tokenAnimation, label = "context_system_prompt")
+    val animatedCustomInstructions by animateIntAsState(usage.customInstructionsTokens, tokenAnimation, label = "context_custom_instructions")
+    val animatedMemorySummary by animateIntAsState(usage.memorySummaryTokens, tokenAnimation, label = "context_memory_summary")
     val animatedSummary by animateIntAsState(usage.summaryTokens, tokenAnimation, label = "context_summary")
     val animatedMemory by animateIntAsState(usage.memoryTokens, tokenAnimation, label = "context_memory")
     val animatedSkills by animateIntAsState(usage.skillTokens, tokenAnimation, label = "context_skills")
     val animatedLorebook by animateIntAsState(usage.lorebookTokens, tokenAnimation, label = "context_lorebook")
+    val animatedFeaturePrompts by animateIntAsState(usage.featurePromptsTokens, tokenAnimation, label = "context_feature_prompts")
     val animatedToolDefinitions by animateIntAsState(usage.toolDefinitionTokens, tokenAnimation, label = "context_tool_definitions")
     val animatedToolCalls by animateIntAsState(usage.toolCallTokens, tokenAnimation, label = "context_tool_calls")
     val animatedMedia by animateIntAsState(usage.mediaTokens, tokenAnimation, label = "context_media")
     val animatedImages by animateIntAsState(usage.imageCount, tokenAnimation, label = "context_images")
 
-    var isEditingLimit by remember { mutableStateOf(false) }
+    var isEditingLimit by remember(initialEditingLimit) { mutableStateOf(initialEditingLimit) }
     val maxCapacityTokens = model?.baseCapacityTokens ?: maxOf(usage.totalTokens, model?.contextCapacityTokens ?: 0)
     val isCustomLimitActive = model?.customContextLimitTokens != null ||
         model?.contextLimitSource == me.rerere.ai.provider.ContextLimitSource.MANUAL
@@ -3831,30 +4074,22 @@ private fun ContextUsagePopupContent(
     }
 
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val categoryColors = if (isDark) {
-        listOf(
-            Color(0xFF8AB4F8), Color(0xFFFF8A80), Color(0xFFFFD166),
-            Color(0xFF7ED99B), Color(0xFFC69AF7), Color(0xFF4DD0E1),
-            Color(0xFFFFA45B), Color(0xFFF48FB1), Color(0xFFB6D957),
-        )
-    } else {
-        listOf(
-            Color(0xFF2457C5), Color(0xFFC43D3D), Color(0xFF9A6500),
-            Color(0xFF187A3B), Color(0xFF7139B6), Color(0xFF087F8C),
-            Color(0xFFB84A00), Color(0xFFA92868), Color(0xFF5F7300),
-        )
-    }
     val segments = listOf(
-        Triple(stringResource(R.string.context_meter_conversation), animatedConversation, categoryColors[0]),
-        Triple(stringResource(R.string.context_meter_system_prompt), animatedSystemPrompt, categoryColors[1]),
-        Triple(stringResource(R.string.context_meter_summary), animatedSummary, categoryColors[2]),
-        Triple(stringResource(R.string.context_meter_memory), animatedMemory, categoryColors[3]),
-        Triple(stringResource(R.string.context_meter_skills_modes), animatedSkills, categoryColors[4]),
-        Triple(stringResource(R.string.context_meter_lorebook), animatedLorebook, categoryColors[5]),
-        Triple(stringResource(R.string.context_meter_tool_definitions), animatedToolDefinitions, categoryColors[6]),
-        Triple(stringResource(R.string.context_meter_tool_calls), animatedToolCalls, categoryColors[7]),
-        Triple(stringResource(R.string.context_meter_media), animatedMedia, categoryColors[8]),
-    ).filter { it.second > 0 }
+        Triple(ContextMapCategory.CONVERSATION, stringResource(R.string.context_meter_conversation), animatedConversation),
+        Triple(ContextMapCategory.SYSTEM_PROMPT, stringResource(R.string.context_meter_system_prompt), animatedSystemPrompt),
+        Triple(ContextMapCategory.CUSTOM_INSTRUCTIONS, stringResource(R.string.context_meter_custom_instructions), animatedCustomInstructions),
+        Triple(ContextMapCategory.MEMORY_SUMMARY, stringResource(R.string.context_meter_memory_summary), animatedMemorySummary),
+        Triple(ContextMapCategory.CONVERSATION_SUMMARY, stringResource(R.string.context_meter_summary), animatedSummary),
+        Triple(ContextMapCategory.MEMORIES, stringResource(R.string.context_meter_memory), animatedMemory),
+        Triple(ContextMapCategory.SKILLS_MODES, stringResource(R.string.context_meter_skills_modes), animatedSkills),
+        Triple(ContextMapCategory.LOREBOOKS, stringResource(R.string.context_meter_lorebook), animatedLorebook),
+        Triple(ContextMapCategory.FEATURE_PROMPTS, stringResource(R.string.context_meter_feature_prompts), animatedFeaturePrompts),
+        Triple(ContextMapCategory.TOOL_DEFINITIONS, stringResource(R.string.context_meter_tool_definitions), animatedToolDefinitions),
+        Triple(ContextMapCategory.TOOL_CALLS, stringResource(R.string.context_meter_tool_calls), animatedToolCalls),
+        Triple(ContextMapCategory.MEDIA, stringResource(R.string.context_meter_media), animatedMedia),
+    ).filter { it.third > 0 }.map { (category, label, value) ->
+        Triple(category, label, value to contextCategoryColor(category, isDark))
+    }
     val reserveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
 
     val activeBudgetCeiling = if (isEditingLimit) draggedTokens else animatedTotal
@@ -3987,7 +4222,8 @@ private fun ContextUsagePopupContent(
                             .fillMaxWidth(zoomFraction)
                             .clip(RoundedCornerShape(999.dp)),
                     ) {
-                        segments.forEach { (_, value, color) ->
+                        segments.forEach { (_, _, valueAndColor) ->
+                            val (value, color) = valueAndColor
                             Spacer(
                                 Modifier
                                     .weight(value.toFloat().coerceAtLeast(1f))
@@ -4100,18 +4336,45 @@ private fun ContextUsagePopupContent(
             }
         }
         FlowRow(
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
         ) {
-            segments.forEach { (label, value, color) ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            segments.forEach { (category, label, valueAndColor) ->
+                val (value, color) = valueAndColor
+                Row(
+                    modifier = if (onOpenContextMap != null) {
+                        Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .clickable {
+                                haptics.perform(HapticPattern.Selection)
+                                onOpenContextMap(category)
+                            }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    } else {
+                        Modifier
+                    },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Box(Modifier.size(8.dp).background(color, RoundedCornerShape(999.dp)))
                     Spacer(Modifier.width(5.dp))
                     Text("$label ${compactTokenCount(value)}", style = MaterialTheme.typography.labelMedium)
                 }
             }
             if (animatedEffectiveReserved > 0) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = if (onOpenContextMap != null) {
+                        Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .clickable {
+                                haptics.perform(HapticPattern.Selection)
+                                onOpenContextMap(ContextMapCategory.RESERVED)
+                            }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    } else {
+                        Modifier
+                    },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Box(Modifier.size(8.dp).background(reserveColor, RoundedCornerShape(999.dp)))
                     Spacer(Modifier.width(5.dp))
                     Text(
@@ -4145,6 +4408,40 @@ private fun ContextUsagePopupContent(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+        if (onOpenContextMap != null) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(AppShapes.ButtonPill)
+                    .clickable {
+                        haptics.perform(HapticPattern.Pop)
+                        onOpenContextMap(null)
+                    },
+                shape = AppShapes.ButtonPill,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.context_meter_full_map),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
         }
     }

@@ -7,7 +7,10 @@ import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.TextSelectionAction
 import me.rerere.rikkahub.utils.JsonInstant
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.uuid.Uuid
 
 internal const val EXTRA_QUICK_ASK_CONTINUATION =
@@ -35,8 +38,11 @@ internal data class QuickAskContinuationData(
     val text: String = "",
     val attachments: List<QuickAskAttachment> = emptyList(),
     val aiResponse: String? = null,
+    val reasoningText: String? = null,
+    val reasoningDurationMs: Long? = null,
     val userPrompt: String? = null,
     val assistantId: String? = null,
+    val actionName: String? = null,
 )
 
 internal fun buildQuickAskTextContent(
@@ -82,6 +88,84 @@ internal fun buildQuickAskMessageParts(
     return parts
 }
 
+internal fun buildQuickAskPresetSystemPrompt(
+    action: TextSelectionAction,
+    customPrompt: String,
+    assistantPrompt: String,
+    translateLanguage: String,
+    inheritAssistantSystemPrompt: Boolean,
+): String {
+    var processedPrompt = action.prompt
+        .replace("{{language}}", translateLanguage)
+        .replace("{{custom_prompt}}", customPrompt)
+        .trim()
+
+    if (action.isCustomPrompt && customPrompt.isNotBlank() && !action.prompt.contains("{{custom_prompt}}")) {
+        processedPrompt = if (processedPrompt.isNotBlank()) {
+            "$processedPrompt\n\nUser's question: $customPrompt"
+        } else {
+            "Answer the user's question about the provided text.\nUser's question: $customPrompt"
+        }
+    }
+
+    val effectiveActionPrompt = processedPrompt.ifBlank {
+        when (action.id) {
+            "translate" -> """
+                You are a translator. Translate the user's text to $translateLanguage.
+                Only output the translation, nothing else. Do not include any explanations or notes.
+            """.trimIndent()
+
+            "explain" -> """
+                Explain the following text in simple, easy-to-understand terms.
+                Be concise but thorough. Use examples if helpful.
+            """.trimIndent()
+
+            "summarize" -> """
+                Provide a clear, concise summary of the following text.
+                Capture the key points and main ideas. Be brief but complete.
+            """.trimIndent()
+
+            else -> if (action.isCustomPrompt && customPrompt.isNotBlank()) {
+                "Answer the user's question about the provided text.\nUser's question: $customPrompt"
+            } else {
+                "You are a helpful assistant."
+            }
+        }
+    }
+
+    val shouldPrependAssistantPrompt =
+        inheritAssistantSystemPrompt &&
+            assistantPrompt.isNotBlank() &&
+            action.id != "translate"
+
+    return if (shouldPrependAssistantPrompt) {
+        """
+            ${assistantPrompt.trim()}
+
+            $effectiveActionPrompt
+        """.trimIndent()
+    } else {
+        effectiveActionPrompt
+    }
+}
+
+internal fun buildQuickAskConversationTitle(
+    actionName: String?,
+    inputText: String,
+    customPrompt: String? = null,
+): String {
+    val cleanAction = actionName?.trim().orEmpty().removeSuffix("…").trim()
+    val rawSnippet = customPrompt?.trim().takeIf { !it.isNullOrBlank() }
+        ?: inputText.trim()
+    val normalizedSnippet = rawSnippet.replace(Regex("\\s+"), " ").take(36).trim()
+    return when {
+        cleanAction.isNotBlank() && normalizedSnippet.isNotBlank() -> "$cleanAction: $normalizedSnippet"
+        normalizedSnippet.isNotBlank() -> normalizedSnippet
+        cleanAction.isNotBlank() -> cleanAction
+        else -> "Quick Ask"
+    }
+}
+
 internal fun Intent.putQuickAskContinuationData(data: QuickAskContinuationData) {
     putExtra(EXTRA_QUICK_ASK_CONTINUATION, JsonInstant.encodeToString(data))
 }
@@ -100,6 +184,11 @@ internal data class QuickAskChatSeed(
 
 internal fun UIMessage.hasDisplayableChatContent(): Boolean {
     if (toContentText().isNotBlank()) return true
+    if (parts.any {
+            (it is UIMessagePart.Reasoning && it.reasoning.isNotBlank()) ||
+                (it is UIMessagePart.Thinking && it.thinking.isNotBlank())
+        }
+    ) return true
     return parts.any { part ->
         when (part) {
             is UIMessagePart.Image,
@@ -152,11 +241,55 @@ internal fun buildQuickAskContinuationNodes(data: QuickAskContinuationData): Lis
             )
         )
     }
+    val reasoning = data.reasoningText?.trim().orEmpty()
     val reply = data.aiResponse?.trim().orEmpty()
-    if (reply.isNotBlank()) {
-        nodes += MessageNode.of(UIMessage.assistant(reply))
+    if (reasoning.isNotBlank() || reply.isNotBlank()) {
+        val finishedAt = Clock.System.now()
+        val startedAt = data.reasoningDurationMs
+            ?.takeIf { it > 0L }
+            ?.let { finishedAt - it.milliseconds }
+            ?: finishedAt
+        val assistantParts = buildList {
+            if (reasoning.isNotBlank()) {
+                add(
+                    UIMessagePart.Reasoning(
+                        reasoning = reasoning,
+                        createdAt = startedAt,
+                        finishedAt = finishedAt,
+                    )
+                )
+            }
+            if (reply.isNotBlank()) {
+                add(UIMessagePart.Text(reply))
+            }
+        }
+        nodes += MessageNode.of(
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = assistantParts,
+            )
+        )
     }
     return withoutBlankAssistantTurns(nodes)
+}
+
+internal fun buildQuickAskPersistedConversation(
+    conversationId: Uuid,
+    assistantId: Uuid,
+    data: QuickAskContinuationData,
+): Conversation? {
+    val nodes = buildQuickAskContinuationNodes(data)
+    if (nodes.isEmpty()) return null
+    val title = buildQuickAskConversationTitle(
+        actionName = data.actionName,
+        inputText = data.text,
+        customPrompt = data.userPrompt,
+    )
+    return Conversation.ofId(
+        id = conversationId,
+        assistantId = assistantId,
+        messages = nodes,
+    ).copy(title = title)
 }
 
 internal fun seedQuickAskChat(
@@ -192,4 +325,3 @@ internal fun seedQuickAskChat(
         reuseConversationId = existing?.id?.takeIf { isBlankAssistantDraft(existing) },
     )
 }
-

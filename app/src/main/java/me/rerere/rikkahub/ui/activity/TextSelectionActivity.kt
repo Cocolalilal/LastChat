@@ -8,6 +8,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import me.rerere.highlight.Highlighter
 import me.rerere.highlight.LocalHighlighter
 import me.rerere.rikkahub.RouteActivity
@@ -29,6 +31,7 @@ class TextSelectionActivity : ComponentActivity() {
     private val highlighter by inject<Highlighter>()
     private val settingsStore by inject<SettingsStore>()
     private val viewModel: TextSelectionVM by viewModel()
+    private var isContinuingInApp = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -56,13 +59,27 @@ class TextSelectionActivity : ComponentActivity() {
                         viewModel = viewModel,
                         onDismiss = { finish() },
                         onContinueInApp = {
-                            val continuationData = viewModel.buildContinuationData()
-                            val routeIntent = Intent(this@TextSelectionActivity, RouteActivity::class.java).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                                putQuickAskContinuationData(continuationData)
+                            if (isContinuingInApp) return@TextSelectionSheet
+                            isContinuingInApp = true
+                            lifecycleScope.launch {
+                                val target = runCatching {
+                                    viewModel.persistAndPrepareChatContinuation()
+                                }.getOrNull()
+                                if (target == null) {
+                                    isContinuingInApp = false
+                                    return@launch
+                                }
+                                val (conversationId, assistantId) = target
+                                val routeIntent = Intent(this@TextSelectionActivity, RouteActivity::class.java).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                    putExtra(RouteActivity.EXTRA_CONVERSATION_ID, conversationId.toString())
+                                    putExtra(RouteActivity.EXTRA_ASSISTANT_ID, assistantId.toString())
+                                }
+                                startActivity(routeIntent)
+                                finish()
                             }
-                            startActivity(routeIntent)
-                            finish()
                         }
                     )
                     AppToasterHost(state = toastState)

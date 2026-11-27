@@ -33,6 +33,8 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.ai.core.merge
+import me.rerere.ai.context.ContextMapCategory
+import me.rerere.ai.context.ContextMapEntry
 import me.rerere.ai.context.ContextTokenEstimator
 import me.rerere.ai.context.ContextUsageBreakdown
 import me.rerere.ai.context.adaptiveImageLimit
@@ -643,6 +645,13 @@ sealed interface GenerationChunk {
     ) : GenerationChunk
 }
 
+data class QuickAskIsolationOptions(
+    val allowMemoryTools: Boolean = true,
+    val allowMemoryWriteTools: Boolean = true,
+    val allowSkillTool: Boolean = true,
+    val allowGlobalPromptInjections: Boolean = true,
+)
+
 class GenerationHandler(
     private val context: Context,
     private val providerManager: ProviderManager,
@@ -678,6 +687,7 @@ class GenerationHandler(
         onContextUsage: suspend (ContextUsageBreakdown) -> Unit = {},
         contextUsageSourceKey: Int? = null,
         contextBudgetScale: Double = 1.0,
+        quickAskIsolation: QuickAskIsolationOptions? = null,
     ): Flow<GenerationChunk> = channelFlow {
         // Older app-created skills predate package storage. Materialize their
         // canonical SKILL.md before a workspace starts so resource paths in the
@@ -711,11 +721,12 @@ class GenerationHandler(
             val toolsInternal = buildList {
                 Log.i(TAG, "generateInternal: build tools($assistant)")
                 // Add memory tools if memory is enabled for this assistant
-                if (assistant.enableMemory) {
+                if (assistant.enableMemory && quickAskIsolation?.allowMemoryTools != false) {
                     val enableSummaryTools = assistant.enableMemorySummary && memoryDAO != null && memorySummaryService != null
                     buildMemoryTools(
                         assistantId = assistant.id.toString(),
                         enableSummaryTools = enableSummaryTools,
+                        allowWriteTools = quickAskIsolation?.allowMemoryWriteTools != false,
                         memoryDAO = memoryDAO,
                         memorySummaryService = memorySummaryService,
                         onCreation = { content ->
@@ -742,21 +753,23 @@ class GenerationHandler(
                         }
                     ).let(this::addAll)
                 }
-                createSkillManagementTool(
-                    state = buildSkillToolState(
-                        skills = settings.skills,
-                        assistantId = assistant.id,
-                        assistantDefaultSkillIds = assistantDefaultSkillIds,
-                        conversationSkillIds = conversationSkillIds,
-                        turnScopedSkillIds = currentTurnScopedSkillIds,
-                    ),
-                    currentTurnScopedSkillIds = currentTurnScopedSkillIds,
-                    automaticInvocationEnabled = assistant.enableAutomaticSkillInvocation &&
-                        model.abilities.contains(ModelAbility.TOOL),
-                    onUpdateTurnScopedSkillIds = { updatedIds ->
-                        currentTurnScopedSkillIds = updatedIds.intersect(allSkillIds)
-                    },
-                )?.let(this::add)
+                if (quickAskIsolation?.allowSkillTool != false) {
+                    createSkillManagementTool(
+                        state = buildSkillToolState(
+                            skills = settings.skills,
+                            assistantId = assistant.id,
+                            assistantDefaultSkillIds = assistantDefaultSkillIds,
+                            conversationSkillIds = conversationSkillIds,
+                            turnScopedSkillIds = currentTurnScopedSkillIds,
+                        ),
+                        currentTurnScopedSkillIds = currentTurnScopedSkillIds,
+                        automaticInvocationEnabled = assistant.enableAutomaticSkillInvocation &&
+                            model.abilities.contains(ModelAbility.TOOL),
+                        onUpdateTurnScopedSkillIds = { updatedIds ->
+                            currentTurnScopedSkillIds = updatedIds.intersect(allSkillIds)
+                        },
+                    )?.let(this::add)
+                }
                 addAll(tools)
             }
 
@@ -796,6 +809,7 @@ class GenerationHandler(
                 onContextUsage = onContextUsage,
                 contextUsageSourceKey = contextUsageSourceKey,
                 contextBudgetScale = contextBudgetScale,
+                quickAskIsolation = quickAskIsolation,
             )
             currentCoroutineContext().ensureActive()
             messages = messages.visualTransforms(
@@ -932,6 +946,7 @@ class GenerationHandler(
         contextSummaryUpToIndex: Int = -1,
         contextUsageSourceKey: Int? = null,
         contextBudgetScale: Double = 1.0,
+        quickAskIsolation: QuickAskIsolationOptions? = null,
     ): BuildMessagesResult {
         fun estimateTokens(text: String) = ContextTokenEstimator.textTokens(text, model)
         fun estimateTokens(message: UIMessage) = ContextTokenEstimator.messageTokens(message, model)
@@ -1143,30 +1158,16 @@ class GenerationHandler(
         val beforeLatestEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.BEFORE_LATEST }
         val depthEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AT_DEPTH }
 
-        // 1. Base System Prompt (BEFORE_SYSTEM skills/entries + System + Learning + AFTER_SYSTEM skills/entries + Tools)
+        // 1. Base System Prompt (BEFORE_SYSTEM skills/entries + System + Learning + AFTER_SYSTEM skills/entries + Tools + Feature Prompts + Custom Instructions)
+        val allowGlobalPromptInjections = quickAskIsolation?.allowGlobalPromptInjections != false
+        val allowMemoryWritePrompt =
+            quickAskIsolation?.allowMemoryTools != false &&
+                quickAskIsolation?.allowMemoryWriteTools != false
+        val skillsRoot = File(context.filesDir, "skills")
         val baseSystemPromptBuilder = StringBuilder()
 
         fun appendSkillPrompt(skill: me.rerere.rikkahub.data.model.Skill) {
-            if (skill.name.isNotBlank()) {
-                baseSystemPromptBuilder.append("[Skill: ${skill.name}]")
-                baseSystemPromptBuilder.appendLine()
-            }
-            baseSystemPromptBuilder.append(skill.instructions)
-            val skillsRoot = File(context.filesDir, "skills")
-            val resources = File(skillsRoot, skill.workspaceDirectory().removePrefix("/skills/"))
-                .takeIf { it.isDirectory }
-                ?.walkTopDown()
-                ?.filter { it.isFile && it.name != "SKILL.md" }
-                ?.map { it.relativeTo(skillsRoot).invariantSeparatorsPath }
-                ?.take(64)
-                ?.toList()
-                .orEmpty()
-            if (resources.isNotEmpty()) {
-                baseSystemPromptBuilder.appendLine()
-                baseSystemPromptBuilder.appendLine("Skill package: ${skill.workspaceDirectory()}")
-                baseSystemPromptBuilder.appendLine("Bundled resources (load only when needed):")
-                resources.forEach { baseSystemPromptBuilder.appendLine("- /skills/$it") }
-            }
+            baseSystemPromptBuilder.append(formatSkillPromptText(skillsRoot, skill))
         }
         
         // BEFORE_SYSTEM injections
@@ -1185,7 +1186,7 @@ class GenerationHandler(
         }
         
         // Learning mode (legacy - still supported)
-        if (assistant.learningMode) {
+        if (allowGlobalPromptInjections && assistant.learningMode) {
             baseSystemPromptBuilder.appendLine()
             baseSystemPromptBuilder.append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
             baseSystemPromptBuilder.appendLine()
@@ -1207,99 +1208,41 @@ class GenerationHandler(
             baseSystemPromptBuilder.append(toolSystemPromptText)
         }
 
-        if (settings.displaySetting.enableInWorldArtifacts) {
-            baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(
-                settings.displaySetting.inWorldArtifactsPrompt.ifBlank { DEFAULT_IN_WORLD_ARTIFACTS_PROMPT }
-            )
-        }
-
-        if (settings.enableVoiceMemosMemoryBridge) {
-            baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(
-                """
-                ## Voice Memos & Audio Transcripts
-                - The user records voice memos and audio notes directly on their device.
-                - Transcripts and summaries are synced to `/workspace/transcripts/`.
-                - A lightweight catalog index is available at `/workspace/transcripts/index.json` containing memo titles, dates, durations, and brief summaries.
-                - When the user asks about their recordings, voice notes, or spoken ideas, inspect `/workspace/transcripts/index.json` and read the relevant transcript markdown file at `/workspace/transcripts/<id>.md`.
-                """.trimIndent()
-            )
-        }
-
-        if (settings.tmdbSetting.enabled) {
-            baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(
-                """
-                ## Entertainment & TMDB Media Tools
-                When discussing, searching, or recommending movies, TV shows, or anime:
-                - `search_media(query, type)`: Find shows or movies. Parameters: `query` (title/actor name), `type` ('multi', 'tv', 'movie', default 'multi').
-                - `get_media_info(id, type)`: Full details (synopsis, seasons, episodes, cast, rating). Parameters: `id` (numeric TMDB id), `type` ('tv' or 'movie', default 'tv').
-                - `get_media_art(id, type)`: High-res posters and 16:9 cinematic backdrops. Parameters: `id`, `type` (default 'tv').
-                - `get_media_recommendations(id, type)`: Algorithmic recommendations. Parameters: `id`, `type` (default 'tv').
-                - `manage_watchlist(action, id, type)`: View or modify watchlist. Parameters: `action` ('get' (default), 'add', 'remove'), `id` (numeric id), `type` ('tv' or 'movie').
-
-                When recommending titles or presenting multiple shows to the user, ALWAYS present them as a native media showcase using the ```media_deck``` code fence:
-                ```media_deck
-                {
-                  "title": "Companion Recommendations",
-                  "items": [
-                    {
-                      "tmdb_id": 37854,
-                      "media_type": "tv",
-                      "title": "One Piece",
-                      "year": "1999",
-                      "rating": "8.7",
-                      "progress": "Ep 594 / 1122",
-                      "poster": "https://image.tmdb.org/t/p/w500/<hash>.jpg",
-                      "badges": ["Anime", "Action"],
-                      "hook": "Companion's personalized commentary explaining why you picked this."
-                    }
-                  ]
-                }
-                ```
-                You can recommend any number of items (1, 2, 3, 5, etc.). Always keep the deck mobile-friendly and include real poster URLs returned by the media tools.
-                """.trimIndent()
-            )
-        }
-
-        val visualToolNames = setOf("search_web", "workspace_view_image", "workspace_read_file", "look_at_screen")
+        val hasVisualTool = effectiveTools.any { it.name in VISUAL_TOOL_NAMES }
         val hasVisualToolResults = messages.any { msg ->
             msg.role == MessageRole.TOOL && msg.parts.any { it is UIMessagePart.ToolResult && it.inspectedImages.isNotEmpty() }
         }
-        if (model.inputModalities.contains(Modality.IMAGE) && (effectiveTools.any { it.name in visualToolNames } || hasVisualToolResults)) {
-            baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(
-                """
-                ## Tool Visual Inspection & User Privacy Guidelines
-                - Tool-inspected images (from web search, workspace files, screenshots, etc.) are private behind-the-scenes visual inspection data delivered for your eyes only. The user CANNOT see them.
-                - The user DID NOT upload, provide, or see these tool images. Do NOT refer to them as "the images you sent", "the images you uploaded", or "the images you provided".
-                - If the user asks for images, or if an image from search or workspace is useful or relevant to show, you MUST explicitly output the markdown image link `![title](url)` in your final response to the user. Otherwise, the user will see nothing.
-                """.trimIndent()
-            )
-        }
+        val prePromptBundle = buildPromptInjectionBundle(
+            assistant = assistant,
+            settings = settings,
+            model = model,
+            rawMessages = messages,
+            retainedMessages = messages,
+            hasVisualTool = hasVisualTool,
+            hasVisualToolResults = hasVisualToolResults,
+            conversationEnabledInstructionIds = conversationEnabledInstructionIds,
+            allowGlobalPromptInjections = allowGlobalPromptInjections,
+        )
 
-        // 1.5. Custom Instructions (Appended as dedicated paragraphs to steer behavior)
-        val activeInstructionIds = conversationEnabledInstructionIds ?: assistant.enabledInstructionIds
-        val activeInstructions = settings.instructions.filter { inst ->
-            if (conversationEnabledInstructionIds != null) {
-                activeInstructionIds.contains(inst.id)
-            } else if (assistant.enabledInstructionIds.isNotEmpty()) {
-                activeInstructionIds.contains(inst.id)
-            } else {
-                inst.enabled
-            }
-        }
-        if (activeInstructions.isNotEmpty()) {
+        prePromptBundle.artifactsPromptText?.let {
             baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.appendLine("## Custom Instructions")
-            activeInstructions.forEach { inst ->
-                if (inst.name.isNotBlank()) {
-                    baseSystemPromptBuilder.appendLine("[Instruction: ${inst.name}]")
-                }
-                baseSystemPromptBuilder.appendLine(inst.content)
-                baseSystemPromptBuilder.appendLine()
-            }
+            baseSystemPromptBuilder.append(it)
+        }
+        prePromptBundle.voiceMemosPromptText?.let {
+            baseSystemPromptBuilder.appendLine()
+            baseSystemPromptBuilder.append(it)
+        }
+        prePromptBundle.tmdbPromptText?.let {
+            baseSystemPromptBuilder.appendLine()
+            baseSystemPromptBuilder.append(it)
+        }
+        prePromptBundle.visualPrivacyPromptText?.let {
+            baseSystemPromptBuilder.appendLine()
+            baseSystemPromptBuilder.append(it)
+        }
+        if (prePromptBundle.customInstructionsText.isNotBlank()) {
+            baseSystemPromptBuilder.appendLine()
+            baseSystemPromptBuilder.append(prePromptBundle.customInstructionsText)
         }
 
         val toolDefinitionText = effectiveTools.joinToString("\n") { tool ->
@@ -1421,6 +1364,7 @@ class GenerationHandler(
         val selectedMessages = mutableListOf<UIMessage>()
         val selectedMemories = mutableListOf<AssistantMemory>()
         var selectedMemoryPromptText = ""
+        var activeMemorySummary: String? = null
         
         val remainingTokens = maxTokens - currentTokens
         if (remainingTokens <= 0) {
@@ -1436,6 +1380,7 @@ class GenerationHandler(
                 val memorySummary = if (assistant.enableMemorySummary) {
                     memoryRepo.getMemorySummary(assistant.id.toString())?.rawMarkdown?.takeIf { it.isNotBlank() }
                 } else null
+                activeMemorySummary = memorySummary
 
                 val memorySelection = selectSmartMemoryContext(
                     candidates = effectiveMemoriesCandidates,
@@ -1446,6 +1391,7 @@ class GenerationHandler(
                     contextPriority = assistant.contextPriority,
                     episodeGroup = runtimeInfo::episodicMemoryGroup,
                     memorySummary = memorySummary,
+                    includeWriteTools = allowMemoryWritePrompt,
                 )
                 selectedMemories.addAll(memorySelection.memories)
                 selectedMemoryPromptText = memorySelection.promptText
@@ -1550,13 +1496,15 @@ class GenerationHandler(
             val memorySummary = if (assistant.enableMemorySummary) {
                 memoryRepo.getMemorySummary(assistant.id.toString())?.rawMarkdown?.takeIf { it.isNotBlank() }
             } else null
+            activeMemorySummary = memorySummary
 
-            if (selectedMemories.isNotEmpty() || ModelAbility.TOOL in model.abilities || !memorySummary.isNullOrBlank()) {
+            if (selectedMemories.isNotEmpty() || (allowMemoryWritePrompt && ModelAbility.TOOL in model.abilities) || !memorySummary.isNullOrBlank()) {
                 selectedMemoryPromptText = renderMemoryContextPrompt(
                     model = model,
                     memories = selectedMemories,
                     episodeGroup = runtimeInfo::episodicMemoryGroup,
                     memorySummary = memorySummary,
+                    includeWriteTools = allowMemoryWritePrompt,
                 )
             }
         }
@@ -1606,11 +1554,18 @@ class GenerationHandler(
         } else {
             selectedMessages.sortedBy { messages.indexOf(it) }
         }
-        val timeAwarenessPrompt = buildTimeAwarenessBlock(
-            enabled = assistant.enableTimeAwareness,
-            fullMessages = messages,
-            retainedMessages = orderedSelectedMessages
+        val promptBundle = buildPromptInjectionBundle(
+            assistant = assistant,
+            settings = settings,
+            model = model,
+            rawMessages = messages,
+            retainedMessages = orderedSelectedMessages,
+            hasVisualTool = hasVisualTool,
+            hasVisualToolResults = hasVisualToolResults,
+            conversationEnabledInstructionIds = conversationEnabledInstructionIds,
+            allowGlobalPromptInjections = allowGlobalPromptInjections,
         )
+        val timeAwarenessPrompt = promptBundle.timeAwarenessPromptText
         val rawBuiltMessages = buildList {
             if (baseSystemPrompt.isNotBlank()) {
                 add(UIMessage.system(baseSystemPrompt))
@@ -1756,28 +1711,114 @@ class GenerationHandler(
             messageBudgetTokens = smartMessageBudget,
             effectiveInputBudgetTokens = maxTokens.takeIf { smartEnabled },
             contextUsage = model.contextCapacityTokens?.let {
-                val skillText = buildString {
-                    enabledSkills.forEach { skill ->
-                        appendLine(skill.name)
-                        appendLine(skill.instructions)
-                    }
-                }
+                val skillText = formatSkillsAccountingText(skillsRoot, enabledSkills)
                 val lorebookText = activatedEntries.joinToString("\n") { entry -> entry.prompt }
-                val systemPromptText = buildString {
-                    append(assistant.systemPrompt)
-                    if (assistant.learningMode) {
-                        appendLine()
-                        append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
+                val memorySummaryText = if (assistant.enableMemory && selectedMemoryPromptText.isNotBlank()) {
+                    renderMemorySummarySection(activeMemorySummary)
+                } else {
+                    ""
+                }
+                val memoryOnlyText = if (assistant.enableMemory && selectedMemoryPromptText.isNotBlank()) {
+                    renderMemoryRecordsAndToolPrompt(
+                        model = model,
+                        memories = selectedMemories,
+                        episodeGroup = runtimeInfo::episodicMemoryGroup,
+                        includeWriteTools = allowMemoryWritePrompt,
+                    )
+                } else {
+                    ""
+                }
+
+                val workspaceToolNames = setOf(
+                    "workspace_read_file",
+                    "workspace_write_file",
+                    "workspace_edit_file",
+                    "workspace_shell",
+                    "python_server_start",
+                    "python_server_stop",
+                    "python_server_list",
+                    "mcp_add_local_connection",
+                    "python_extension_manage",
+                )
+                val mcpToolNames = settings.mcpServers
+                    .filter { server -> server.commonOptions.enable && server.id in assistant.mcpServers }
+                    .flatMap { server -> server.commonOptions.tools.filter { tool -> tool.enable }.map { tool -> tool.name } }
+                    .toSet()
+
+                var localSearchTokens = 0
+                var localSearchCount = 0
+                var mcpTokens = 0
+                var mcpCount = 0
+                var workspaceTokens = 0
+                var workspaceCount = 0
+                effectiveTools.forEach { tool ->
+                    val tokens = ContextTokenEstimator.toolDefinitionTokens(tool, model) +
+                        ContextTokenEstimator.textTokens(tool.systemPrompt(model, messages), model)
+                    when (tool.name) {
+                        in workspaceToolNames -> {
+                            workspaceTokens += tokens
+                            workspaceCount++
+                        }
+                        in mcpToolNames -> {
+                            mcpTokens += tokens
+                            mcpCount++
+                        }
+                        else -> {
+                            localSearchTokens += tokens
+                            localSearchCount++
+                        }
                     }
                 }
-                ContextTokenEstimator.breakdown(
+                val toolMapEntries = buildList {
+                    if (localSearchTokens > 0) {
+                        add(
+                            ContextMapEntry(
+                                category = ContextMapCategory.TOOL_DEFINITIONS,
+                                id = "tools:local",
+                                label = "Local Tools & Search",
+                                subtitle = "$localSearchCount active ${if (localSearchCount == 1) "tool" else "tools"}",
+                                tokens = localSearchTokens,
+                                itemCount = localSearchCount,
+                            )
+                        )
+                    }
+                    if (mcpTokens > 0) {
+                        add(
+                            ContextMapEntry(
+                                category = ContextMapCategory.TOOL_DEFINITIONS,
+                                id = "tools:mcp",
+                                label = "MCP & Extensions",
+                                subtitle = "$mcpCount active MCP ${if (mcpCount == 1) "tool" else "tools"}",
+                                tokens = mcpTokens,
+                                itemCount = mcpCount,
+                            )
+                        )
+                    }
+                    if (workspaceTokens > 0) {
+                        add(
+                            ContextMapEntry(
+                                category = ContextMapCategory.TOOL_DEFINITIONS,
+                                id = "tools:workspace",
+                                label = "Workspace Tools",
+                                subtitle = "$workspaceCount active workspace ${if (workspaceCount == 1) "tool" else "tools"}",
+                                tokens = workspaceTokens,
+                                itemCount = workspaceCount,
+                            )
+                        )
+                    }
+                }
+
+                val preBreakdown = ContextTokenEstimator.breakdown(
                     messages = builtMessages,
                     model = model,
-                    systemPromptText = systemPromptText,
+                    systemPromptText = promptBundle.systemPromptText,
+                    customInstructionsText = promptBundle.customInstructionsText,
+                    memorySummaryText = memorySummaryText,
                     summaryText = contextSummary.orEmpty(),
-                    memoryText = selectedMemoryPromptText,
+                    memoryText = memoryOnlyText,
                     skillText = skillText,
                     lorebookText = lorebookText,
+                    featurePromptsText = promptBundle.featurePromptsText,
                     toolDefinitionText = toolDefinitionText,
                     toolDefinitionTokensOverride = toolDefinitionTokens,
                     embeddedToolText = toolSystemPromptText,
@@ -1785,6 +1826,25 @@ class GenerationHandler(
                     usableInputTokens = if (smartEnabled) maxTokens else null,
                     sourceKey = contextUsageSourceKey,
                 )
+                val mapEntries = buildContextMapEntries(
+                    model = model,
+                    assistant = assistant,
+                    bundle = promptBundle,
+                    memorySummaryTokens = preBreakdown.memorySummaryTokens,
+                    memoryTokens = preBreakdown.memoryTokens,
+                    memoryCount = selectedMemories.size,
+                    summaryTokens = preBreakdown.summaryTokens,
+                    enabledSkills = enabledSkills,
+                    skillsRoot = skillsRoot,
+                    activatedLorebookEntries = activatedEntriesWithLorebook.map { it.lorebook to it.entry },
+                    toolEntries = toolMapEntries,
+                    toolCallTokens = preBreakdown.toolCallTokens,
+                    conversationTokens = preBreakdown.conversationTokens,
+                    conversationMessageCount = orderedSelectedMessages.size,
+                    mediaTokens = preBreakdown.mediaTokens,
+                    imageCount = preBreakdown.imageCount,
+                )
+                preBreakdown.copy(mapEntries = mapEntries)
             },
         )
     }
@@ -1916,6 +1976,7 @@ class GenerationHandler(
         onContextUsage: suspend (ContextUsageBreakdown) -> Unit = {},
         contextUsageSourceKey: Int? = null,
         contextBudgetScale: Double = 1.0,
+        quickAskIsolation: QuickAskIsolationOptions? = null,
     ) {
         val buildResult = buildMessages(
             assistant = assistant,
@@ -1934,6 +1995,7 @@ class GenerationHandler(
             contextSummaryUpToIndex = contextSummaryUpToIndex,
             contextUsageSourceKey = contextUsageSourceKey,
             contextBudgetScale = contextBudgetScale,
+            quickAskIsolation = quickAskIsolation,
         )
         var uiMessages = messages
         val transformedInput = buildResult.messages.transformInput(
@@ -1961,11 +2023,19 @@ class GenerationHandler(
             val before = ContextTokenEstimator.messagesTokens(buildResult.messages, model)
             val after = ContextTokenEstimator.messagesTokens(internalMessages, model)
             val delta = after - before
+            val nextConversationTokens = (usage.conversationTokens + delta).coerceAtLeast(0)
             usage.copy(
-                conversationTokens = (usage.conversationTokens + delta).coerceAtLeast(0),
+                conversationTokens = nextConversationTokens,
                 usedTokens = (usage.usedTokens + delta).coerceAtLeast(0),
                 imageCount = internalMessages.sumOf { message ->
                     message.parts.count { it is UIMessagePart.Image }
+                },
+                mapEntries = usage.mapEntries.map { entry ->
+                    if (entry.category == ContextMapCategory.CONVERSATION) {
+                        entry.copy(tokens = nextConversationTokens)
+                    } else {
+                        entry
+                    }
                 },
             )
         }
@@ -2225,6 +2295,7 @@ class GenerationHandler(
     private fun buildMemoryTools(
         assistantId: String,
         enableSummaryTools: Boolean,
+        allowWriteTools: Boolean = true,
         memoryDAO: MemoryDAO?,
         memorySummaryService: MemorySummaryService?,
         onCreation: suspend (String) -> AssistantMemory,
@@ -2232,103 +2303,107 @@ class GenerationHandler(
         onDelete: suspend (Int) -> Unit,
         onSearch: (suspend (String, Int, String?) -> JsonElement)? = null,
     ) = buildList {
-        add(Tool(
-            name = "create_memory",
-            description = "Create a new memory record.",
-            parameters = {
-                InputSchema.Obj(
-                    properties = buildJsonObject {
-                        put("content", buildJsonObject {
-                            put("type", "string")
-                            put("description", "Content of the memory.")
-                        })
-                    },
-                    required = listOf("content")
-                )
-            },
-            execute = {
-                val params = it.jsonObject
-                val content =
-                    params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
-                json.encodeToJsonElement(AssistantMemory.serializer(), onCreation(content))
-            }
-        ))
-        add(Tool(
-            name = "edit_memory",
-            description = "Update an existing memory record.",
-            parameters = {
-                InputSchema.Obj(
-                    properties = buildJsonObject {
-                        put("id", buildJsonObject {
-                            put("type", "integer")
-                            put("description", "ID of the memory to update.")
-                        })
-                        put("content", buildJsonObject {
-                            put("type", "string")
-                            put("description", "New content for the memory.")
-                        })
-                    },
-                    required = listOf("id", "content"),
-                )
-            },
-            execute = {
-                val params = it.jsonObject
-                val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
-                val content =
-                    params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
-                val before = memoryRepo.getMemoryById(id)
-                val updated = onUpdate(id, content)
-                buildJsonObject {
-                    put("id", JsonPrimitive(updated.id))
-                    put("content", JsonPrimitive(updated.content))
-                    put("type", JsonPrimitive(updated.type))
-                    put("hasEmbedding", JsonPrimitive(updated.hasEmbedding))
-                    updated.embeddingModelId?.let { put("embeddingModelId", JsonPrimitive(it)) }
-                    put("timestamp", JsonPrimitive(updated.timestamp))
-                    updated.significance?.let { put("significance", JsonPrimitive(it)) }
-                    before?.let { previous ->
-                        put("before_content", JsonPrimitive(previous.content))
-                        put("before_timestamp", JsonPrimitive(previous.timestamp))
+        if (allowWriteTools) {
+            add(Tool(
+                name = "create_memory",
+                description = "Create a new memory record.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("content", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Content of the memory.")
+                            })
+                        },
+                        required = listOf("content")
+                    )
+                },
+                execute = {
+                    val params = it.jsonObject
+                    val content =
+                        params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
+                    json.encodeToJsonElement(AssistantMemory.serializer(), onCreation(content))
+                }
+            ))
+            add(Tool(
+                name = "edit_memory",
+                description = "Update an existing memory record.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("id", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "ID of the memory to update.")
+                            })
+                            put("content", buildJsonObject {
+                                put("type", "string")
+                                put("description", "New content for the memory.")
+                            })
+                        },
+                        required = listOf("id", "content"),
+                    )
+                },
+                execute = {
+                    val params = it.jsonObject
+                    val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
+                    val content =
+                        params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
+                    val before = memoryRepo.getMemoryById(id)
+                    val updated = onUpdate(id, content)
+                    buildJsonObject {
+                        put("id", JsonPrimitive(updated.id))
+                        put("content", JsonPrimitive(updated.content))
+                        put("type", JsonPrimitive(updated.type))
+                        put("hasEmbedding", JsonPrimitive(updated.hasEmbedding))
+                        updated.embeddingModelId?.let { put("embeddingModelId", JsonPrimitive(it)) }
+                        put("timestamp", JsonPrimitive(updated.timestamp))
+                        updated.significance?.let { put("significance", JsonPrimitive(it)) }
+                        before?.let { previous ->
+                            put("before_content", JsonPrimitive(previous.content))
+                            put("before_timestamp", JsonPrimitive(previous.timestamp))
+                        }
                     }
                 }
-            }
-        ))
-        add(Tool(
-            name = "delete_memory",
-            description = "Delete a memory record.",
-            parameters = {
-                InputSchema.Obj(
-                    properties = buildJsonObject {
-                        put("id", buildJsonObject {
-                            put("type", "integer")
-                            put("description", "ID of the memory to delete.")
-                        })
-                    },
-                    required = listOf("id")
-                )
-            },
-            execute = {
-                val params = it.jsonObject
-                val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
-                val before = memoryRepo.getMemoryById(id)
-                onDelete(id)
-                buildJsonObject {
-                    put("deleted", JsonPrimitive(true))
-                    before?.let { memory ->
-                        put("id", JsonPrimitive(memory.id))
-                        put("content", JsonPrimitive(memory.content))
-                        put("type", JsonPrimitive(memory.type))
-                        put("hasEmbedding", JsonPrimitive(memory.hasEmbedding))
-                        memory.embeddingModelId?.let { put("embeddingModelId", JsonPrimitive(it)) }
-                        put("timestamp", JsonPrimitive(memory.timestamp))
-                        memory.significance?.let { put("significance", JsonPrimitive(it)) }
+            ))
+            add(Tool(
+                name = "delete_memory",
+                description = "Delete a memory record.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("id", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "ID of the memory to delete.")
+                            })
+                        },
+                        required = listOf("id")
+                    )
+                },
+                execute = {
+                    val params = it.jsonObject
+                    val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
+                    val before = memoryRepo.getMemoryById(id)
+                    onDelete(id)
+                    buildJsonObject {
+                        put("deleted", JsonPrimitive(true))
+                        before?.let { memory ->
+                            put("id", JsonPrimitive(memory.id))
+                            put("content", JsonPrimitive(memory.content))
+                            put("type", JsonPrimitive(memory.type))
+                            put("hasEmbedding", JsonPrimitive(memory.hasEmbedding))
+                            memory.embeddingModelId?.let { put("embeddingModelId", JsonPrimitive(it)) }
+                            put("timestamp", JsonPrimitive(memory.timestamp))
+                            memory.significance?.let { put("significance", JsonPrimitive(it)) }
+                        }
                     }
                 }
-            }
-        ))
+            ))
+        }
         if (enableSummaryTools && memoryDAO != null && memorySummaryService != null) {
             add(buildGetMemoriesTool(assistantId, memoryDAO))
-            add(buildManageMemorySummaryTool(assistantId, memorySummaryService))
+            if (allowWriteTools) {
+                add(buildManageMemorySummaryTool(assistantId, memorySummaryService))
+            }
         }
         if (onSearch != null) {
             add(Tool(
@@ -2353,20 +2428,7 @@ class GenerationHandler(
                         required = listOf("query")
                     )
                 },
-                systemPrompt = { _, _ ->
-                    """
-                    ## Memory search tool
-                    You may call `$MEMORY_SEARCH_TOOL_NAME` when you are deliberately trying to remember something from core memories or older chats.
-                    - Use it for genuine recall, not on every turn.
-                    - It searches only this character's memories and actually used chat timeline, not other characters or discarded reply versions.
-                    - You can pass `time_range` when the user asks about a rough time span, like "last day", "last 2 days", "yesterday", "last week", "this month", "last month", or "4 months ago".
-                    - Preserve the user's recall terms, including odd meta words; the memory subagent will expand the query internally across several variants.
-                    - If the returned summary says no clear memory was found and the user keeps pressing, you may try one more narrower query.
-                    - Treat returned memories as approximate, human-like recollections.
-                    - Time labels are fuzzy on purpose; do not expose exact timestamps unless the user asks.
-                    - If confidence is low or results disagree, answer with natural uncertainty.
-                    """.trimIndent()
-                },
+                systemPrompt = { _, _ -> MEMORY_SEARCH_TOOL_SYSTEM_PROMPT },
                 execute = {
                     val params = it.jsonObject
                     val query = params["query"]?.jsonPrimitive?.contentOrNull ?: error("query is required")

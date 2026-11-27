@@ -5,9 +5,13 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.DEFAULT_TEXT_SELECTION_ACTIONS
+import me.rerere.rikkahub.data.model.TextSelectionAction
 import me.rerere.rikkahub.data.model.TextSelectionConfig
+import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.uuid.Uuid
 
@@ -171,6 +175,64 @@ class TextSelectionActionModelSettingsTest {
 
         assertNull(sanitized.findTextSelectionAction("summarize")?.modelId)
         assertEquals(1, cleanup.orphanedModelReferences)
+    }
+
+    @Test
+    fun textSelectionConfig_isolationDefaultsAndLegacyJsonCompatibility() {
+        val defaults = TextSelectionConfig()
+        assertFalse(defaults.enableMemoryRead)
+        assertFalse(defaults.enableMemoryWrite)
+        assertFalse(defaults.enableTools)
+        assertFalse(defaults.enableExtraPromptInjections)
+        assertFalse(defaults.showThinkingByDefault)
+        assertFalse(defaults.inheritAssistantSystemPrompt)
+
+        val legacyJson = """
+            {
+              "translateLanguage": "Japanese",
+              "actions": [
+                {
+                  "id": "custom_preset",
+                  "name": "Fix Grammar",
+                  "icon": "Spellcheck",
+                  "prompt": "Fix grammar."
+                }
+              ]
+            }
+        """.trimIndent()
+        val decoded = JsonInstant.decodeFromString<TextSelectionConfig>(legacyJson)
+        assertEquals("Japanese", decoded.translateLanguage)
+        assertFalse(decoded.enableMemoryRead)
+        assertFalse(decoded.enableTools)
+        assertTrue(decoded.actions.single().allowContinueInChat)
+        assertNull(decoded.actions.single().enableMemoryReadOverride)
+    }
+
+    @Test
+    fun resolveTextSelectionAssistant_matchesActiveAssistantFallbackWhenUnset() {
+        val firstModel = chatModel("00000000-0000-0000-0000-000000000301", "First")
+        val secondModel = chatModel("00000000-0000-0000-0000-000000000302", "Second")
+        val first = assistant("00000000-0000-0000-0000-000000000401", firstModel.id)
+        val second = assistant("00000000-0000-0000-0000-000000000402", secondModel.id)
+
+        val followingActive = Settings(
+            assistantId = second.id,
+            chatModelId = firstModel.id,
+            assistants = listOf(first, second),
+            providers = listOf(ProviderSetting.OpenAI(models = listOf(firstModel, secondModel))),
+            textSelectionConfig = TextSelectionConfig(assistantId = null),
+        )
+        assertTrue(followingActive.isTextSelectionFollowingActiveAssistant())
+        assertEquals(second.id, followingActive.resolveTextSelectionAssistant().id)
+
+        val customPreset = TextSelectionAction(
+            id = "custom_1",
+            name = "Rewrite",
+            icon = "EditNote",
+            prompt = "Rewrite cleanly",
+            modelId = firstModel.id,
+        )
+        assertEquals(firstModel.id, followingActive.getTextSelectionActionModel(customPreset)?.id)
     }
 
     private fun settings(

@@ -3,8 +3,7 @@ package me.rerere.rikkahub.ui.pages.setting
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings as AndroidSettings
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,6 +12,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,32 +23,29 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Lightbulb
-import androidx.compose.material.icons.rounded.Summarize
-import androidx.compose.material.icons.rounded.Translate
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalAbsoluteTonalElevation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -62,10 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -75,26 +70,35 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.ModelType
-import me.rerere.rikkahub.data.datastore.findModelById
-import me.rerere.rikkahub.data.datastore.getTextSelectionActionModel
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.getAssistantById
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.datastore.isTextSelectionFollowingActiveAssistant
+import me.rerere.rikkahub.data.datastore.resolveTextSelectionAssistant
 import me.rerere.rikkahub.data.model.DEFAULT_TEXT_SELECTION_ACTIONS
 import me.rerere.rikkahub.data.model.TextSelectionAction
 import me.rerere.rikkahub.data.model.TextSelectionConfig
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.textselection.QUICK_ASK_ICON_OPTIONS
 import me.rerere.rikkahub.ui.components.textselection.QuickAskInnerShape
 import me.rerere.rikkahub.ui.components.textselection.QuickAskOuterShape
 import me.rerere.rikkahub.ui.components.textselection.quickAskGroupedButtonShape
+import me.rerere.rikkahub.ui.components.textselection.quickAskIconForName
+import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
-import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.ToastAction
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.motion.rememberControlPressValue
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.theme.AppShapes
@@ -117,11 +121,21 @@ fun SettingAndroidIntegrationPage(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
-    
+    val haptics = rememberPremiumHaptics()
+
     val config = settings.textSelectionConfig
     var editingAction by remember { mutableStateOf<TextSelectionAction?>(null) }
+    var isNewAction by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
     var showWaveOriginPicker by remember { mutableStateOf(false) }
+
+    fun updateTextSelectionConfig(transform: (TextSelectionConfig) -> TextSelectionConfig) {
+        scope.launch {
+            settingsStore.update { current ->
+                current.copy(textSelectionConfig = transform(current.textSelectionConfig))
+            }
+        }
+    }
 
     if (showWaveOriginPicker) {
         me.rerere.rikkahub.ui.pages.setting.components.WaveOriginPickerDialog(
@@ -160,7 +174,7 @@ fun SettingAndroidIntegrationPage(
                 contentPadding = innerPadding + PaddingValues(bottom = 80.dp),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                
+
                 // Try It Section - Demo with selectable text
                 item {
                     SettingsGroup(title = stringResource(R.string.text_selection_try_it)) {
@@ -175,14 +189,13 @@ fun SettingAndroidIntegrationPage(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            
-                            // Demo text box
+
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                androidx.compose.foundation.text.selection.SelectionContainer {
+                                SelectionContainer {
                                     Text(
                                         text = stringResource(R.string.text_selection_demo_text),
                                         style = MaterialTheme.typography.bodyMedium,
@@ -191,7 +204,7 @@ fun SettingAndroidIntegrationPage(
                                     )
                                 }
                             }
-                            
+
                             Text(
                                 text = stringResource(R.string.text_selection_demo_hint),
                                 style = MaterialTheme.typography.bodySmall,
@@ -330,36 +343,41 @@ fun SettingAndroidIntegrationPage(
                     }
                 }
 
-            // Settings Section
+                // Ask LastChat Assistant & Language Settings
                 item {
-                    SettingsGroup(title = stringResource(R.string.settings)) {
-                        // Assistant picker - default to Generical
-                        val defaultAssistant = settings.assistants.find { it.name == "Generical" }
-                            ?: settings.assistants.firstOrNull()
-                        
+                    val resolvedAssistant = settings.resolveTextSelectionAssistant()
+                    val isFollowingActive = settings.isTextSelectionFollowingActiveAssistant()
+                    val selectedAssistantOption = config.assistantId
+                        ?.takeIf { id -> settings.getAssistantById(id) != null }
+                    val assistantOptions: List<Uuid?> = listOf(null) + settings.assistants.map { it.id }
+                    val activeAssistantName = settings.getCurrentAssistant().name
+
+                    SettingsGroup(title = stringResource(R.string.text_selection_menu_label)) {
                         SettingGroupItem(
                             title = stringResource(R.string.text_selection_assistant),
-                            subtitle = settings.assistants.find { it.id == config.assistantId }?.name
-                                ?: defaultAssistant?.name ?: "None",
+                            subtitle = if (isFollowingActive) {
+                                "Follow active chat assistant (${resolvedAssistant.name})"
+                            } else {
+                                resolvedAssistant.name
+                            },
                             trailing = {
                                 Select(
-                                    options = settings.assistants.map { it.id },
-                                    selectedOption = config.assistantId ?: defaultAssistant?.id,
+                                    options = assistantOptions,
+                                    selectedOption = selectedAssistantOption,
                                     onOptionSelected = { selected ->
-                                        scope.launch {
-                                            settingsStore.update {
-                                                it.copy(textSelectionConfig = config.copy(assistantId = selected))
-                                            }
-                                        }
+                                        updateTextSelectionConfig { it.copy(assistantId = selected) }
                                     },
                                     optionToString = { id ->
-                                        settings.assistants.find { it.id == id }?.name ?: "Unknown"
+                                        if (id == null) {
+                                            "Active ($activeAssistantName)"
+                                        } else {
+                                            settings.getAssistantById(id)?.name ?: "Unknown"
+                                        }
                                     },
                                 )
                             }
                         )
 
-                        // Translate language
                         SettingGroupItem(
                             title = stringResource(R.string.text_selection_translate_language),
                             subtitle = config.translateLanguage,
@@ -368,18 +386,13 @@ fun SettingAndroidIntegrationPage(
                                     options = COMMON_LANGUAGES,
                                     selectedOption = config.translateLanguage,
                                     onOptionSelected = { lang ->
-                                        scope.launch {
-                                            settingsStore.update {
-                                                it.copy(textSelectionConfig = config.copy(translateLanguage = lang))
-                                            }
-                                        }
+                                        updateTextSelectionConfig { it.copy(translateLanguage = lang) }
                                     },
                                     optionToString = { it },
                                 )
                             }
                         )
 
-                        // Reset to defaults button
                         SettingGroupItem(
                             title = stringResource(R.string.reset),
                             subtitle = stringResource(R.string.setting_android_integration_reset_actions),
@@ -388,29 +401,218 @@ fun SettingAndroidIntegrationPage(
                     }
                 }
 
-                // Quick Actions Section (grouped)
+                // Context & Isolation Settings
                 item {
-                    SettingsGroup(title = stringResource(R.string.text_selection_actions)) {
-                        config.actions.forEachIndexed { index, action ->
-                            ActionCard(
-                                action = action,
-                                settings = settings,
-                                onModelSelected = { modelId ->
-                                    scope.launch {
-                                        val newActions = config.actions.map { currentAction ->
-                                            if (currentAction.id == action.id) {
-                                                currentAction.copy(modelId = modelId)
-                                            } else {
-                                                currentAction
-                                            }
-                                        }
-                                        settingsStore.update {
-                                            it.copy(textSelectionConfig = config.copy(actions = newActions))
+                    SettingsGroup(title = "Context & Isolation") {
+                        SettingGroupItem(
+                            title = "Include assistant system prompt",
+                            subtitle = "Prepend the selected assistant's persona/system instructions to non-translate actions",
+                            trailing = {
+                                HapticSwitch(
+                                    checked = config.inheritAssistantSystemPrompt,
+                                    onCheckedChange = { checked ->
+                                        updateTextSelectionConfig { it.copy(inheritAssistantSystemPrompt = checked) }
+                                    }
+                                )
+                            }
+                        )
+
+                        SettingGroupItem(
+                            title = "Read memories & memory summary",
+                            subtitle = "Inject stored memories and memory summary before answering (adds latency)",
+                            trailing = {
+                                HapticSwitch(
+                                    checked = config.enableMemoryRead,
+                                    onCheckedChange = { checked ->
+                                        updateTextSelectionConfig { it.copy(enableMemoryRead = checked) }
+                                    }
+                                )
+                            }
+                        )
+
+                        SettingGroupItem(
+                            title = "Allow tool execution",
+                            subtitle = "Allow Search, MCP, and Workspace tool calls during Quick Ask",
+                            trailing = {
+                                HapticSwitch(
+                                    checked = config.enableTools,
+                                    onCheckedChange = { checked ->
+                                        updateTextSelectionConfig {
+                                            it.copy(
+                                                enableTools = checked,
+                                                enableMemoryWrite = if (checked) it.enableMemoryWrite else false,
+                                            )
                                         }
                                     }
-                                },
-                                onClick = { editingAction = action }
+                                )
+                            }
+                        )
+
+                        SettingGroupItem(
+                            title = "Allow saving new memories",
+                            subtitle = if (config.enableTools) {
+                                "Let Quick Ask create, edit, or delete assistant memories"
+                            } else {
+                                "Enable tool execution above to allow memory writes"
+                            },
+                            trailing = {
+                                HapticSwitch(
+                                    checked = config.enableMemoryWrite && config.enableTools,
+                                    enabled = config.enableTools,
+                                    onCheckedChange = { checked ->
+                                        updateTextSelectionConfig { it.copy(enableMemoryWrite = checked) }
+                                    }
+                                )
+                            }
+                        )
+
+                        SettingGroupItem(
+                            title = "Include global prompt injections",
+                            subtitle = "Include Custom Instructions, Skills, Lorebooks, Artifacts, TMDB, and Time Awareness",
+                            trailing = {
+                                HapticSwitch(
+                                    checked = config.enableExtraPromptInjections,
+                                    onCheckedChange = { checked ->
+                                        updateTextSelectionConfig { it.copy(enableExtraPromptInjections = checked) }
+                                    }
+                                )
+                            }
+                        )
+
+                        SettingGroupItem(
+                            title = "Expand thinking by default",
+                            subtitle = "Automatically open the reasoning trace card in the floating sheet",
+                            trailing = {
+                                HapticSwitch(
+                                    checked = config.showThinkingByDefault,
+                                    onCheckedChange = { checked ->
+                                        updateTextSelectionConfig { it.copy(showThinkingByDefault = checked) }
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+
+                // Quick Actions Section (Live Preview + Full CRUD + Reorder)
+                item {
+                    SettingsGroup(title = stringResource(R.string.text_selection_actions)) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            PreviewCard(
+                                config = config,
+                                onActionClick = { action ->
+                                    isNewAction = false
+                                    editingAction = action
+                                }
                             )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${config.actions.count { it.enabled }}/${config.actions.size} enabled • Swipe left to delete",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 4.dp)
+                                )
+                                FilledTonalButton(
+                                    onClick = {
+                                        haptics.perform(HapticPattern.Pop)
+                                        isNewAction = true
+                                        editingAction = TextSelectionAction(
+                                            name = "",
+                                            icon = "AutoAwesome",
+                                            prompt = "",
+                                        )
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Add,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.size(6.dp))
+                                    Text(stringResource(R.string.text_selection_add_action))
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(4.dp))
+
+                        config.actions.forEachIndexed { index, action ->
+                            val position = when {
+                                config.actions.size == 1 -> ItemPosition.ONLY
+                                index == 0 -> ItemPosition.FIRST
+                                index == config.actions.lastIndex -> ItemPosition.LAST
+                                else -> ItemPosition.MIDDLE
+                            }
+                            PhysicsSwipeToDelete(
+                                position = position,
+                                deleteEnabled = config.actions.size > 1,
+                                onDelete = {
+                                    val previousActions = config.actions
+                                    val updated = config.actions.filterNot { it.id == action.id }
+                                    updateTextSelectionConfig { it.copy(actions = updated) }
+                                    toaster.show(
+                                        message = "Removed \"${action.name}\"",
+                                        action = ToastAction(
+                                            label = context.getString(R.string.undo),
+                                            onClick = {
+                                                updateTextSelectionConfig { it.copy(actions = previousActions) }
+                                            }
+                                        )
+                                    )
+                                }
+                            ) { shape ->
+                                ActionCard(
+                                    action = action,
+                                    settings = settings,
+                                    shape = shape,
+                                    canMoveUp = index > 0,
+                                    canMoveDown = index < config.actions.lastIndex,
+                                    onMoveUp = {
+                                        if (index > 0) {
+                                            haptics.perform(HapticPattern.Selection)
+                                            val mutable = config.actions.toMutableList()
+                                            val moved = mutable.removeAt(index)
+                                            mutable.add(index - 1, moved)
+                                            updateTextSelectionConfig { it.copy(actions = mutable) }
+                                        }
+                                    },
+                                    onMoveDown = {
+                                        if (index < config.actions.lastIndex) {
+                                            haptics.perform(HapticPattern.Selection)
+                                            val mutable = config.actions.toMutableList()
+                                            val moved = mutable.removeAt(index)
+                                            mutable.add(index + 1, moved)
+                                            updateTextSelectionConfig { it.copy(actions = mutable) }
+                                        }
+                                    },
+                                    onToggleEnabled = { enabled ->
+                                        val updated = config.actions.map { current ->
+                                            if (current.id == action.id) current.copy(enabled = enabled) else current
+                                        }
+                                        updateTextSelectionConfig { it.copy(actions = updated) }
+                                    },
+                                    onModelSelected = { modelId ->
+                                        val updated = config.actions.map { current ->
+                                            if (current.id == action.id) current.copy(modelId = modelId) else current
+                                        }
+                                        updateTextSelectionConfig { it.copy(actions = updated) }
+                                    },
+                                    onClick = {
+                                        isNewAction = false
+                                        editingAction = action
+                                    }
+                                )
+                            }
                             if (index < config.actions.lastIndex) {
                                 Spacer(Modifier.height(4.dp))
                             }
@@ -423,18 +625,22 @@ fun SettingAndroidIntegrationPage(
         }
     }
 
-    // Edit Action Dialog
     editingAction?.let { action ->
         EditActionDialog(
             action = action,
+            settings = settings,
+            isNew = isNewAction,
             onDismiss = { editingAction = null },
             onSave = { updated ->
-                scope.launch {
-                    val newActions = config.actions.map {
-                        if (it.id == updated.id) updated else it
-                    }
-                    settingsStore.update {
-                        it.copy(textSelectionConfig = config.copy(actions = newActions))
+                if (isNewAction) {
+                    updateTextSelectionConfig { it.copy(actions = it.actions + updated) }
+                } else {
+                    updateTextSelectionConfig { current ->
+                        current.copy(
+                            actions = current.actions.map { existing ->
+                                if (existing.id == updated.id) updated else existing
+                            }
+                        )
                     }
                 }
                 editingAction = null
@@ -442,7 +648,6 @@ fun SettingAndroidIntegrationPage(
         )
     }
 
-    // Reset Confirmation Dialog
     if (showResetDialog) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
@@ -452,25 +657,13 @@ fun SettingAndroidIntegrationPage(
                 Button(
                     onClick = {
                         val oldActions = config.actions
-                        scope.launch {
-                            settingsStore.update {
-                                it.copy(textSelectionConfig = config.copy(
-                                    actions = DEFAULT_TEXT_SELECTION_ACTIONS
-                                ))
-                            }
-                        }
+                        updateTextSelectionConfig { it.copy(actions = DEFAULT_TEXT_SELECTION_ACTIONS) }
                         toaster.show(
                             message = context.getString(R.string.setting_android_integration_reset_actions_success),
                             action = ToastAction(
                                 label = context.getString(R.string.undo),
                                 onClick = {
-                                    scope.launch {
-                                        settingsStore.update {
-                                            it.copy(textSelectionConfig = it.textSelectionConfig.copy(
-                                                actions = oldActions
-                                            ))
-                                        }
-                                    }
+                                    updateTextSelectionConfig { it.copy(actions = oldActions) }
                                 }
                             )
                         )
@@ -498,21 +691,21 @@ private fun PreviewCard(
     val isDarkMode = LocalDarkMode.current
     val enabledActions = config.actions.filter { it.enabled }
 
-    CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
-        // Edge-to-edge Surface like actual popup
+    CompositionLocalProvider(
+        LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current
+    ) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp), // No horizontal padding - edge to edge
+                .padding(vertical = 4.dp),
             shape = QuickAskOuterShape,
             color = MaterialTheme.colorScheme.surfaceContainerLow,
-            tonalElevation = 8.dp
+            tonalElevation = if (amoledMode && isDarkMode) 0.dp else 4.dp
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Header with LastChat icon
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -525,7 +718,7 @@ private fun PreviewCard(
                         Image(
                             painter = painterResource(R.mipmap.ic_launcher_lastchat_foreground),
                             contentDescription = null,
-                            modifier = Modifier.size(40.dp) // Match popup icon size
+                            modifier = Modifier.size(32.dp)
                         )
                         Text(
                             text = stringResource(R.string.text_selection_menu_label),
@@ -533,39 +726,50 @@ private fun PreviewCard(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
+                    Text(
+                        text = stringResource(R.string.text_selection_preview),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                
-                // Preview text
+
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = QuickAskInnerShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh // Same as popup
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
                 ) {
                     Text(
-                        text = "Selected text preview...",
+                        text = "Selected text preview…",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(12.dp)
                     )
                 }
 
-                // Action buttons grid - matching actual popup layout
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    val rows = enabledActions.chunked(2)
-                    rows.forEachIndexed { rowIndex, rowActions ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            rowActions.forEachIndexed { colIndex, action ->
-                                val isLastOdd = rowIndex == rows.lastIndex && rowActions.size == 1
-                                PreviewActionButton(
-                                    modifier = Modifier.weight(if (isLastOdd) 2f else 1f),
-                                    action = action,
-                                    shape = quickAskGroupedButtonShape(rowIndex, colIndex, rows.size, rowActions.size),
-                                    isBlack = amoledMode && isDarkMode,
-                                    onClick = { onActionClick(action) }
-                                )
+                if (enabledActions.isEmpty()) {
+                    Text(
+                        text = "No enabled presets",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        val rows = enabledActions.chunked(2)
+                        rows.forEachIndexed { rowIndex, rowActions ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                rowActions.forEachIndexed { colIndex, action ->
+                                    val isLastOdd = rowIndex == rows.lastIndex && rowActions.size == 1
+                                    PreviewActionButton(
+                                        modifier = Modifier.weight(if (isLastOdd) 2f else 1f),
+                                        action = action,
+                                        shape = quickAskGroupedButtonShape(rowIndex, colIndex, rows.size, rowActions.size),
+                                        isBlack = amoledMode && isDarkMode,
+                                        onClick = { onActionClick(action) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -585,34 +789,31 @@ private fun PreviewActionButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "button_scale"
-    )
+    val scale by rememberControlPressValue(isPressed, 0.95f, "preview_button_scale")
 
     Surface(
         modifier = modifier
-            .heightIn(min = 64.dp)
+            .heightIn(min = 56.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             },
         shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        tonalElevation = if (isBlack) 0.dp else 6.dp,
+        tonalElevation = if (isBlack) 0.dp else 4.dp,
+        interactionSource = interactionSource,
         onClick = onClick
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = getIconForName(action.icon),
+                imageVector = quickAskIconForName(action.icon),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
             Text(
                 text = action.name,
@@ -632,11 +833,18 @@ private fun PreviewActionButton(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ActionCard(
     action: TextSelectionAction,
-    settings: me.rerere.rikkahub.data.datastore.Settings,
-    onModelSelected: (kotlin.uuid.Uuid?) -> Unit,
+    settings: Settings,
+    shape: androidx.compose.ui.graphics.Shape,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onToggleEnabled: (Boolean) -> Unit,
+    onModelSelected: (Uuid?) -> Unit,
     onClick: () -> Unit
 ) {
     val configuredModel = action.modelId?.let(settings::findModelById)
@@ -646,50 +854,51 @@ private fun ActionCard(
         MaterialTheme.colorScheme.surfaceContainerHighest
     }
     val promptPreview = action.prompt
-        .take(72)
+        .trim()
+        .take(84)
         .replace("\n", " ")
         .let { preview ->
-            if (action.prompt.length > 72) "$preview..." else preview
+            if (action.prompt.trim().length > 84) "$preview…" else preview
         }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp)),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = containerColor,
+        shape = shape
     ) {
-        Surface(
-            onClick = onClick,
-            modifier = Modifier.fillMaxWidth(),
-            color = containerColor,
-            shape = RoundedCornerShape(10.dp)
-        ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .clickable(onClick = onClick)
+                    .padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Box(
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = getIconForName(action.icon),
+                        imageVector = quickAskIconForName(action.icon),
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
 
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
                         text = action.name,
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = promptPreview,
@@ -698,46 +907,74 @@ private fun ActionCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (action.isCustomPrompt) {
+                            ActionBadgePill("Input")
+                        }
+                        if (!action.allowContinueInChat) {
+                            ActionBadgePill("No chat handoff")
+                        }
+                        action.enableMemoryReadOverride?.let { mem ->
+                            ActionBadgePill("Memory: ${if (mem) "On" else "Off"}")
+                        }
+                        action.enableToolsOverride?.let { tools ->
+                            ActionBadgePill("Tools: ${if (tools) "On" else "Off"}")
+                        }
+                    }
                 }
 
-                if (action.isCustomPrompt) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.tertiaryContainer
-                    ) {
-                        Text(
-                            text = "Input",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = onMoveUp,
+                            enabled = canMoveUp,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.KeyboardArrowUp,
+                                contentDescription = "Move up",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = onMoveDown,
+                            enabled = canMoveDown,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.KeyboardArrowDown,
+                                contentDescription = "Move down",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
-                } else {
-                    Icon(
-                        imageVector = Icons.Rounded.Edit,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(16.dp)
+                    HapticSwitch(
+                        checked = action.enabled,
+                        onCheckedChange = onToggleEnabled
                     )
                 }
             }
-        }
 
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = containerColor,
-            shape = RoundedCornerShape(10.dp)
-        ) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
                         text = "Model",
@@ -745,10 +982,10 @@ private fun ActionCard(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = configuredModel?.displayName ?: "Use default",
+                        text = configuredModel?.displayName ?: "Use assistant default",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -767,13 +1004,38 @@ private fun ActionCard(
 }
 
 @Composable
+private fun ActionBadgePill(label: String) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
 private fun EditActionDialog(
     action: TextSelectionAction,
+    settings: Settings,
     isNew: Boolean = false,
     onDismiss: () -> Unit,
     onSave: (TextSelectionAction) -> Unit
 ) {
-    var prompt by remember { mutableStateOf(action.prompt) }
+    var name by remember(action.id) { mutableStateOf(action.name) }
+    var icon by remember(action.id) { mutableStateOf(action.icon) }
+    var prompt by remember(action.id) { mutableStateOf(action.prompt) }
+    var modelId by remember(action.id) { mutableStateOf(action.modelId) }
+    var isCustomPrompt by remember(action.id) { mutableStateOf(action.isCustomPrompt) }
+    var allowContinueInChat by remember(action.id) { mutableStateOf(action.allowContinueInChat) }
+    var memoryOverride by remember(action.id) { mutableStateOf(action.enableMemoryReadOverride) }
+    var toolsOverride by remember(action.id) { mutableStateOf(action.enableToolsOverride) }
+    val haptics = rememberPremiumHaptics()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -786,37 +1048,208 @@ private fun EditActionDialog(
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.text_selection_action_name)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = AppShapes.InputField,
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Icon",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        QUICK_ASK_ICON_OPTIONS.forEach { option ->
+                            val selected = icon.equals(option.name, ignoreCase = true)
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        if (selected) MaterialTheme.colorScheme.primaryContainer
+                                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                                    )
+                                    .then(
+                                        if (selected) {
+                                            Modifier.border(
+                                                width = 1.5.dp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                shape = RoundedCornerShape(10.dp)
+                                            )
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
+                                    .clickable {
+                                        haptics.perform(HapticPattern.Selection)
+                                        icon = option.name
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = option.icon,
+                                    contentDescription = option.name,
+                                    tint = if (selected) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = prompt,
                     onValueChange = { prompt = it },
                     label = { Text(stringResource(R.string.text_selection_action_prompt)) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 150.dp),
-                    minLines = 5,
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.InputField,
+                        .heightIn(min = 130.dp),
+                    minLines = 4,
+                    shape = AppShapes.InputField,
                 )
-                // Show variable hint only for relevant actions
-                val variableHint = when (action.id) {
-                    "translate" -> "Variable: {{language}}"
-                    "custom" -> "Variable: {{custom_prompt}}"
-                    else -> null
-                }
-                if (variableHint != null) {
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = variableHint,
-                        style = MaterialTheme.typography.bodySmall,
+                        text = "Insert placeholder",
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        listOf("{{language}}", "{{custom_prompt}}").forEach { placeholder ->
+                            SuggestionChip(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Selection)
+                                    prompt = if (prompt.isBlank() || prompt.endsWith(" ") || prompt.endsWith("\n")) {
+                                        "$prompt$placeholder"
+                                    } else {
+                                        "$prompt $placeholder"
+                                    }
+                                },
+                                label = { Text(placeholder) }
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Ask for question input",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Prompt the user before running",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    HapticSwitch(
+                        checked = isCustomPrompt,
+                        onCheckedChange = { isCustomPrompt = it }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Allow Continue in Chat",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Show button to open reply as a full chat",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    HapticSwitch(
+                        checked = allowContinueInChat,
+                        onCheckedChange = { allowContinueInChat = it }
+                    )
+                }
+
+                OverrideTriStateRow(
+                    title = "Memory read override",
+                    value = memoryOverride,
+                    onChange = { memoryOverride = it }
+                )
+
+                OverrideTriStateRow(
+                    title = "Tool execution override",
+                    value = toolsOverride,
+                    onChange = { toolsOverride = it }
+                )
+
+                val configuredModel = modelId?.let(settings::findModelById)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Model override",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = configuredModel?.displayName ?: "Use assistant default",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    ModelSelector(
+                        modelId = configuredModel?.id,
+                        providers = settings.providers,
+                        type = ModelType.CHAT,
+                        allowClear = true,
+                        onSelect = { selected ->
+                            modelId = settings.findModelById(selected.id)?.id
+                        }
                     )
                 }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onSave(action.copy(prompt = prompt)) },
-                enabled = prompt.isNotBlank()
+                onClick = {
+                    onSave(
+                        action.copy(
+                            name = name.trim(),
+                            icon = icon,
+                            prompt = prompt,
+                            modelId = modelId,
+                            isCustomPrompt = isCustomPrompt,
+                            allowContinueInChat = allowContinueInChat,
+                            enableMemoryReadOverride = memoryOverride,
+                            enableToolsOverride = toolsOverride,
+                        )
+                    )
+                },
+                enabled = name.isNotBlank() && prompt.isNotBlank()
             ) {
                 Text(stringResource(R.string.save))
             }
@@ -829,6 +1262,37 @@ private fun EditActionDialog(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun OverrideTriStateRow(
+    title: String,
+    value: Boolean?,
+    onChange: (Boolean?) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            listOf(
+                null to "Inherit",
+                true to "On",
+                false to "Off",
+            ).forEach { (option, label) ->
+                FilterChip(
+                    selected = value == option,
+                    onClick = { onChange(option) },
+                    label = { Text(label) }
+                )
+            }
+        }
+    }
+}
+
 private fun isLastChatDefaultAssistant(context: Context): Boolean {
     return runCatching {
         val value = AndroidSettings.Secure.getString(
@@ -837,14 +1301,4 @@ private fun isLastChatDefaultAssistant(context: Context): Boolean {
         )
         !value.isNullOrBlank() && value.contains(context.packageName)
     }.getOrDefault(false)
-}
-
-private fun getIconForName(name: String): ImageVector {
-    return when (name.lowercase()) {
-        "translate" -> Icons.Rounded.Translate
-        "lightbulb" -> Icons.Rounded.Lightbulb
-        "summarize" -> Icons.Rounded.Summarize
-        "autoawesome" -> Icons.Rounded.AutoAwesome
-        else -> Icons.Rounded.AutoAwesome
-    }
 }

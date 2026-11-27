@@ -577,6 +577,11 @@ fun Settings.resolveTextSelectionAssistant(): Assistant {
         ?: getCurrentAssistant()
 }
 
+fun Settings.isTextSelectionFollowingActiveAssistant(): Boolean {
+    val configuredId = textSelectionConfig.assistantId ?: return true
+    return getAssistantById(configuredId) == null
+}
+
 fun Settings.resolveAssistantOverlayAssistant(): Assistant {
     return assistantOverlayConfig.assistantId?.let { getAssistantById(it) }
         ?: getCurrentAssistant()
@@ -587,11 +592,22 @@ fun Settings.findTextSelectionAction(actionId: String): TextSelectionAction? {
 }
 
 fun Settings.getTextSelectionActionModel(
+    action: TextSelectionAction,
+    assistant: Assistant = resolveTextSelectionAssistant(),
+): Model? {
+    action.modelId?.let { configuredModelId ->
+        findModelById(configuredModelId)?.let { return it }
+    }
+
+    return getChatModelForAssistant(assistant)
+}
+
+fun Settings.getTextSelectionActionModel(
     actionId: String,
     assistant: Assistant = resolveTextSelectionAssistant(),
 ): Model? {
-    findTextSelectionAction(actionId)?.modelId?.let { configuredModelId ->
-        findModelById(configuredModelId)?.let { return it }
+    findTextSelectionAction(actionId)?.let { action ->
+        return getTextSelectionActionModel(action = action, assistant = assistant)
     }
 
     return getChatModelForAssistant(assistant)

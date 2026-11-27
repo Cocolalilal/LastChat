@@ -570,4 +570,63 @@ class ContextAccountingTest {
         assertEquals("data:image/jpeg;base64,img2", t2.inspectedImages[0].url)
         assertEquals("new", t2.inspectedImages[0].title)
     }
+
+    @Test
+    fun breakdown_accountsForInstructionsMemorySummaryAndFeaturePromptsWithoutLeaking() {
+        val model = Model(modelId = "private-model", contextWindowTokens = 32_000)
+        val systemPrompt = "Base system prompt"
+        val customInstructions = "## Custom Instructions\nAlways be concise."
+        val memorySummary = "## User Memory Baseline Profile\nUser builds Android apps."
+        val featurePrompts = "## Entertainment & TMDB Media Tools\nUse media_deck."
+        val userTurn = "Hello!"
+
+        val fullSystemMessage = UIMessage.system(
+            listOf(systemPrompt, featurePrompts, customInstructions).joinToString("\n")
+        )
+        val userMessage = UIMessage.user("<system>\n$memorySummary\n</system>\n\n$userTurn")
+
+        val breakdown = ContextTokenEstimator.breakdown(
+            messages = listOf(fullSystemMessage, userMessage),
+            model = model,
+            systemPromptText = systemPrompt,
+            customInstructionsText = customInstructions,
+            memorySummaryText = memorySummary,
+            featurePromptsText = featurePrompts,
+            namedContextEmbeddedInMessages = true,
+            mapEntries = listOf(
+                ContextMapEntry(ContextMapCategory.CUSTOM_INSTRUCTIONS, "inst-1", "Concise", tokens = 12),
+                ContextMapEntry(ContextMapCategory.MEMORY_SUMMARY, "mem-sum", "Profile", tokens = 15),
+                ContextMapEntry(ContextMapCategory.FEATURE_PROMPTS, "tmdb", "TMDB", tokens = 14),
+            ),
+        )
+
+        assertTrue(breakdown.customInstructionsTokens > 0)
+        assertTrue(breakdown.memorySummaryTokens > 0)
+        assertTrue(breakdown.featurePromptsTokens > 0)
+        val rawConversationOnly = ContextTokenEstimator.textTokens(userTurn, model) + 15
+        assertTrue(breakdown.conversationTokens <= rawConversationOnly)
+
+        val reconciled = ContextTokenEstimator.reconcileProviderCount(
+            breakdown = breakdown,
+            promptTokens = breakdown.usedTokens * 2,
+            model = model,
+        )
+        assertEquals(breakdown.usedTokens * 2, reconciled.usedTokens)
+        assertEquals(
+            reconciled.usedTokens,
+            reconciled.conversationTokens +
+                reconciled.systemPromptTokens +
+                reconciled.customInstructionsTokens +
+                reconciled.memorySummaryTokens +
+                reconciled.summaryTokens +
+                reconciled.memoryTokens +
+                reconciled.skillTokens +
+                reconciled.lorebookTokens +
+                reconciled.featurePromptsTokens +
+                reconciled.toolDefinitionTokens +
+                reconciled.toolCallTokens +
+                reconciled.mediaTokens,
+        )
+        assertTrue(reconciled.mapEntries.all { it.tokens >= 20 })
+    }
 }

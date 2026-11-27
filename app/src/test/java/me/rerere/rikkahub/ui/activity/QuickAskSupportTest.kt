@@ -5,7 +5,10 @@ import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.TextSelectionAction
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -140,5 +143,79 @@ class QuickAskSupportTest {
         assertNull(seed.reuseConversationId)
         assertEquals(1, seed.messageNodes.size)
         assertEquals("Hey, I'm Generical.", seed.messageNodes.single().currentMessage.toContentText())
+    }
+
+    @Test
+    fun continuationPreservesReasoningAndPersistsCleanConversation() {
+        val conversationId = Uuid.random()
+        val assistantId = Uuid.random()
+        val persisted = buildQuickAskPersistedConversation(
+            conversationId = conversationId,
+            assistantId = assistantId,
+            data = QuickAskContinuationData(
+                text = "Explain quantum tunneling",
+                aiResponse = "Particles can cross barriers.",
+                reasoningText = "Consider wavefunctions decaying inside a barrier.",
+                reasoningDurationMs = 1_500L,
+                actionName = "Explain",
+            ),
+        )
+
+        assertNotNull(persisted)
+        assertEquals(conversationId, persisted!!.id)
+        assertEquals(assistantId, persisted.assistantId)
+        assertEquals("Explain: Explain quantum tunneling", persisted.title)
+        assertEquals(2, persisted.messageNodes.size)
+        val assistantParts = persisted.messageNodes[1].currentMessage.parts
+        val reasoningPart = assistantParts.filterIsInstance<UIMessagePart.Reasoning>().single()
+        val textPart = assistantParts.filterIsInstance<UIMessagePart.Text>().single()
+        assertEquals("Consider wavefunctions decaying inside a barrier.", reasoningPart.reasoning)
+        assertEquals("Particles can cross barriers.", textPart.text)
+    }
+
+    @Test
+    fun presetSystemPrompt_respectsIsolationAndPlaceholders() {
+        val explain = TextSelectionAction(
+            id = "explain",
+            name = "Explain",
+            icon = "Lightbulb",
+            prompt = "Explain clearly.",
+        )
+        val isolated = buildQuickAskPresetSystemPrompt(
+            action = explain,
+            customPrompt = "",
+            assistantPrompt = "You are a pirate.",
+            translateLanguage = "Japanese",
+            inheritAssistantSystemPrompt = false,
+        )
+        assertFalse(isolated.contains("pirate"))
+        assertEquals("Explain clearly.", isolated)
+
+        val inherited = buildQuickAskPresetSystemPrompt(
+            action = explain,
+            customPrompt = "",
+            assistantPrompt = "You are a pirate.",
+            translateLanguage = "Japanese",
+            inheritAssistantSystemPrompt = true,
+        )
+        assertTrue(inherited.contains("You are a pirate."))
+        assertTrue(inherited.contains("Explain clearly."))
+
+        val customPreset = TextSelectionAction(
+            id = "custom_1",
+            name = "Critique",
+            icon = "FactCheck",
+            prompt = "Critique this text.",
+            isCustomPrompt = true,
+        )
+        val withQuestion = buildQuickAskPresetSystemPrompt(
+            action = customPreset,
+            customPrompt = "Is the logic sound?",
+            assistantPrompt = "",
+            translateLanguage = "English",
+            inheritAssistantSystemPrompt = false,
+        )
+        assertTrue(withQuestion.contains("Critique this text."))
+        assertTrue(withQuestion.contains("User's question: Is the logic sound?"))
     }
 }

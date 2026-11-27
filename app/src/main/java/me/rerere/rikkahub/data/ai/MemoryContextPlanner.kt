@@ -66,9 +66,10 @@ internal fun selectSmartMemoryContext(
     contextPriority: ContextPriority,
     episodeGroup: (Long) -> String,
     memorySummary: String? = null,
+    includeWriteTools: Boolean = true,
 ): MemoryContextSelection {
     if (candidates.isEmpty()) {
-        val toolPrompt = renderMemoryContextPrompt(model, emptyList(), episodeGroup, memorySummary)
+        val toolPrompt = renderMemoryContextPrompt(model, emptyList(), episodeGroup, memorySummary, includeWriteTools)
         if (toolPrompt.isBlank()) return MemoryContextSelection(emptyList(), "", 0, 0)
         val toolTokens = ContextTokenEstimator.textTokens(toolPrompt, model)
         val remaining = (inputBudgetTokens - requiredContextTokens).coerceAtLeast(0)
@@ -99,7 +100,7 @@ internal fun selectSmartMemoryContext(
     var renderedTokens = 0
     candidates.forEach { candidate ->
         val proposed = selected + candidate
-        val proposedText = renderMemoryContextPrompt(model, proposed, episodeGroup, memorySummary)
+        val proposedText = renderMemoryContextPrompt(model, proposed, episodeGroup, memorySummary, includeWriteTools)
         val proposedTokens = ContextTokenEstimator.textTokens(proposedText, model)
         if (proposedTokens <= allocation) {
             selected += candidate
@@ -108,8 +109,8 @@ internal fun selectSmartMemoryContext(
         }
     }
 
-    if (rendered.isEmpty() && (ModelAbility.TOOL in model.abilities || !memorySummary.isNullOrBlank())) {
-        val toolPrompt = renderMemoryContextPrompt(model, emptyList(), episodeGroup, memorySummary)
+    if (rendered.isEmpty() && ((includeWriteTools && ModelAbility.TOOL in model.abilities) || !memorySummary.isNullOrBlank())) {
+        val toolPrompt = renderMemoryContextPrompt(model, emptyList(), episodeGroup, memorySummary, includeWriteTools)
         val toolTokens = ContextTokenEstimator.textTokens(toolPrompt, model)
         if (toolTokens <= allocation) {
             rendered = toolPrompt
@@ -120,25 +121,27 @@ internal fun selectSmartMemoryContext(
     return MemoryContextSelection(selected, rendered, renderedTokens, allocation)
 }
 
-/** The exact text embedded in the request and attributed to the Memory meter category. */
-internal fun renderMemoryContextPrompt(
+internal fun renderMemorySummarySection(memorySummary: String?): String {
+    if (memorySummary.isNullOrBlank()) return ""
+    return buildString {
+        append("## User Memory Baseline Profile\n")
+        append("This is a synthesized, high-level understanding of the user across all past interactions:\n")
+        append(memorySummary.trim())
+    }
+}
+
+internal fun renderMemoryRecordsAndToolPrompt(
     model: Model,
     memories: List<AssistantMemory>,
     episodeGroup: (Long) -> String,
-    memorySummary: String? = null,
+    includeWriteTools: Boolean = true,
 ): String {
-    val hasToolAbility = ModelAbility.TOOL in model.abilities
-    if (memories.isEmpty() && !hasToolAbility && memorySummary.isNullOrBlank()) return ""
+    val hasToolAbility = includeWriteTools && ModelAbility.TOOL in model.abilities
+    if (memories.isEmpty() && !hasToolAbility) return ""
 
     val coreMemories = memories.filter { it.type == 0 }
     val episodicMemories = memories.filter { it.type == 1 }
     return buildString {
-        if (!memorySummary.isNullOrBlank()) {
-            append("## User Memory Baseline Profile\n")
-            append("This is a synthesized, high-level understanding of the user across all past interactions:\n")
-            append(memorySummary.trim())
-            append("\n\n")
-        }
         if (memories.isNotEmpty()) {
             append("## Memories\n")
             append("These are memories that you can reference in future conversations.\n")
@@ -185,5 +188,30 @@ internal fun renderMemoryContextPrompt(
                 """.trimIndent()
             )
         }
+    }
+}
+
+/** The exact text embedded in the request and attributed to the Memory meter category. */
+internal fun renderMemoryContextPrompt(
+    model: Model,
+    memories: List<AssistantMemory>,
+    episodeGroup: (Long) -> String,
+    memorySummary: String? = null,
+    includeWriteTools: Boolean = true,
+): String {
+    val summarySection = renderMemorySummarySection(memorySummary)
+    val recordsAndToolSection = renderMemoryRecordsAndToolPrompt(
+        model = model,
+        memories = memories,
+        episodeGroup = episodeGroup,
+        includeWriteTools = includeWriteTools,
+    )
+    if (summarySection.isBlank() && recordsAndToolSection.isBlank()) return ""
+    return buildString {
+        if (summarySection.isNotBlank()) {
+            append(summarySection)
+            append("\n\n")
+        }
+        append(recordsAndToolSection)
     }
 }

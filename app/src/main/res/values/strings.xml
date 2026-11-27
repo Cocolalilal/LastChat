@@ -219,6 +219,7 @@
     <string name="built_in_search_title">Built-in Search</string>
     <string name="calculating">Calculating...</string>
     <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
     <string name="cancel_edit">Cancel Edit</string>
     <string name="chat_input_placeholder">Message</string>
     <string name="chat_message_tool_call_generic">Calling tool %1$s</string>
@@ -1633,6 +1634,10 @@
   <string name="context_meter_estimated">Estimated</string>
   <string name="context_meter_provider_counted">Provider counted</string>
   <string name="context_meter_exact">Exact</string>
+  <string name="context_meter_custom_instructions">Instructions</string>
+  <string name="context_meter_memory_summary">Memory profile</string>
+  <string name="context_meter_feature_prompts">Features</string>
+  <string name="context_meter_full_map">Full context map</string>
   <string name="setting_ui_context_token_summary_title">Display context token summary</string>
   <string name="setting_ui_context_token_summary_desc">Show the context usage meter and its token breakdown in chat</string>
   <string name="setting_ui_smooth_streaming_title">Smooth streaming animation</string>

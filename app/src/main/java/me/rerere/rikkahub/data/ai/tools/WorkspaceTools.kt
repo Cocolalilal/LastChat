@@ -795,3 +795,180 @@ private fun createPythonExtensionManageTool(
     },
 )
 
+internal fun workspaceToolDefinitionPreviews(
+    includePythonTools: Boolean = true,
+): List<LocalToolDefinitionPreview> = buildList {
+    add(
+        LocalToolDefinitionPreview(
+            name = "workspace_read_file",
+            description = "Read or visually inspect a file from the assistant's bound workspace Rootfs. Supports text/code/data files (returns file contents) and raster image files (PNG, JPG, JPEG, WEBP, GIF, BMP — delivers the image for private behind-the-scenes visual inspection when the model supports image input). Paths must be absolute inside Rootfs. Use /workspace for workspace files or /skills/<skill>/ for a read-only Agent Skill package.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject { putPathProperty(required = true) },
+                required = listOf("path"),
+            ),
+        )
+    )
+    add(
+        LocalToolDefinitionPreview(
+            name = "workspace_write_file",
+            description = "Write a UTF-8 text file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs. Use /workspace for the workspace files area.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    putPathProperty(required = true)
+                    put("text", buildJsonObject {
+                        put("type", "string")
+                        put("description", "UTF-8 text content to write")
+                    })
+                    put("overwrite", buildJsonObject {
+                        put("type", "boolean")
+                        put("description", "Whether to overwrite an existing file. Defaults to true.")
+                    })
+                },
+                required = listOf("path", "text"),
+            ),
+        )
+    )
+    add(
+        LocalToolDefinitionPreview(
+            name = "workspace_edit_file",
+            description = "Edit a UTF-8 text file using an exact text replacement inside the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs. Use /workspace for the workspace files area.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    putPathProperty(required = true)
+                    put("old_text", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Exact text to replace")
+                    })
+                    put("new_text", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Replacement text")
+                    })
+                    put("replace_all", buildJsonObject {
+                        put("type", "boolean")
+                        put("description", "Whether to replace every occurrence. Defaults to false.")
+                    })
+                },
+                required = listOf("path", "old_text", "new_text"),
+            ),
+        )
+    )
+    add(
+        LocalToolDefinitionPreview(
+            name = "workspace_shell",
+            description = "Execute a shell command inside the assistant's bound workspace Rootfs.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("command", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Shell command to execute. Examples: 'ls -la', 'python3 script.py'.")
+                    })
+                    put("cwd", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Optional absolute working directory inside Rootfs.")
+                    })
+                    put("timeout", buildJsonObject {
+                        put("type", "integer")
+                        put("description", "Command timeout in seconds. Defaults to 30.")
+                    })
+                },
+                required = listOf("command"),
+            ),
+        )
+    )
+    if (includePythonTools) {
+        add(
+            LocalToolDefinitionPreview(
+                name = "python_server_start",
+                description = "Start a persistent background Python server, daemon, or script in the Linux PRoot workspace. Automatically promotes LastChat to an Android foreground service with a persistent notification so the server is never terminated by Android's Low Memory Killer (LMK).",
+                schema = InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("command", buildJsonObject {
+                            put("type", "string")
+                            put("description", "Command to run inside workspace, e.g. 'python3 server.py --port 8000' or 'python3 -m http.server 8000'")
+                        })
+                        put("port", buildJsonObject {
+                            put("type", "integer")
+                            put("description", "Port number the server listens on (optional, e.g. 8000)")
+                        })
+                        put("name", buildJsonObject {
+                            put("type", "string")
+                            put("description", "Display name for the server (optional, e.g. 'Local MCP Server')")
+                        })
+                    },
+                    required = listOf("command"),
+                ),
+            )
+        )
+        add(
+            LocalToolDefinitionPreview(
+                name = "python_server_stop",
+                description = "Stop a running background Python server or daemon by its server ID, name, or port number.",
+                schema = InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("target", buildJsonObject {
+                            put("type", "string")
+                            put("description", "Server ID, name, or port number to stop")
+                        })
+                    },
+                    required = listOf("target"),
+                ),
+            )
+        )
+        add(
+            LocalToolDefinitionPreview(
+                name = "python_server_list",
+                description = "List all active background Python servers running in the Linux PRoot workspace, including their port numbers and status.",
+                schema = InputSchema.Obj(properties = buildJsonObject {}, required = emptyList()),
+            )
+        )
+        add(
+            LocalToolDefinitionPreview(
+                name = "mcp_add_local_connection",
+                description = "Connect LastChat to a local MCP (Model Context Protocol) server running in the workspace (e.g. http://127.0.0.1:8000/sse). Immediately registers the MCP connection in app settings so its tools become available for the assistant.",
+                schema = InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("name", buildJsonObject {
+                            put("type", "string")
+                            put("description", "Unique human-readable name for the MCP server")
+                        })
+                        put("url", buildJsonObject {
+                            put("type", "string")
+                            put("description", "Local HTTP or SSE URL, e.g. 'http://127.0.0.1:8000/sse' or 'http://127.0.0.1:8000'")
+                        })
+                        put("transport", buildJsonObject {
+                            put("type", "string")
+                            put("enum", buildJsonArray { add("sse"); add("streamable_http") })
+                            put("description", "MCP transport: 'sse' (default) or 'streamable_http'")
+                        })
+                    },
+                    required = listOf("name", "url"),
+                ),
+            )
+        )
+        add(
+            LocalToolDefinitionPreview(
+                name = "python_extension_manage",
+                description = "Inspect, enable, disable, or create Python extensions in /workspace/plugins/.",
+                schema = InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("action", buildJsonObject {
+                            put("type", "string")
+                            put("enum", buildJsonArray { add("list"); add("enable"); add("disable"); add("create"); add("read") })
+                            put("description", "Action to perform")
+                        })
+                        put("plugin_name", buildJsonObject {
+                            put("type", "string")
+                            put("description", "Extension name or file name (required for enable/disable/create/read)")
+                        })
+                        put("code", buildJsonObject {
+                            put("type", "string")
+                            put("description", "Python source code (required for action='create')")
+                        })
+                    },
+                    required = listOf("action"),
+                ),
+            )
+        )
+    }
+}
+

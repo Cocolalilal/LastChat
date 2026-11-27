@@ -589,42 +589,31 @@ class RouteActivity : ComponentActivity() {
     private fun TextSelectionHandler(navBackStack: NavHostController) {
         val data = pendingTextSelection
         val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
-        
-        
+
         LaunchedEffect(data) {
             if (data != null) {
-                pendingTextSelection = null
                 try {
                     val assistantId = data.assistantId?.takeIf { it.isNotBlank() }?.let {
-                        try { Uuid.parse(it) } catch (e: Exception) { null }
+                        runCatching { Uuid.parse(it) }.getOrNull()
                     } ?: settings.assistantId
 
                     // Select the right assistant and mark it as used
                     settingsStore.updateAssistant(assistantId)
                     settingsStore.markAssistantUsed(assistantId)
 
-                    val assistant = settings.assistants.find { it.id == assistantId }
-                        ?: settings.assistants.firstOrNull()
-                    val existingConvos = conversationRepo.getRecentConversations(assistantId, limit = 1)
-                    val seed = seedQuickAskChat(
+                    val conversationId = Uuid.random()
+                    val persisted = me.rerere.rikkahub.ui.activity.buildQuickAskPersistedConversation(
+                        conversationId = conversationId,
+                        assistantId = assistantId,
                         data = data,
-                        existingConversation = existingConvos.firstOrNull(),
-                        introNodes = assistant?.getInitialMessageNodes().orEmpty(),
                     )
-                    val conversationId = seed.reuseConversationId ?: Uuid.random()
-                    if (seed.messageNodes.isNotEmpty()) {
-                        val base = existingConvos.firstOrNull()?.takeIf { it.id == conversationId }
-                        val conversation = (base ?: me.rerere.rikkahub.data.model.Conversation.ofId(
-                            id = conversationId,
-                            assistantId = assistantId,
-                        )).copy(
-                            assistantId = assistantId,
-                            messageNodes = seed.messageNodes,
-                        )
-                        chatService.saveConversation(conversationId, conversation)
+                    if (persisted != null) {
+                        chatService.saveConversation(conversationId, persisted)
                     }
+                    pendingTextSelection = null
                     navigateToChatPage(navBackStack, chatId = conversationId)
                 } catch (e: Exception) {
+                    pendingTextSelection = null
                     e.printStackTrace()
                 }
             }
