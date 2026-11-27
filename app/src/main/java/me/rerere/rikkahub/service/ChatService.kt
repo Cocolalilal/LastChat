@@ -1695,7 +1695,7 @@ class ChatService(
                         listOf(memory.id, memory.content, memory.type, memory.timestamp)
                     }.hashCode()
                     val memorySummaryRevision = if (assistant.enableMemory && assistant.enableMemorySummary) {
-                        memoryRepo.getMemorySummary(assistant.id.toString())?.let { summary ->
+                        memoryRepository.getMemorySummary(assistant.id.toString())?.let { summary ->
                             listOf(summary.rawMarkdown, summary.updatedAt).hashCode()
                         } ?: 0
                     } else 0
