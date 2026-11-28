@@ -266,11 +266,17 @@ class BrowserTabPool(
                 ensureTabForUI()
             }
             _browserSheetOpen.value = true
+            activeManager?.resumeWebView()
         }
     }
 
     fun closeBrowserSheet() {
         _browserSheetOpen.value = false
+        scope.launch(Dispatchers.Main) {
+            _tabs.value.forEach { tab ->
+                if (!tab.inUse) tab.manager.pauseWebView()
+            }
+        }
     }
 
     suspend fun setSession(sessionId: String) {
@@ -478,6 +484,7 @@ class BrowserTabPool(
         manager.onDownloadStart = { url, ua, cd, mime, len -> startUrlDownload(url, ua, cd, mime, len) }
         manager.onBlobDownloadData = { data, name, mime -> saveBlobDownload(data, name, mime) }
         manager.onHandoffRequested = { url -> openBrowserSheet(url) }
+        manager.isSheetOpenProvider = { _browserSheetOpen.value }
         manager.onFrameCaptured = { url, bmp ->
             val tid = _tabs.value.firstOrNull { it.manager === manager }?.id ?: _selectedTabId.value
             publishLiveFrame(tid, url, bmp)
@@ -1130,19 +1137,31 @@ class BrowserTabPool(
         }
     }
 
-    private suspend fun handleSetViewport(input: BrowserActionInput): BrowserActionResult = withContext(Dispatchers.Main) {
+    private suspend fun handleSetViewport(input: BrowserActionInput): BrowserActionResult {
         if (input.reset) {
-            resetSessionViewport()
+            withContext(Dispatchers.Main) { resetSessionViewport() }
+            delay(150)
             val (w, h) = resolvedViewportSize()
-            return@withContext BrowserActionResult(text = "Viewport reset to default (${w}x$h)")
+            val actual = activeManager?.readActualViewport()
+            val actualText = if (actual != null && actual.first > 0) " (verified window.innerWidth=${actual.first}x${actual.second})" else ""
+            return BrowserActionResult(text = "Viewport reset to default (${w}x$h)$actualText")
         }
         val w = input.viewportWidth
         val h = input.viewportHeight
         if (w == null || h == null || w <= 0 || h <= 0) {
-            return@withContext BrowserActionResult.error("set_viewport requires positive viewport_width and viewport_height, or reset=true")
+            return BrowserActionResult.error("set_viewport requires positive viewport_width and viewport_height, or reset=true")
         }
-        setSessionViewport(w, h)
-        BrowserActionResult(text = "Viewport set to ${w}x$h (session override)")
+        withContext(Dispatchers.Main) { setSessionViewport(w, h) }
+        delay(200)
+        val actual = activeManager?.readActualViewport()
+        if (actual != null && actual.first > 0 && kotlin.math.abs(actual.first - w) > 64) {
+            return BrowserActionResult(
+                text = "Viewport override requested ${w}x$h, but actual window.innerWidth x innerHeight is ${actual.first}x${actual.second} (constrained by WebView/page viewport meta).",
+                success = false,
+            )
+        }
+        val verified = if (actual != null && actual.first > 0) " (verified ${actual.first}x${actual.second})" else ""
+        return BrowserActionResult(text = "Viewport set to ${w}x$h$verified")
     }
 
     // -- Disk Persistence --

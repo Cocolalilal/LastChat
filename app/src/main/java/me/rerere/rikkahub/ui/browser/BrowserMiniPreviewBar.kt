@@ -198,13 +198,16 @@ fun rememberBrowserLiveSnapshot(
 
     LaunchedEffect(step.toolCallId, step.isRunning, step.tabId, intervalMs, paused) {
         if (!step.isRunning || intervalMs <= 0L || paused) return@LaunchedEffect
-        val pollMs = intervalMs.coerceAtLeast(1_500L)
+        val pollMs = intervalMs.coerceAtLeast(5_000L)
+        delay(1_200L)
         while (isActive) {
             val manager = tabPool.managerForTab(step.tabId)
-            val snap = runCatching { manager?.captureLiveSnapshot(maxWidthPx = 480) }.getOrNull()
-            if (snap != null && !snap.isRecycled) {
-                BrowserFrames.remember(step.toolCallId, snap)
-                liveBitmap = BrowserFrames.get(step.toolCallId) ?: snap
+            if (manager != null && !manager.isLoading.value) {
+                val snap = runCatching { manager.captureLiveSnapshot(maxWidthPx = 320) }.getOrNull()
+                if (snap != null && !snap.isRecycled) {
+                    BrowserFrames.remember(step.toolCallId, snap)
+                    liveBitmap = BrowserFrames.get(step.toolCallId) ?: snap
+                }
             }
             delay(pollMs)
         }

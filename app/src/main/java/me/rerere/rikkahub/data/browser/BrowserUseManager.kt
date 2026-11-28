@@ -118,6 +118,8 @@ class BrowserUseManager(
     private var lastKnownContainerWidthPx: Int = 0
     private var lastAppliedViewport: Pair<Int, Int>? = null
     @Volatile private var agentActionActive: Boolean = false
+    @Volatile private var lastNavigationError: String? = null
+    var isSheetOpenProvider: () -> Boolean = { false }
 
     private val jsBridge = object {
         @JavascriptInterface
@@ -261,6 +263,7 @@ class BrowserUseManager(
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (request.isForMainFrame) {
+                    lastNavigationError = "Error ${error.errorCode}: ${error.description} (${request.url})"
                     _isLoading.value = false
                     navigationDeferred?.complete(Unit)
                     navigationDeferred = null
@@ -323,7 +326,28 @@ class BrowserUseManager(
 
     // -- Execute Action --
 
+    fun pauseWebView() {
+        runCatching { webView.onPause() }
+    }
+
+    fun resumeWebView() {
+        runCatching { webView.onResume() }
+    }
+
     suspend fun execute(input: BrowserActionInput): BrowserActionResult {
+        agentActionActive = true
+        withContext(Dispatchers.Main) { resumeWebView() }
+        try {
+            return executeInternal(input)
+        } finally {
+            agentActionActive = false
+            if (!isSheetOpenProvider()) {
+                withContext(Dispatchers.Main) { pauseWebView() }
+            }
+        }
+    }
+
+    private suspend fun executeInternal(input: BrowserActionInput): BrowserActionResult {
         val settings = settingsProvider()
         val prevUrl = withContext(Dispatchers.Main) { webView.url }
 
@@ -434,25 +458,33 @@ class BrowserUseManager(
     private suspend fun attachSnapshot(result: BrowserActionResult, settings: BrowserSettings): BrowserActionResult {
         return try {
             awaitVisualPaint(timeoutMs = 500L)
-            delay(300)
+            delay(250)
             var bitmap = captureWebViewBitmap() ?: return result
-            if (isMostlyUniformColor(bitmap)) {
+            val uniform = withContext(Dispatchers.Default) { isMostlyUniformColor(bitmap) }
+            if (uniform) {
                 bitmap.recycle()
-                delay(650)
+                delay(600)
                 awaitVisualPaint(timeoutMs = 400L)
                 bitmap = captureWebViewBitmap() ?: return result
             }
-            val scaled = scaleToMaxLongEdge(bitmap, settings.screenshotMaxLongEdgePx)
-            val file = saveBitmapToFile(scaled, "snapshot", settings.screenshotJpegQuality)
-            runCatching {
-                val previewRatio = (480f / scaled.width.coerceAtLeast(1)).coerceAtMost(1f)
-                val pw = (scaled.width * previewRatio).toInt().coerceAtLeast(1)
-                val ph = (scaled.height * previewRatio).toInt().coerceAtLeast(1)
-                val previewBmp = Bitmap.createScaledBitmap(scaled, pw, ph, true)
+            val (file, previewBmp) = withContext(Dispatchers.Default) {
+                val scaled = scaleToMaxLongEdge(bitmap, settings.screenshotMaxLongEdgePx)
+                val savedFile = withContext(Dispatchers.IO) {
+                    saveBitmapToFile(scaled, "snapshot", settings.screenshotJpegQuality)
+                }
+                val preview = runCatching {
+                    val previewRatio = (480f / scaled.width.coerceAtLeast(1)).coerceAtMost(1f)
+                    val pw = (scaled.width * previewRatio).toInt().coerceAtLeast(1)
+                    val ph = (scaled.height * previewRatio).toInt().coerceAtLeast(1)
+                    Bitmap.createScaledBitmap(scaled, pw, ph, true)
+                }.getOrNull()
+                if (scaled !== bitmap) scaled.recycle()
+                bitmap.recycle()
+                savedFile to preview
+            }
+            if (previewBmp != null && !previewBmp.isRecycled) {
                 onFrameCaptured?.invoke(_currentURL.value, previewBmp)
             }
-            if (scaled !== bitmap) scaled.recycle()
-            bitmap.recycle()
             result.copy(imageFilePath = file.absolutePath)
         } catch (e: Exception) {
             Log.w(TAG, "Auto-snapshot failed: ${e.message}")
@@ -495,6 +527,21 @@ class BrowserUseManager(
 
     // -- Navigate --
 
+    private suspend fun readLiveHrefAndTitle(): Triple<String, String, String> {
+        val raw = evaluateJavascript(
+            "JSON.stringify({href:String(window.location.href||''),title:String(document.title||''),ready:String(document.readyState||'')})"
+        )
+        return runCatching {
+            val obj = JSONObject(raw)
+            Triple(obj.optString("href", ""), obj.optString("title", ""), obj.optString("ready", ""))
+        }.getOrDefault(Triple("", "", ""))
+    }
+
+    private fun hostOf(url: String?): String? {
+        if (url.isNullOrBlank()) return null
+        return runCatching { java.net.URI(url).host?.lowercase()?.removePrefix("www.") }.getOrNull()
+    }
+
     private suspend fun navigate(urlString: String?, settings: BrowserSettings): BrowserActionResult {
         if (urlString.isNullOrBlank()) return BrowserActionResult.error("Missing 'url' parameter")
 
@@ -505,8 +552,14 @@ class BrowserUseManager(
             return BrowserActionResult.error("Blocked domain: '$normalized' matches browserSettings.blockedDomains.")
         }
 
+        val (prevHref, _, _) = readLiveHrefAndTitle()
+        val prevHost = hostOf(prevHref)
+        val targetHost = hostOf(normalized)
+
         val deferred = CompletableDeferred<Unit>()
         navigationDeferred = deferred
+        lastNavigationError = null
+        var timedOut = false
         _isLoading.value = true
 
         withContext(Dispatchers.Main) {
@@ -518,6 +571,7 @@ class BrowserUseManager(
         val timeoutRunnable = Runnable {
             if (navigationDeferred === deferred) {
                 Log.w(TAG, "Navigation timed out for $normalized")
+                timedOut = true
                 _isLoading.value = false
                 deferred.complete(Unit)
                 navigationDeferred = null
@@ -531,14 +585,54 @@ class BrowserUseManager(
             handler.removeCallbacks(timeoutRunnable)
         }
 
-        _currentURL.value = _currentURL.value.ifEmpty { normalized }
         _isLoading.value = false
-        return BrowserActionResult(text = navigationMetadata())
+
+        // 1. Fail immediately if Chromium reported a main-frame network/SSL/DNS error
+        val navErr = lastNavigationError
+        if (navErr != null) {
+            return BrowserActionResult.error("Navigation failed for $normalized: $navErr")
+        }
+
+        // 2. Wait for document.readyState === 'complete' (up to 3s) + 450ms JS hydration settle
+        val settleDeadline = System.currentTimeMillis() + 3_000L
+        while (System.currentTimeMillis() < settleDeadline) {
+            val (_, _, ready) = readLiveHrefAndTitle()
+            if (ready == "complete") break
+            delay(150)
+        }
+        delay(450)
+
+        // 3. Read actual live window.location.href and document.title directly from the page
+        val (liveHref, liveTitle, _) = readLiveHrefAndTitle()
+        val webViewUrl = withContext(Dispatchers.Main) { webView.url.orEmpty() }
+        val actualHref = liveHref.ifBlank { webViewUrl }
+        val actualTitle = liveTitle.ifBlank { withContext(Dispatchers.Main) { webView.title.orEmpty() } }
+
+        // 4. Bail on chrome-error://, empty/blank, or silent failure where the tab never left the previous host
+        if (actualHref.isBlank() || actualHref.startsWith("chrome-error://") || actualHref.startsWith("about:blank")) {
+            return BrowserActionResult.error("Navigation failed for $normalized: page landed on '${actualHref.ifBlank { "blank" }}'")
+        }
+        val actualHost = hostOf(actualHref)
+        if (prevHost != null && targetHost != null && prevHost != targetHost && actualHost == prevHost) {
+            return BrowserActionResult.error(
+                "Navigation failed for $normalized: browser remained on '$actualHref' (never reached '$targetHost')."
+            )
+        }
+        if (timedOut && targetHost != null && actualHost != targetHost) {
+            return BrowserActionResult.error(
+                "Navigation timed out for $normalized (browser is at '$actualHref')."
+            )
+        }
+
+        _currentURL.value = actualHref
+        _pageTitle.value = actualTitle
+        return BrowserActionResult(
+            text = navigationMetadata(actualHref, actualTitle),
+            pageURL = actualHref,
+        )
     }
 
-    private suspend fun navigationMetadata(): String {
-        val url = _currentURL.value
-        val title = _pageTitle.value
+    private suspend fun navigationMetadata(actualUrl: String = _currentURL.value, actualTitle: String = _pageTitle.value): String {
         val scrollInfo = evaluateJavascript(
             "JSON.stringify({sx:window.scrollX||0,sy:window.scrollY||0,pw:document.documentElement.scrollWidth||0,ph:document.documentElement.scrollHeight||0,vw:window.innerWidth||0,vh:window.innerHeight||0})"
         )
@@ -555,8 +649,8 @@ class BrowserUseManager(
         val effectiveVpH = if (vpH > 0) vpH else fallback.second
 
         return buildString {
-            appendLine("Navigated to $url")
-            if (title.isNotEmpty()) appendLine("  Title: $title")
+            appendLine("Navigated to $actualUrl")
+            if (actualTitle.isNotEmpty()) appendLine("  Title: $actualTitle")
             appendLine("  Viewport: ${effectiveVpW}x$effectiveVpH")
             if (pageW > 0 || pageH > 0) appendLine("  Page size: ${pageW}x$pageH")
             append("  Scroll position: ($scrollX, $scrollY)")
@@ -968,16 +1062,32 @@ class BrowserUseManager(
             webView.setInitialScale(0)
             return
         }
+        webView.settings.useWideViewPort = true
+        webView.settings.loadWithOverviewMode = true
         val density = webView.resources.displayMetrics.density
         val w = (cssWidth * density).toInt().coerceAtLeast(1)
         val h = (cssHeight * density).toInt().coerceAtLeast(1)
-        webView.measure(
-            View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY),
-        )
-        webView.layout(0, 0, w, h)
+        if (!webView.isAttachedToWindow) {
+            webView.measure(
+                View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY),
+            )
+            webView.layout(0, 0, w, h)
+        }
         lastAppliedViewport = cssWidth to cssHeight
         applyShrinkToFit(cssWidth)
+        runCatching {
+            val js = "(function(){var m=document.querySelector('meta[name=viewport]');if(!m){m=document.createElement('meta');m.name='viewport';document.head&&document.head.appendChild(m);}m.setAttribute('content','width='+$cssWidth+', initial-scale=1');window.dispatchEvent(new Event('resize'));})();"
+            webView.evaluateJavascript(js, null)
+        }
+    }
+
+    suspend fun readActualViewport(): Pair<Int, Int> {
+        val raw = evaluateJavascript("JSON.stringify({vw:window.innerWidth||0,vh:window.innerHeight||0})")
+        return runCatching {
+            val obj = JSONObject(raw)
+            obj.optInt("vw", 0) to obj.optInt("vh", 0)
+        }.getOrDefault(0 to 0)
     }
 
     fun goBack() { if (webView.canGoBack()) webView.goBack() }
