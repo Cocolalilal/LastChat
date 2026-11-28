@@ -1370,7 +1370,7 @@ fun StudioPage(
                 }
             },
             onOpenDefaultModelsSettings = {
-                navController.navigate(Screen.SettingModel)
+                navController.navigate(Screen.SettingModels)
             },
             onDismiss = { showAppearanceSettings = false },
         )

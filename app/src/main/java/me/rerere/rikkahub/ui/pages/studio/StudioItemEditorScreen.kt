@@ -815,17 +815,17 @@ internal fun StudioItemEditorScreen(
                                 }
                             }
 
-                            if (!initialItem.sourceUrl.isNullOrBlank()) {
-                                val host = remember(initialItem.sourceUrl) {
-                                    runCatching { Uri.parse(initialItem.sourceUrl).host }.getOrNull()
-                                        ?: initialItem.sourceUrl
+                            initialItem.sourceUrl?.takeIf { it.isNotBlank() }?.let { sourceUrl ->
+                                val host = remember(sourceUrl) {
+                                    runCatching { Uri.parse(sourceUrl).host }.getOrNull()
+                                        ?: sourceUrl
                                 }
                                 Surface(
                                     shape = RoundedCornerShape(10.dp),
                                     color = palette.chipContainer,
                                     onClick = {
                                         haptics.perform(HapticPattern.Tick)
-                                        context.writeClipboardText(initialItem.sourceUrl)
+                                        context.writeClipboardText(sourceUrl)
                                         toaster.show("Copied source link")
                                     },
                                 ) {
