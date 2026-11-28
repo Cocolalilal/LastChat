@@ -265,101 +265,11 @@ class FaceRig(private val rng: Random) {
         const val SLANT_DEG = 14f
 
         /**
-         * Shape a Generical outline (500 viewBox, y down) in place. [side] 0 = left.
-         *
-         * Engine21.1 eyelid model (Julian, from his Figma frames — Looking to the right,
-         * Bored, Suspicious, Angry, Happy):
-         *  - the upper lid comes down from the TOP; the eye's BOTTOM edge stays where it is,
-         *    level with the other eye. [slant] tilts the lid line across the eye.
-         *  - the lid flattens the corners it presses on: the top corners get smaller radii
-         *    (squashed vertically, pulled out toward the box), the bottom corners keep theirs.
-         *    Soft (sad / worried, slant < 0) lids flatten far less — those faces stay round.
-         *  - the lower lid (happy / glee squints) mirrors that from the bottom, top fixed.
-         *  - size changes grow / shrink the eye from its bottom edge, never from the centre.
+         * Shape a Generical outline (500 viewBox, y down) in place with unsqueezed
+         * Figma-smoothed squircle corners (see [SquircleEyeGeometry.shapeOutline]).
          */
         fun shapeOutline(xs: FloatArray, ys: FloatArray, side: Int, p: EyeShape) {
-            if (p.isIdentity() || xs.isEmpty()) return
-            val n = xs.size
-            var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
-            var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
-            var sumX = 0f
-            for (i in 0 until n) {
-                minX = min(minX, xs[i]); maxX = max(maxX, xs[i]); minY = min(minY, ys[i]); maxY = max(maxY, ys[i]); sumX += xs[i]
-            }
-            val cx = sumX / n
-            val h = max(1f, maxY - minY)
-            val hw = max(1f, (maxX - minX) / 2f)
-            val inward = if (side == 0) 1f else -1f
-            // Smoothly blend into soft-lid shaping across slant in [-0.08, -0.02] so mood/accent
-            // transitions never snap when crossing -0.05.
-            val softU = ((-p.slant - 0.02f) / 0.06f).coerceIn(0f, 1f)
-            val softW = softU * softU * (3f - 2f * softU)
-            // Lower lid first (top fixed), then the upper lid on the result (bottom fixed).
-            val fl = p.lower.coerceIn(0.05f, 1.2f)
-            var bottom = maxY
-            if (fl < 1f) {
-                bottom = minY + fl * h
-                val keep = min(0.42f * h, 0.8f * fl * h)
-                val yk = minY + keep
-                val lowerFlat = 0.55f + (0.2f - 0.55f) * softW
-                for (i in 0 until n) if (ys[i] > yk) {
-                    val w = ((ys[i] - yk) / (maxY - yk)).coerceIn(0f, 1f)
-                    ys[i] = yk + (ys[i] - yk) * (bottom - yk) / (maxY - yk)
-                    xs[i] = flattenX(xs[i] - cx, hw, (1f - fl) * lowerFlat * w) + cx
-                }
-            }
-            val maxUpper = max(1f, p.upper).coerceAtMost(1.25f)
-            for (i in 0 until n) {
-                val xn = ((xs[i] - cx) / hw).coerceIn(-1f, 1f) * inward // +1 = inner corner
-                val f = (p.upper - p.slant * xn).coerceIn(0.05f, maxUpper)
-                val hb = bottom - minY
-                if (f < 1f) {
-                    val top = bottom - f * hb
-                    val keep = min(0.42f * hb, 0.8f * f * hb)
-                    val yk = bottom - keep
-                    if (ys[i] < yk) {
-                        val yHard = top + (ys[i] - minY) * (yk - top) / (yk - minY).coerceAtLeast(1f)
-                        val w = ((yk - ys[i]) / (yk - minY).coerceAtLeast(1f)).coerceIn(0f, 1f)
-                        val xHard = flattenX(xs[i] - cx, hw, (1f - f) * 0.6f * w) + cx
-                        if (softW <= 0f) {
-                            ys[i] = yHard
-                            xs[i] = xHard
-                        } else {
-                            // Soft lids (sad / worried) slide the top down instead: the hand-made
-                            // round corners keep their radius, the straight sides shorten.
-                            val d = top - minY
-                            val u = ((yk - ys[i]) / (1.6f * d + 0.12f * hb)).coerceIn(0f, 1f)
-                            val ySoft = ys[i] + d * u * u * (3f - 2f * u)
-                            ys[i] = yHard + (ySoft - yHard) * softW
-                            xs[i] = xHard + (xs[i] - xHard) * softW
-                        }
-                    }
-                } else if (f > 1f && ys[i] < bottom) {
-                    ys[i] = bottom - (bottom - ys[i]) * f
-                }
-            }
-            // Size from the bottom edge; rotation about the bottom centre.
-            val r = Math.toRadians(p.rot.toDouble()).toFloat()
-            val cr = cos(r); val sr = sin(r)
-            for (i in 0 until n) {
-                val x0 = (xs[i] - cx) * p.sx
-                val y0 = (ys[i] - bottom) * p.sy
-                xs[i] = cx + x0 * cr - y0 * sr + p.dx * 250f
-                ys[i] = bottom + x0 * sr + y0 * cr + p.dy * 250f
-            }
-        }
-
-        /**
-         * Pull a point near a pressed corner out toward the bounding box: the corner's
-         * horizontal radius shrinks with [k] (0 = untouched). Only the outer 55 % of the
-         * width moves, so straight edges stay straight.
-         */
-        private fun flattenX(x: Float, hw: Float, k: Float): Float {
-            if (k <= 0f) return x
-            val a = abs(x) / hw
-            val mask = ((a - 0.45f) / 0.55f).coerceIn(0f, 1f)
-            val target = if (x >= 0f) hw else -hw
-            return x + (target - x) * (k * mask).coerceIn(0f, 0.85f)
+            SquircleEyeGeometry.shapeOutline(xs, ys, side, p)
         }
 
         /** Shape a Grok capsule: stays a capsule (scale, offset, rotation, openness). */

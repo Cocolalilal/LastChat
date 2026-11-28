@@ -1,8 +1,6 @@
 package me.rerere.rikkahub.ui.components.avatar.animated
 
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -132,9 +130,7 @@ object GenericalFace {
         val path = when {
             eye.kind == "rect" && eye.x != null && eye.y != null && eye.width != null && eye.height != null -> {
                 val rx = (eye.rx ?: 0f).coerceAtMost(min(eye.width, eye.height) / 2f)
-                Path().apply {
-                    addRoundRect(RoundRect(eye.x, eye.y, eye.x + eye.width, eye.y + eye.height, CornerRadius(rx, rx)))
-                }
+                SquircleEyeGeometry.roundedRectPath(eye.x, eye.y, eye.width, eye.height, rx)
             }
             !eye.pathData.isNullOrBlank() -> AvatarPackData.parseSvgPath(eye.pathData)
             else -> return null
@@ -249,20 +245,17 @@ object GenericalFace {
         if (c <= 0.001f) return
         val closedFace = face("Eyes closed") ?: return
         val closed = if (side == 0) closedFace.left else closedFace.right
-        val ccx = closed.cx; val ccy = closed.cy
         val mx = xs.average().toFloat()
         val ymin = ys.min(); val ymax = ys.max()
         val my = ymin + (ymax - ymin) * 0.58f
-        val w = (xs.max() - xs.min()).coerceAtLeast(30f)
-        val cw = (closed.x.max() - closed.x.min()).coerceAtLeast(1f)
-        val sx = min(1f, w / cw)
+        val width = min((xs.max() - xs.min()).coerceAtLeast(30f), closed.x.max() - closed.x.min())
+        val txs = closed.x.copyOf(); val tys = closed.y.copyOf()
+        SquircleEyeGeometry.resizeClosedBar(txs, tys, mx, my, width)
         val sa = shiftFor(key, "Eyes closed", side, ref, closed)
         for (i in 0 until N) {
             val j = ((i + sa) % N + N) % N
-            val tx = mx + (closed.x[j] - ccx) * sx
-            val ty = my + (closed.y[j] - ccy)
-            xs[i] += (tx - xs[i]) * c
-            ys[i] += (ty - ys[i]) * c
+            xs[i] += (txs[j] - xs[i]) * c
+            ys[i] += (tys[j] - ys[i]) * c
         }
     }
 

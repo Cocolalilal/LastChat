@@ -39,22 +39,65 @@ class AnimatedAvatarContinuityTest {
     private fun load() = AvatarPackData.ensureLoaded(RuntimeEnvironment.getApplication())
 
     @Test
-    fun genericalFocusedFlattensCornersAndSlantTransitionIsContinuous() {
+    fun genericalSquircleSmoothingIsUnsqueezedAndContinuous() {
         load()
         val neutral = requireNotNull(GenericalFace.face("Neutral")).left
-        val focused = FaceRig(Random(1)).accentPreview(FaceAccent.Focused).left
-        val fx = neutral.x.copyOf()
-        val fy = neutral.y.copyOf()
-        FaceRig.shapeOutline(fx, fy, 0, focused)
-        // Pressed upper corners pull outward toward the bounding box (squircle look) instead of
-        // keeping a rigid circular radius that narrows the top edge.
-        val topCornerIndices = neutral.x.indices.filter { neutral.y[it] < neutral.y.min() + 25f && abs(neutral.x[it] - neutral.cx) > 25f }
-        assertTrue(topCornerIndices.isNotEmpty())
-        val originalMeanAbsX = topCornerIndices.map { abs(neutral.x[it] - neutral.cx) }.average()
-        val focusedMeanAbsX = topCornerIndices.map { abs(fx[it] - neutral.cx) }.average()
-        assertTrue("Focused upper corners should flatten outward ($focusedMeanAbsX vs $originalMeanAbsX)", focusedMeanAbsX > originalMeanAbsX + 0.5)
 
-        // Sweeping slant continuously across -0.05 (hard <-> soft lid) must never jump.
+        // 1) Neutral uses Figma 100% corner smoothing (full-span squircle, not a circular RoundRect).
+        val topMinY = neutral.y.min()
+        val minX = neutral.x.min(); val maxX = neutral.x.max()
+        val midX = (minX + maxX) * 0.5f
+        // On a plain RoundRect(w=110, rx=39), points with |x - midX| <= 16 sit flat at y == topMinY.
+        // With 100% Figma corner smoothing (p = 55), curvature begins right away so points around
+        // |x - midX| == 24..32 have already curved smoothly below topMinY.
+        val shoulder = neutral.x.indices.filter { neutral.y[it] < neutral.cy && abs(neutral.x[it] - midX) in 20f..34f }
+        assertTrue("Expected shoulder samples on Neutral", shoulder.isNotEmpty())
+        assertTrue(
+            "Neutral should have Figma 100% squircle shoulder curvature",
+            shoulder.any { neutral.y[it] > topMinY + 0.08f },
+        )
+
+        // 2) Pressed lids (Focused, Drowsy, Glee) tighten their pressed corners isotropically:
+        //    horizontal and vertical corner ratios match (never squeezed!) and Focused tightens
+        //    rather than keeping Neutral's oversized corner span.
+        val (origTopSpan, origBotSpan) = SquircleEyeGeometry.cornerSpans(
+            neutral.x, neutral.y, minX, maxX, topMinY, neutral.y.max(),
+        )
+        for (accent in listOf(FaceAccent.Focused, FaceAccent.Drowsy, FaceAccent.Glee, FaceAccent.Startled)) {
+            val shape = FaceRig(Random(1)).accentPreview(accent).left
+            val xs = neutral.x.copyOf(); val ys = neutral.y.copyOf()
+            FaceRig.shapeOutline(xs, ys, 0, shape)
+            val sMinX = xs.min(); val sMaxX = xs.max()
+            val sMinY = ys.min(); val sMaxY = ys.max()
+            // Top-left corner sample around the 45° diagonal of Neutral must remain symmetric (dx ≈ dy).
+            val origDiagIdx = neutral.x.indices
+                .filter { neutral.x[it] < midX && neutral.y[it] < neutral.cy }
+                .minBy { abs((neutral.x[it] - minX) - (neutral.y[it] - topMinY)) }
+            val origRatio = (neutral.y[origDiagIdx] - topMinY) / (neutral.x[origDiagIdx] - minX)
+            val dxNew = xs[origDiagIdx] - sMinX
+            val dyNew = ys[origDiagIdx] - sMinY
+            val ratio = if (dxNew > 1e-3f) dyNew / dxNew else 0f
+            assertEquals("$accent top-left corner was squeezed (dx=$dxNew, dy=$dyNew)", origRatio, ratio, 0.01f)
+            if (accent == FaceAccent.Focused || accent == FaceAccent.Drowsy) {
+                val (newTopSpan, _) = SquircleEyeGeometry.cornerSpans(xs, ys, sMinX, sMaxX, sMinY, sMaxY)
+                assertTrue("$accent top corner should tighten ($newTopSpan vs $origTopSpan)", newTopSpan < origTopSpan - 4f)
+            }
+        }
+        assertTrue(origBotSpan > 35f)
+
+        // 3) Closed-bar caps stay unsqueezed (rx ≈ ry ≈ 8.5) when closing a narrow eye.
+        val closed = requireNotNull(GenericalFace.outlineWeighted(0, listOf("Neutral" to 1f), 1f))
+        val cMinX = closed.x.min(); val cMidY = (closed.y.min() + closed.y.max()) * 0.5f
+        val capHeight = (closed.y.max() - closed.y.min()) * 0.5f
+        val leftCapApex = closed.x.indices.minBy { closed.x[it] }
+        val nearCap = closed.x.indices.filter { closed.x[it] < cMinX + capHeight * 0.85f }
+        assertTrue(nearCap.size >= 4)
+        for (idx in nearCap) {
+            val rDist = hypot(closed.x[idx] - (cMinX + capHeight), closed.y[idx] - cMidY)
+            assertEquals("Closed bar cap was squeezed at idx=$idx (apex=$leftCapApex)", capHeight, rDist, 0.45f)
+        }
+
+        // 4) Sweeping slant continuously across -0.05 (hard <-> soft lid) must never jump.
         var prevX: FloatArray? = null
         var prevY: FloatArray? = null
         for (step in 0..80) {
@@ -69,7 +112,7 @@ class AnimatedAvatarContinuityTest {
             prevX = xs; prevY = ys
         }
 
-        // Sweeping upper across 1.0 with non-zero slant must never jump.
+        // 5) Sweeping upper across 1.0 with non-zero slant must never jump.
         prevX = null; prevY = null
         for (step in 0..60) {
             val upper = 0.85f + 0.30f * (step / 60f)
@@ -81,6 +124,51 @@ class AnimatedAvatarContinuityTest {
                 assertTrue("Upper jump at upper=$upper: $maxDelta px", maxDelta < 2.5f)
             }
             prevX = xs; prevY = ys
+        }
+
+        // Optional visual review sheet when -Dlastchat.renderDir is set.
+        System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() }?.let { dir ->
+            val rig = FaceRig(Random(1))
+            val items = listOf(
+                "Neutral" to FaceParams.ID,
+                "Neutral" to rig.accentPreview(FaceAccent.Focused),
+                "Neutral" to rig.accentPreview(FaceAccent.Drowsy),
+                "Neutral" to rig.accentPreview(FaceAccent.Glee),
+                "Neutral" to rig.accentPreview(FaceAccent.Curious),
+                "Neutral" to rig.accentPreview(FaceAccent.Annoyed),
+                "Neutral" to rig.accentPreview(FaceAccent.Smug),
+                "Neutral" to rig.accentPreview(FaceAccent.Startled),
+                "Neutral" to rig.accentPreview(FaceAccent.Sad),
+                "angered or concentrated" to FaceParams.ID,
+                "Bored" to FaceParams.ID,
+                "Happy" to FaceParams.ID,
+                "Surprised" to FaceParams.ID,
+                "Angry" to FaceParams.ID,
+                "Sleeping" to FaceParams.ID,
+            )
+            val cols = 5
+            val rows = (items.size + cols - 1) / cols
+            val cell = 220
+            val bmp = Bitmap.createBitmap(cols * cell, rows * cell, Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bmp)
+            canvas.drawColor(android.graphics.Color.rgb(24, 26, 32))
+            val shape = requireNotNull(MarkShapes.resolve("blob"))
+            for ((idx, pair) in items.withIndex()) {
+                val (expr, face) = pair
+                canvas.save()
+                canvas.translate((idx % cols) * cell.toFloat(), (idx / cols) * cell.toFloat())
+                CanvasDrawScope().draw(Density(2f), LayoutDirection.Ltr, Canvas(canvas), Size(cell.toFloat(), cell.toFloat())) {
+                    drawMark(
+                        shape, "blob", false,
+                        MotionFrame(exprFrom = expr, exprTo = expr, exprWeights = listOf(expr to 1f), face = face),
+                        false, 1f, Color(0xFF2A92FE), Color.White, Color(0xFF87D2E9),
+                    )
+                }
+                canvas.restore()
+            }
+            java.io.File(dir, "generical-squircle-sheet.png").apply { parentFile?.mkdirs() }
+                .outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bmp.recycle()
         }
     }
 
