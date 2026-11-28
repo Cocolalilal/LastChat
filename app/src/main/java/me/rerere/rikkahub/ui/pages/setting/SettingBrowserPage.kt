@@ -713,7 +713,7 @@ fun SettingBrowserPage(
     if (showClearDataConfirm) {
         LastChatDestructiveConfirmDialog(
             title = "Clear all browser data?",
-            message = "This will remove all WebView cookies, site storage, browsing history, open tabs, and cached screenshots. Encrypted entries in Browser Secrets are kept.",
+            consequence = "This will remove all WebView cookies, site storage, browsing history, open tabs, and cached screenshots. Encrypted entries in Browser Secrets are kept.",
             confirmLabel = "Clear Data",
             onConfirm = {
                 showClearDataConfirm = false

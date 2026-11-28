@@ -1696,6 +1696,7 @@ class GenerationHandler(
                     ))
                 }
             }
+        }
         val rawBuiltMessagesApplied = me.rerere.rikkahub.data.browser.ScreenshotBudget.apply(
             rawBuiltMessages,
             maxScreenshots = settings.browserSettings.maxScreenshotsInContext,

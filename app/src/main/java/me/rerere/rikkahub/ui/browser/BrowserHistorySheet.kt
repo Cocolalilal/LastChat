@@ -191,7 +191,7 @@ fun BrowserHistorySheet(
     if (showClearConfirm) {
         LastChatDestructiveConfirmDialog(
             title = "Clear browser history?",
-            message = "This removes all saved browsing history entries.",
+            consequence = "This removes all saved browsing history entries.",
             confirmLabel = "Clear",
             onConfirm = {
                 historyStore.clear()

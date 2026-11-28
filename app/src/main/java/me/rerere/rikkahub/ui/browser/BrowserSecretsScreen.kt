@@ -343,7 +343,7 @@ fun BrowserSecretsScreen() {
     pendingDeleteKey?.let { keyToDelete ->
         LastChatDestructiveConfirmDialog(
             title = "Delete secret '$keyToDelete'?",
-            message = "This removes the encrypted value and metadata permanently.",
+            consequence = "This removes the encrypted value and metadata permanently.",
             confirmLabel = "Delete",
             onConfirm = {
                 secretsStore.deleteSecret(keyToDelete)

@@ -1264,6 +1264,9 @@ fun ChatPage(
                     initialSearchQuery = searchQuery,
                 )
             }
+            BackHandler(drawerState.isOpen) {
+                scope.launch { drawerState.close() }
+            }
         }
     }
 
@@ -1287,9 +1290,6 @@ fun ChatPage(
             },
             onDismiss = { browserTabPool.closeBrowserSheet() },
         )
-    }
-}
-        }
     }
 }
 
