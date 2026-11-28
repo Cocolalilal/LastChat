@@ -880,3 +880,46 @@ On `composeBom = "2025.11.00"` (foundation 1.9.x) `SelectionContainer` reads **`
 3. **Deep-Linking Architecture (`AssistantDetailPage.kt`):**
    - Exposed `AssistantDetailRoutes.DEEP_LINK_ROUTES` (`PROMPTS`, `MODEL`, `CONTEXT_MANAGEMENT`, `LOREBOOKS`, `SKILLS`, `TOOLS`, `MEMORY`, `UI`, `ADVANCED`) so `startRoute` navigation works cleanly across all sub-pages.
 
+
+---
+
+## 23. Architecture: Agent Browser (`browser_use`), Secrets Store & Reliability Hardening
+
+**Commits:** `6612db9` → `67b8f33` → `f155e48` → `a1f62ee` → `761701a` → `973de9c` on `feat/memory-summary`.
+
+### 1. Core Native WebView Engine (`app/src/main/java/me/rerere/rikkahub/data/browser/`)
+- **Multi-Tab Pool (`BrowserTabPool.kt`):** Manages `1..3` live Android `WebView` tabs per conversation (default `2` for 4GB RAM) sharing Android `CookieManager`. Uses per-tab `Mutex` locks (`tabLocks`) for same-tab serialization, a 15s implicit-tab fan-out grace window for parallel `navigate` calls, idle eviction (configurable `1..240` min), and `ComponentCallbacks2.onTrimMemory` eviction of non-active WebViews.
+- **27 Actions (`BrowserAction.kt`, `BrowserUseManager.kt`, `BrowserUseJS.kt`):**
+  - *Navigation & Tabs:* `navigate`, `new_tab`, `close_tab`, `list_tabs`
+  - *Visual & Viewport:* `screenshot` (supports `full_page` up to 32,768px), `set_viewport`, `set_user_agent` (`desktop_chrome`, `mobile_chrome`, `custom`)
+  - *Interaction:* `click` (CSS selector or coordinates + optional tap ripple), `type`, `hover`, `scroll`
+  - *DOM & Reading:* `get_text`, `get_readable`, `get_page_info`, `get_backbone`, `find_elements`, `scroll_and_collect`
+  - *JS, Sync & Network:* `execute_js` (async IIFE wrapper + `@JavascriptInterface` bridge), `wait_for_dom_stable`, `fetch` (session cookies + `blob:` support), `get_cookies`, `set_cookies` (native `CookieManager`, including `HttpOnly`)
+  - *Human-in-the-Loop & Session Control:* `hand_over`, `close_browser`
+  - *Secrets & Session Cookies:* `save_secret`, `save_cookies_as_secret` (reads `CookieManager` directly without exposing raw values to the LLM), `restore_cookies_from_secret`
+- **Dialog Interception (`InterceptedDialogQueue.kt`):** Intercepts `onJsAlert`, `onJsConfirm`, and `onJsPrompt` so native dialogs never stall the agent.
+- **History (`BrowserHistory.kt`):** 7-day persistent history tagging `byAgent: Boolean`, filterable in `BrowserHistorySheet.kt` (`All` / `Agent Visited`) and accessible from `BrowserSheet`, `BrowserStepInspectorSheet`, and `SettingBrowserPage`.
+
+### 2. Secrets Manager, Safety & Local-Model Autonomy
+- **`BrowserSecretsStore.kt` + `BrowserSecretRedactor.kt`:** Stores metadata (`filesDir/.secrets/metadata.json`) and AES-256-GCM encrypted values (`EncryptedSharedPreferences`), with optional `chmod 600` sync to `<workspace>/.secrets` when Linux Workspace is mounted. Exposes a `revision: StateFlow<Int>` for Context Map invalidation.
+- **Zero-Leak Injection:** Model receives only key names, domains, and notes. `type` resolves `{{SECRET:KEY}}` locally right before WebView injection; `BrowserSecretRedactor` masks echoed secrets when `redactSecretsInToolOutput` is enabled.
+- **Configurable Guardrails (`BrowserGuard.kt`, `BrowserHandOver.kt`):** Every guardrail is toggleable in `BrowserSettings` (`fullAutonomyMode`, `autoHandoffOnSecretFields`, `requireApprovalForRiskyClicks`, `allowAgentHandOverAction`, `agentSecretWritePolicy` [`ASK_BEFORE_SAVING` / `AUTO_SAVE` / `READ_ONLY`], `keepAllLoginsInApp`).
+- **In-App Logins Default (`keepAllLoginsInApp = true`):** `shouldOverrideUrlLoading` keeps Google and OAuth login pages inside LastChat's in-app WebView so the user and agent share the exact same `CookieManager` session (routing to Chrome Custom Tabs only when `keepAllLoginsInApp == false`).
+
+### 3. Tool Registration & Full Context Map Accounting
+- **`LocalToolOption.Browser` (`LocalTools.kt`, `BrowserToolSupport.kt`):** Toggled from Homepage Right-Side Menu → Tools (`MinimalChatInput.kt` / `InputPickerSheets.kt`) and Assistant Tools settings (`AssistantToolsSubPage.kt`).
+- **Context Map Wiring (per §22.1 Hard Rule):**
+  - `LocalToolOption.Browser` implements `toDefinitionPreviews(browserSettings)` (honoring `useCompactToolSchema` / `PromptDiet`) so pre-request and request `toolDefinitionTokens` match.
+  - All browser instructions, autonomy rules, `close_browser` lifecycle rules, and the saved `.secrets` key/domain manifest are returned strictly inside `Tool.systemPrompt(model, messages)` → `embeddedToolText`.
+  - `ContextUsageSource.kt` includes `settings.browserSettings` and `browserSecretsRevision` so live Context Meter recalculates immediately on any setting or secret change, and drops to **0 tokens** when Browser is disabled.
+  - `ScreenshotBudget.apply(...)` trims tool-result screenshots to `maxScreenshotsInContext` (default `4`) before token accounting in `GenerationHandler.kt`.
+
+### 4. Native Compose UI & Settings
+- **Settings (`PreferencesModels.kt`, `SettingBrowserPage.kt`, `SettingPage.kt`):** Added single-line `Browser` row under `Models & Services` (`Screen.SettingBrowser`) exposing Viewport, Preview Size (`COMPACT` / `MEDIUM` / `LARGE`), Bar Visibility (`MANUAL_CLOSE` / `AUTO_AGENT` / `HIDE_ON_NEXT_MESSAGE`), Performance/Memory caps, Safety/Autonomy, Passwords & Secrets (`BrowserSecretsScreen.kt`), In-App Logins, and Browsing History. Removed the legacy subtitle under `Library` in `SettingPage.kt` for single-line visual consistency.
+- **Browser-Only Floating Mini-Preview Bar (`BrowserMiniPreviewBar.kt`):** Strictly filters `toolName == "browser_use"`. Dismissal (`×` or `close_browser`) is persisted per `conversationId` in `SharedPreferences` (`browser_bar_dismiss_prefs`) inside `BrowserTabPool`. Uses event-driven `BrowserTabPool.latestFrame` + top-aligned (`Alignment.TopCenter`) `Crossfade` thumbnails with pulsing live indicator and host caption.
+- **Step Inspector (`BrowserStepInspectorSheet.kt`) & Live Browser (`BrowserSheet.kt`, `BrowserWebView.kt`):** Step Inspector prioritizes full-resolution on-disk screenshots over cached thumbnails, zooms the exact displayed frame (exporting non-screenshot frames to a temp cache file), and links directly to History and Live Browser. `BrowserSheet` supports tablet landscape split-pane mode (`BrowserPaneContent`) and displays `"<AssistantName> is browsing | Takeover"`.
+
+### 5. Reliability & 4GB-RAM Performance Invariants (Do Not Regress)
+1. **Honest `navigate()`:** `onReceivedError` must capture main-frame errors (`lastNavigationError`); `navigate()` must wait for `document.readyState === 'complete'` + 450ms settle, read fresh `window.location.href` and `document.title` via JS, and return `BrowserActionResult.error(...)` on main-frame error, `chrome-error://` / `about:blank`, or a cross-origin navigation where the host never changed. Never echo the requested URL as `page_url`.
+2. **Honest `set_viewport()`:** Apply `useWideViewPort`, `loadWithOverviewMode`, and `<meta name="viewport">`, then read back `window.innerWidth × window.innerHeight` via JS (`readActualViewport()`) and report `success = false` if constrained.
+3. **Zero Chat UI Freeze:** Auto-pause idle background WebViews (`webView.onPause()` when no action is running and `BrowserSheet` is closed; `webView.onResume()` on action/sheet open — never call process-wide `pauseTimers()`). Run all bitmap uniformity checks, scaling, and JPEG encoding on `Dispatchers.Default` / `Dispatchers.IO`. Keep `MinimalChatInput`'s outer `.verticalScroll` disabled unless a questionnaire or approval card is active, keep the scroll-to-bottom row **above** `topAccessory`, and avoid live Haze blur passes on `BrowserMiniPreviewBar`.
