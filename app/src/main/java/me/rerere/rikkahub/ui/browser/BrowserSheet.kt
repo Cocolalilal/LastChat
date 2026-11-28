@@ -105,6 +105,7 @@ import java.net.URLEncoder
 fun BrowserSheet(
     tabPool: BrowserTabPool,
     browserSettings: BrowserSettings,
+    assistantName: String = "Assistant",
     onOpenSettings: () -> Unit,
     onOpenSecrets: () -> Unit,
     onSendPageToChat: (String) -> Unit,
@@ -122,6 +123,7 @@ fun BrowserSheet(
         BrowserPaneContent(
             tabPool = tabPool,
             browserSettings = browserSettings,
+            assistantName = assistantName,
             onOpenSettings = onOpenSettings,
             onOpenSecrets = onOpenSecrets,
             onSendPageToChat = onSendPageToChat,
@@ -138,6 +140,7 @@ fun BrowserSheet(
 fun BrowserPaneContent(
     tabPool: BrowserTabPool,
     browserSettings: BrowserSettings,
+    assistantName: String = "Assistant",
     onOpenSettings: () -> Unit,
     onOpenSecrets: () -> Unit,
     onSendPageToChat: (String) -> Unit,
@@ -410,6 +413,7 @@ fun BrowserPaneContent(
 
             if (isAgentBusy) {
                 AgentBrowsingOverlay(
+                    assistantName = assistantName,
                     accent = accent,
                     onTakeover = {
                         haptics.perform(HapticPattern.Pop)
@@ -624,7 +628,7 @@ private fun AddressBarIcon(isLoading: Boolean, accent: Color) {
 }
 
 @Composable
-private fun AgentBrowsingOverlay(accent: Color, onTakeover: () -> Unit) {
+private fun AgentBrowsingOverlay(assistantName: String, accent: Color, onTakeover: () -> Unit) {
     val transition = rememberInfiniteTransition(label = "breathing")
     val breathingAlpha by transition.animateFloat(
         initialValue = 0.35f,
@@ -654,7 +658,7 @@ private fun AgentBrowsingOverlay(accent: Color, onTakeover: () -> Unit) {
             )
             Spacer(Modifier.width(10.dp))
             Text(
-                text = "LastChat is browsing",
+                text = "${assistantName.ifBlank { "Assistant" }} is browsing",
                 color = Color.White.copy(alpha = 0.92f),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,

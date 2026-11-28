@@ -1185,6 +1185,7 @@ fun ChatPage(
                                     me.rerere.rikkahub.ui.browser.BrowserPaneContent(
                                         tabPool = browserTabPool,
                                         browserSettings = setting.browserSettings,
+                                        assistantName = currentAssistant.name.ifBlank { "Assistant" },
                                         onOpenSettings = { navController.navigate(Screen.SettingBrowser) },
                                         onOpenSecrets = { navController.navigate(Screen.BrowserSecrets) },
                                         onSendPageToChat = { pagePayload ->
@@ -1274,6 +1275,7 @@ fun ChatPage(
         me.rerere.rikkahub.ui.browser.BrowserSheet(
             tabPool = browserTabPool,
             browserSettings = setting.browserSettings,
+            assistantName = currentAssistant.name.ifBlank { "Assistant" },
             onOpenSettings = {
                 browserTabPool.closeBrowserSheet()
                 navController.navigate(Screen.SettingBrowser)
@@ -2217,10 +2219,17 @@ private fun ChatPageContent(
                             onOpenBrowser = { url -> browserTabPool.openBrowserSheet(url) },
                         )
                         me.rerere.rikkahub.ui.browser.BrowserRiskApprovalCard()
+                        val hasUserMsgAfterBrowser = remember(conversation.currentMessages.size, browserSteps) {
+                            me.rerere.rikkahub.ui.browser.hasUserMessageAfterBrowserSteps(
+                                conversation.currentMessages,
+                                browserSteps,
+                            )
+                        }
                         me.rerere.rikkahub.ui.browser.BrowserMiniPreviewBar(
                             steps = browserSteps,
                             browserSettings = setting.browserSettings,
                             tabPool = browserTabPool,
+                            hasUserMessageAfterSteps = hasUserMsgAfterBrowser,
                             onInspectStep = { idx -> inspectedBrowserStepIndex = idx },
                         )
                     },

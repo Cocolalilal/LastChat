@@ -45,6 +45,8 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.browser.BrowserSecretsStore
 import me.rerere.rikkahub.data.browser.BrowserTabPool
 import me.rerere.rikkahub.data.datastore.AgentSecretWritePolicy
+import me.rerere.rikkahub.data.datastore.BrowserBarDismissMode
+import me.rerere.rikkahub.data.datastore.BrowserPreviewSize
 import me.rerere.rikkahub.data.datastore.BrowserSettings
 import me.rerere.rikkahub.data.datastore.BrowserViewMode
 import me.rerere.rikkahub.data.datastore.SetOfMarkMode
@@ -112,6 +114,7 @@ fun SettingBrowserPage(
         mutableStateOf(browserSettings.blockedDomains.joinToString(", "))
     }
     var showClearDataConfirm by remember { mutableStateOf(false) }
+    var showHistorySheet by remember { mutableStateOf(false) }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val listState = rememberLazyListState()
@@ -260,6 +263,50 @@ fun SettingBrowserPage(
                                 onCheckedChange = {
                                     updateBrowserSettings(browserSettings.copy(showFloatingMiniPreviewBar = it))
                                 },
+                            )
+                        },
+                    )
+
+                    SettingGroupItem(
+                        title = "Preview Thumbnail Size",
+                        subtitle = "Size of the floating browser preview on the main chat screen",
+                        trailing = {
+                            Select(
+                                options = BrowserPreviewSize.entries,
+                                selectedOption = browserSettings.miniPreviewSize,
+                                onOptionSelected = { size ->
+                                    updateBrowserSettings(browserSettings.copy(miniPreviewSize = size))
+                                },
+                                optionToString = { size ->
+                                    when (size) {
+                                        BrowserPreviewSize.COMPACT -> "Compact"
+                                        BrowserPreviewSize.MEDIUM -> "Medium"
+                                        BrowserPreviewSize.LARGE -> "Large"
+                                    }
+                                },
+                                modifier = Modifier.wrapContentWidth(),
+                            )
+                        },
+                    )
+
+                    SettingGroupItem(
+                        title = "Preview Bar Behavior",
+                        subtitle = "Choose when the floating browser bar hides after browsing",
+                        trailing = {
+                            Select(
+                                options = BrowserBarDismissMode.entries,
+                                selectedOption = browserSettings.barDismissMode,
+                                onOptionSelected = { mode ->
+                                    updateBrowserSettings(browserSettings.copy(barDismissMode = mode))
+                                },
+                                optionToString = { mode ->
+                                    when (mode) {
+                                        BrowserBarDismissMode.MANUAL_CLOSE -> "Manual (×)"
+                                        BrowserBarDismissMode.AUTO_AGENT -> "Auto (Agent + ×)"
+                                        BrowserBarDismissMode.HIDE_ON_NEXT_MESSAGE -> "Hide on Next Msg"
+                                    }
+                                },
+                                modifier = Modifier.wrapContentWidth(),
                             )
                         },
                     )
@@ -670,6 +717,12 @@ fun SettingBrowserPage(
                     )
 
                     SettingGroupItem(
+                        title = "Browsing History",
+                        subtitle = "Inspect every site visited by you or the agent",
+                        onClick = { showHistorySheet = true },
+                    )
+
+                    SettingGroupItem(
                         title = "Search → Browser Escalation Hint",
                         subtitle = "Guide the model to escalate interactive/JS pages from Search to Browser",
                         trailing = {
@@ -708,6 +761,19 @@ fun SettingBrowserPage(
                 }
             }
         }
+    }
+
+    if (showHistorySheet) {
+        me.rerere.rikkahub.ui.browser.BrowserHistorySheet(
+            historyStore = me.rerere.rikkahub.data.browser.BrowserHistoryStore.getInstance(
+                androidx.compose.ui.platform.LocalContext.current
+            ),
+            onNavigate = { url ->
+                showHistorySheet = false
+                browserTabPool.openBrowserSheet(url)
+            },
+            onDismiss = { showHistorySheet = false },
+        )
     }
 
     if (showClearDataConfirm) {

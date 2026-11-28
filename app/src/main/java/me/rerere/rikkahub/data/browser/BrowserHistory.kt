@@ -38,6 +38,7 @@ class BrowserHistoryStore private constructor(private val context: Context) {
         val title: String,
         val timestamp: Long = System.currentTimeMillis(),
         val domain: String = extractDomain(url),
+        val byAgent: Boolean = false,
     )
 
     private val entries = mutableListOf<Entry>()
@@ -49,11 +50,12 @@ class BrowserHistoryStore private constructor(private val context: Context) {
     }
 
     @Synchronized
-    fun record(url: String, title: String) {
+    fun record(url: String, title: String, byAgent: Boolean = false) {
         if (url.isEmpty() || url == "about:blank") return
-        if (entries.lastOrNull()?.url == url) return
+        val last = entries.lastOrNull()
+        if (last?.url == url && last.byAgent == byAgent) return
 
-        entries.add(Entry(url = url, title = title))
+        entries.add(Entry(url = url, title = title, byAgent = byAgent))
         pruneOld()
         save()
         _entriesVersion.value++
@@ -121,6 +123,7 @@ class BrowserHistoryStore private constructor(private val context: Context) {
                 obj.put("title", entry.title)
                 obj.put("timestamp", entry.timestamp)
                 obj.put("domain", entry.domain)
+                obj.put("byAgent", entry.byAgent)
                 array.put(obj)
             }
             file.writeText(array.toString())
@@ -143,6 +146,7 @@ class BrowserHistoryStore private constructor(private val context: Context) {
                         title = obj.optString("title", ""),
                         timestamp = obj.optLong("timestamp", 0),
                         domain = obj.optString("domain", ""),
+                        byAgent = obj.optBoolean("byAgent", false),
                     )
                 )
             }

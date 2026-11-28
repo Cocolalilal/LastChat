@@ -45,7 +45,10 @@ enum class BrowserAction(val value: String) {
     // Secrets & Session Persistence (3)
     SAVE_SECRET("save_secret"),
     SAVE_COOKIES_AS_SECRET("save_cookies_as_secret"),
-    RESTORE_COOKIES_FROM_SECRET("restore_cookies_from_secret");
+    RESTORE_COOKIES_FROM_SECRET("restore_cookies_from_secret"),
+
+    // Session UI Control (1)
+    CLOSE_BROWSER("close_browser");
 
     val opensNewPage: Boolean get() = this in opensNewPageActions
 

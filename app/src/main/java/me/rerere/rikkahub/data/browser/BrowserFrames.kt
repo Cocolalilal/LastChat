@@ -11,7 +11,7 @@ object BrowserFrames {
     private const val DEFAULT_CAP_MB = 8
     private const val MIN_CAP_MB = 4
     private const val MAX_CAP_MB = 24
-    private const val PREVIEW_MAX_WIDTH_PX = 360
+    private const val PREVIEW_MAX_WIDTH_PX = 480
 
     @Volatile
     private var currentCapMb = DEFAULT_CAP_MB

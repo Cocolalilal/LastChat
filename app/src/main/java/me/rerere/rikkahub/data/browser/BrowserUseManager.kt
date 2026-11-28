@@ -116,6 +116,7 @@ class BrowserUseManager(
     private var asyncJsDeferred: CompletableDeferred<String>? = null
     private var lastKnownContainerWidthPx: Int = 0
     private var lastAppliedViewport: Pair<Int, Int>? = null
+    @Volatile private var agentActionActive: Boolean = false
 
     private val jsBridge = object {
         @JavascriptInterface
@@ -219,7 +220,7 @@ class BrowserUseManager(
                     Log.i(TAG, "Blocked navigation to $urlStr by domain blocklist")
                     return true
                 }
-                if (GoogleAuthRouter.shouldRouteExternally(urlStr)) {
+                if (!settingsProvider().keepAllLoginsInApp && GoogleAuthRouter.shouldRouteExternally(urlStr)) {
                     if (urlStr != null) {
                         GoogleAuthRouter.openInCustomTab(view.context, urlStr)
                     }
@@ -250,7 +251,7 @@ class BrowserUseManager(
                 val histUrl = url ?: ""
                 val histTitle = view.title ?: ""
                 if (histUrl.isNotEmpty() && histUrl != "about:blank" && !settingsProvider().incognitoMode) {
-                    BrowserHistoryStore.getInstance(view.context).record(histUrl, histTitle)
+                    BrowserHistoryStore.getInstance(view.context).record(histUrl, histTitle, byAgent = agentActionActive)
                 }
                 view.postDelayed({
                     view.evaluateJavascript("window.dispatchEvent(new Event('resize'));", null)
@@ -355,7 +356,8 @@ class BrowserUseManager(
             BrowserAction.HAND_OVER,
             BrowserAction.SAVE_SECRET,
             BrowserAction.SAVE_COOKIES_AS_SECRET,
-            BrowserAction.RESTORE_COOKIES_FROM_SECRET ->
+            BrowserAction.RESTORE_COOKIES_FROM_SECRET,
+            BrowserAction.CLOSE_BROWSER ->
                 BrowserActionResult.error("${input.action.value} must be routed through BrowserTabPool")
         }
 
@@ -422,8 +424,15 @@ class BrowserUseManager(
 
     private suspend fun attachSnapshot(result: BrowserActionResult, settings: BrowserSettings): BrowserActionResult {
         return try {
+            awaitVisualPaint(timeoutMs = 500L)
             delay(300)
-            val bitmap = captureWebViewBitmap() ?: return result
+            var bitmap = captureWebViewBitmap() ?: return result
+            if (isMostlyUniformColor(bitmap)) {
+                bitmap.recycle()
+                delay(650)
+                awaitVisualPaint(timeoutMs = 400L)
+                bitmap = captureWebViewBitmap() ?: return result
+            }
             val scaled = scaleToMaxLongEdge(bitmap, settings.screenshotMaxLongEdgePx)
             val file = saveBitmapToFile(scaled, "snapshot", settings.screenshotJpegQuality)
             if (scaled !== bitmap) scaled.recycle()
@@ -433,6 +442,39 @@ class BrowserUseManager(
             Log.w(TAG, "Auto-snapshot failed: ${e.message}")
             result
         }
+    }
+
+    private suspend fun awaitVisualPaint(timeoutMs: Long) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return
+        val deferred = CompletableDeferred<Unit>()
+        withContext(Dispatchers.Main) {
+            runCatching {
+                webView.postVisualStateCallback(System.nanoTime(), object : WebView.VisualStateCallback() {
+                    override fun onComplete(requestId: Long) {
+                        deferred.complete(Unit)
+                    }
+                })
+            }.onFailure { deferred.complete(Unit) }
+        }
+        withTimeoutOrNull(timeoutMs) { deferred.await() }
+    }
+
+    private fun isMostlyUniformColor(bitmap: Bitmap): Boolean {
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w < 16 || h < 16) return false
+        val first = bitmap.getPixel(w / 7, h / 7)
+        var same = 0
+        var total = 0
+        for (gx in 1..6) {
+            val px = (w * gx) / 7
+            for (gy in 1..6) {
+                val py = (h * gy) / 7
+                total++
+                if (bitmap.getPixel(px, py) == first) same++
+            }
+        }
+        return total > 0 && same >= (total * 95) / 100
     }
 
     // -- Navigate --
@@ -646,7 +688,35 @@ class BrowserUseManager(
         }
     }
 
-    suspend fun captureLiveSnapshot(): Bitmap? = captureWebViewBitmap()
+    suspend fun captureLiveSnapshot(maxWidthPx: Int = 480): Bitmap? = withContext(Dispatchers.Main) {
+        try {
+            val vp = lastAppliedViewport ?: currentProfile.viewportSize
+            val density = webView.resources.displayMetrics.density
+            var w = webView.width
+            var h = webView.height
+            if (w <= 0 || h <= 0) {
+                val targetW = (vp.first.coerceAtLeast(412) * density).toInt().coerceAtLeast(1)
+                val targetH = (vp.second.coerceAtLeast(800) * density).toInt().coerceAtLeast(1)
+                webView.measure(
+                    View.MeasureSpec.makeMeasureSpec(targetW, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(targetH, View.MeasureSpec.EXACTLY),
+                )
+                webView.layout(0, 0, targetW, targetH)
+                w = targetW; h = targetH
+            }
+            val scale = if (w > maxWidthPx) maxWidthPx.toFloat() / w.toFloat() else 1f
+            val outW = (w * scale).toInt().coerceAtLeast(1)
+            val outH = (h * scale).toInt().coerceAtLeast(1)
+            val bitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.RGB_565)
+            val canvas = Canvas(bitmap)
+            canvas.scale(scale, scale)
+            webView.draw(canvas)
+            bitmap
+        } catch (e: Exception) {
+            Log.e(TAG, "captureLiveSnapshot failed: ${e.message}")
+            null
+        }
+    }
 
     private suspend fun captureWebViewBitmap(): Bitmap? = withContext(Dispatchers.Main) {
         try {

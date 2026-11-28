@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.browser
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.LruCache
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -67,10 +70,13 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.browser.BrowserFrames
 import me.rerere.rikkahub.data.browser.BrowserTabPool
+import me.rerere.rikkahub.data.datastore.BrowserBarDismissMode
+import me.rerere.rikkahub.data.datastore.BrowserPreviewSize
 import me.rerere.rikkahub.data.datastore.BrowserSettings
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -90,27 +96,38 @@ data class BrowserStepRecord(
     val tabId: Int?,
     val isRunning: Boolean,
     val isSuccess: Boolean,
+    val messageIndex: Int = 0,
 )
+
+private val parsedStepCache = LruCache<String, BrowserStepRecord>(256)
 
 /**
  * Extracts ONLY `browser_use` steps from the conversation's messages.
- * Strict filter: Python, JS, Search, Memory, and MCP tools are never included.
+ * Memoizes completed steps so streaming tokens do not re-parse JSON on every frame.
  */
 fun collectBrowserSteps(messages: List<UIMessage>, isGenerating: Boolean): List<BrowserStepRecord> {
     val resultsByCallId = LinkedHashMap<String, UIMessagePart.ToolResult>()
     messages.forEach { msg ->
-        msg.parts.filterIsInstance<UIMessagePart.ToolResult>()
-            .filter { it.toolName == "browser_use" }
-            .forEach { res -> resultsByCallId[res.toolCallId] = res }
+        msg.parts.forEach { part ->
+            if (part is UIMessagePart.ToolResult && part.toolName == "browser_use") {
+                resultsByCallId[part.toolCallId] = part
+            }
+        }
     }
 
     val steps = mutableListOf<BrowserStepRecord>()
-    messages.forEach { msg ->
-        msg.parts.filterIsInstance<UIMessagePart.ToolCall>()
-            .filter { it.toolName == "browser_use" }
-            .forEach { call ->
-                val result = resultsByCallId[call.toolCallId]
-                val argsObj = runCatching { JSONObject(call.arguments) }.getOrNull()
+    messages.forEachIndexed { msgIdx, msg ->
+        msg.parts.forEach { part ->
+            if (part is UIMessagePart.ToolCall && part.toolName == "browser_use") {
+                val result = resultsByCallId[part.toolCallId]
+                val running = result == null && isGenerating
+                val cacheKey = "${part.toolCallId}|${part.arguments.hashCode()}|${result != null}|$running|$msgIdx"
+                val cached = parsedStepCache.get(cacheKey)
+                if (cached != null) {
+                    steps += cached
+                    return@forEach
+                }
+                val argsObj = runCatching { JSONObject(part.arguments) }.getOrNull()
                 val actionName = argsObj?.optString("action").orEmpty().ifBlank { "browser_use" }
                 val title = argsObj?.optString("tool_title").orEmpty().ifBlank {
                     actionName.replace('_', ' ').replaceFirstChar { it.uppercase() }
@@ -125,22 +142,35 @@ fun collectBrowserSteps(messages: List<UIMessage>, isGenerating: Boolean): List<
                     ?: argsObj?.optString("url")?.takeIf { it.isNotBlank() }
                 val tabId = contentObj?.get("tab_id")?.jsonPrimitive?.intOrNull
                 val success = contentObj?.get("success")?.jsonPrimitive?.booleanOrNull ?: (result != null)
-                val running = result == null && isGenerating
-                steps += BrowserStepRecord(
-                    toolCallId = call.toolCallId,
+                val record = BrowserStepRecord(
+                    toolCallId = part.toolCallId,
                     toolTitle = title,
                     actionName = actionName,
-                    argumentsJson = call.arguments,
+                    argumentsJson = part.arguments,
                     resultText = text,
                     imageFilePath = imagePath,
                     pageUrl = pageUrl,
                     tabId = tabId,
                     isRunning = running,
                     isSuccess = success,
+                    messageIndex = msgIdx,
                 )
+                if (!running) {
+                    parsedStepCache.put(cacheKey, record)
+                }
+                steps += record
             }
+        }
     }
     return steps
+}
+
+fun hasUserMessageAfterBrowserSteps(messages: List<UIMessage>, steps: List<BrowserStepRecord>): Boolean {
+    val lastStepMsgIdx = steps.lastOrNull()?.messageIndex ?: return false
+    for (i in (lastStepMsgIdx + 1) until messages.size) {
+        if (messages[i].role == MessageRole.USER) return true
+    }
+    return false
 }
 
 @Composable
@@ -151,11 +181,12 @@ fun rememberBrowserLiveSnapshot(
 ): Bitmap? {
     var liveBitmap by remember(step.toolCallId) { mutableStateOf<Bitmap?>(null) }
 
-    LaunchedEffect(step.toolCallId, step.isRunning, intervalMs) {
+    LaunchedEffect(step.toolCallId, step.isRunning, step.tabId, intervalMs) {
         if (!step.isRunning || intervalMs <= 0L) return@LaunchedEffect
-        val pollMs = intervalMs.coerceAtLeast(1_000L)
+        val pollMs = intervalMs.coerceAtLeast(1_500L)
         while (isActive) {
-            val snap = runCatching { tabPool.activeManager?.captureLiveSnapshot() }.getOrNull()
+            val manager = tabPool.managerForTab(step.tabId)
+            val snap = runCatching { manager?.captureLiveSnapshot(maxWidthPx = 480) }.getOrNull()
             if (snap != null && !snap.isRecycled) {
                 BrowserFrames.remember(step.toolCallId, snap)
                 liveBitmap = BrowserFrames.get(step.toolCallId) ?: snap
@@ -172,10 +203,37 @@ fun BrowserMiniPreviewBar(
     browserSettings: BrowserSettings,
     tabPool: BrowserTabPool,
     onInspectStep: (index: Int) -> Unit,
+    hasUserMessageAfterSteps: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val visible = browserSettings.showFloatingMiniPreviewBar && steps.isNotEmpty()
     val haptics = rememberPremiumHaptics()
+    val agentDismissVersion by tabPool.barDismissedByAgentVersion.collectAsState()
+
+    // Track manual dismissal (resets automatically whenever a new browser step arrives)
+    var dismissedAtStepCount by remember { mutableIntStateOf(-1) }
+    var lastSeenAgentDismissVersion by remember { mutableIntStateOf(agentDismissVersion) }
+    var dismissedByAgentAtStepCount by remember { mutableIntStateOf(-1) }
+
+    LaunchedEffect(agentDismissVersion, steps.size) {
+        if (agentDismissVersion != lastSeenAgentDismissVersion) {
+            lastSeenAgentDismissVersion = agentDismissVersion
+            dismissedByAgentAtStepCount = steps.size
+        }
+    }
+
+    val isManuallyDismissed = dismissedAtStepCount >= 0 && steps.size <= dismissedAtStepCount
+    val isAgentDismissed = browserSettings.barDismissMode == BrowserBarDismissMode.AUTO_AGENT &&
+        (dismissedByAgentAtStepCount >= 0 && steps.size <= dismissedByAgentAtStepCount ||
+            steps.lastOrNull()?.let { it.actionName == "close_browser" && !it.isRunning } == true)
+    val isHiddenByNextUserMsg = browserSettings.barDismissMode == BrowserBarDismissMode.HIDE_ON_NEXT_MESSAGE &&
+        hasUserMessageAfterSteps &&
+        steps.lastOrNull()?.isRunning != true
+
+    val visible = browserSettings.showFloatingMiniPreviewBar &&
+        steps.isNotEmpty() &&
+        !isManuallyDismissed &&
+        !isAgentDismissed &&
+        !isHiddenByNextUserMsg
 
     AnimatedVisibility(
         visible = visible,
@@ -185,21 +243,18 @@ fun BrowserMiniPreviewBar(
     ) {
         if (steps.isEmpty()) return@AnimatedVisibility
         var currentIndex by remember { mutableIntStateOf(steps.lastIndex.coerceAtLeast(0)) }
+        var userPinnedBack by remember { mutableStateOf(false) }
         val lastIndex = steps.lastIndex
-        LaunchedEffect(lastIndex) {
-            val current = steps.getOrNull(currentIndex)
-            if (current == null || !current.isRunning) {
+        LaunchedEffect(steps.size) {
+            if (!userPinnedBack || currentIndex > lastIndex) {
                 currentIndex = lastIndex.coerceAtLeast(0)
             }
         }
-        val step = steps.getOrNull(currentIndex.coerceIn(0, lastIndex)) ?: return@AnimatedVisibility
-        val fallbackImagePath = remember(step.toolCallId, steps) {
+        val safeIdx = currentIndex.coerceIn(0, lastIndex)
+        val step = steps[safeIdx]
+        val fallbackImagePath = remember(step.toolCallId, steps.size) {
             if (step.imageFilePath != null) null
-            else {
-                val idx = steps.indexOfFirst { it.toolCallId == step.toolCallId }
-                if (idx <= 0) null
-                else (idx - 1 downTo 0).firstNotNullOfOrNull { i -> steps[i].imageFilePath }
-            }
+            else (safeIdx - 1 downTo 0).firstNotNullOfOrNull { i -> steps[i].imageFilePath }
         }
 
         val liveBitmap = rememberBrowserLiveSnapshot(
@@ -214,15 +269,25 @@ fun BrowserMiniPreviewBar(
         ) {
             val path = step.imageFilePath ?: fallbackImagePath
             value = if (path.isNullOrBlank()) null else withContext(Dispatchers.IO) {
-                runCatching { BitmapFactory.decodeFile(path) }.getOrNull()
+                runCatching {
+                    val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                    BitmapFactory.decodeFile(path, opts)
+                }.getOrNull()
             }
         }
-        val thumbnailBitmap = liveBitmap ?: BrowserFrames.get(step.toolCallId) ?: savedBitmap
+        val thumbnailBitmap = if (step.isRunning) {
+            liveBitmap ?: BrowserFrames.get(step.toolCallId) ?: savedBitmap
+        } else {
+            savedBitmap ?: BrowserFrames.get(step.toolCallId) ?: liveBitmap
+        }
 
-        val thumbnailWidth = 100.dp
-        val thumbnailHeight = 65.dp
+        val (thumbnailWidth, thumbnailHeight) = when (browserSettings.miniPreviewSize) {
+            BrowserPreviewSize.COMPACT -> 100.dp to 65.dp
+            BrowserPreviewSize.MEDIUM -> 136.dp to 88.dp
+            BrowserPreviewSize.LARGE -> 176.dp to 114.dp
+        }
         val barHeight = 38.dp
-        val overhang = thumbnailHeight - barHeight
+        val overhang = (thumbnailHeight - barHeight).coerceAtLeast(0.dp)
         val thumbnailInset = 10.dp
         val barStartPadding = thumbnailWidth + thumbnailInset + 8.dp
         val surfaceColor = lastChatFloatingSurfaceColor(MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -256,7 +321,7 @@ fun BrowserMiniPreviewBar(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(start = barStartPadding, end = 10.dp),
+                        .padding(start = barStartPadding, end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (step.isRunning) {
@@ -295,28 +360,31 @@ fun BrowserMiniPreviewBar(
                                 indication = null,
                             ) {
                                 haptics.perform(HapticPattern.Pop)
-                                onInspectStep(currentIndex.coerceIn(0, lastIndex))
+                                onInspectStep(safeIdx)
                             },
                     )
                     if (steps.size > 1) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(1.dp),
                         ) {
                             Icon(
                                 Icons.Rounded.ChevronLeft,
                                 contentDescription = "Previous step",
-                                tint = if (currentIndex > 0) MaterialTheme.colorScheme.onSurface
+                                tint = if (safeIdx > 0) MaterialTheme.colorScheme.onSurface
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
                                 modifier = Modifier
                                     .size(20.dp)
-                                    .clickable(enabled = currentIndex > 0) {
+                                    .clickable(enabled = safeIdx > 0) {
                                         haptics.perform(HapticPattern.Selection)
-                                        if (currentIndex > 0) currentIndex--
+                                        if (safeIdx > 0) {
+                                            currentIndex = safeIdx - 1
+                                            userPinnedBack = true
+                                        }
                                     },
                             )
                             Text(
-                                text = "${currentIndex + 1}/${steps.size}",
+                                text = "${safeIdx + 1}/${steps.size}",
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Medium,
@@ -325,21 +393,36 @@ fun BrowserMiniPreviewBar(
                             Icon(
                                 Icons.Rounded.ChevronRight,
                                 contentDescription = "Next step",
-                                tint = if (currentIndex < lastIndex) MaterialTheme.colorScheme.onSurface
+                                tint = if (safeIdx < lastIndex) MaterialTheme.colorScheme.onSurface
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
                                 modifier = Modifier
                                     .size(20.dp)
-                                    .clickable(enabled = currentIndex < lastIndex) {
+                                    .clickable(enabled = safeIdx < lastIndex) {
                                         haptics.perform(HapticPattern.Selection)
-                                        if (currentIndex < lastIndex) currentIndex++
+                                        if (safeIdx < lastIndex) {
+                                            currentIndex = safeIdx + 1
+                                            userPinnedBack = currentIndex < lastIndex
+                                        }
                                     },
                             )
                         }
                     }
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        Icons.Rounded.Close,
+                        contentDescription = "Close browser preview",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clickable {
+                                haptics.perform(HapticPattern.Pop)
+                                dismissedAtStepCount = steps.size
+                            },
+                    )
                 }
             }
 
-            // Layer 2: 100x65dp overhanging thumbnail on the left
+            // Layer 2: Overhanging thumbnail on the left (Compact / Medium / Large)
             val thumbShape = RoundedCornerShape(9.dp)
             Box(
                 modifier = Modifier
@@ -352,7 +435,7 @@ fun BrowserMiniPreviewBar(
                     .border(0.6.dp, MaterialTheme.colorScheme.outlineVariant, thumbShape)
                     .clickable {
                         haptics.perform(HapticPattern.Pop)
-                        onInspectStep(currentIndex.coerceIn(0, lastIndex))
+                        onInspectStep(safeIdx)
                     },
                 contentAlignment = Alignment.Center,
             ) {

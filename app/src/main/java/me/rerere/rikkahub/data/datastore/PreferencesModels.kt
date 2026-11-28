@@ -127,6 +127,12 @@ enum class AgentSecretWritePolicy { ASK_BEFORE_SAVING, AUTO_SAVE, READ_ONLY }
 enum class SetOfMarkMode { OFF, AUTO_SMALL_MODELS, ALWAYS }
 
 @Serializable
+enum class BrowserBarDismissMode { MANUAL_CLOSE, AUTO_AGENT, HIDE_ON_NEXT_MESSAGE }
+
+@Serializable
+enum class BrowserPreviewSize { COMPACT, MEDIUM, LARGE }
+
+@Serializable
 data class BrowserSettings(
     // Viewport & Identity
     val defaultViewMode: BrowserViewMode = BrowserViewMode.DESKTOP,
@@ -137,6 +143,8 @@ data class BrowserSettings(
 
     // Preview & UI
     val showFloatingMiniPreviewBar: Boolean = true,
+    val miniPreviewSize: BrowserPreviewSize = BrowserPreviewSize.COMPACT,
+    val barDismissMode: BrowserBarDismissMode = BrowserBarDismissMode.MANUAL_CLOSE,
     val liveSnapshotIntervalMs: Long = 3_000L, // 0L = Off
     val enableTabletSplitPane: Boolean = true,
     val showAgentTapRipple: Boolean = true,
@@ -159,6 +167,7 @@ data class BrowserSettings(
     val handOverTimeoutMinutes: Int = 15,
     val redactSecretsInToolOutput: Boolean = true,
     val incognitoMode: Boolean = false,
+    val keepAllLoginsInApp: Boolean = true,
     val blockedDomains: List<String> = emptyList(),
 
     // Secrets & Workspace Sync

@@ -16,6 +16,7 @@ import me.rerere.rikkahub.data.browser.BrowserSecretsStore
 import me.rerere.rikkahub.data.browser.BrowserTabPool
 import me.rerere.rikkahub.data.browser.resolveDefaultProfileAndViewport
 import me.rerere.rikkahub.data.datastore.AgentSecretWritePolicy
+import me.rerere.rikkahub.data.datastore.BrowserBarDismissMode
 import me.rerere.rikkahub.data.datastore.BrowserSettings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import kotlin.uuid.Uuid
@@ -27,7 +28,7 @@ private const val COMPACT_BROWSER_DESCRIPTION =
         "screenshot (returns visual image), set_viewport, set_user_agent, click, type (supports {{SECRET:KEY}}), " +
         "hover, scroll, get_text, get_readable, get_page_info, get_backbone, find_elements, scroll_and_collect, " +
         "execute_js (async IIFE; await + return supported), wait_for_dom_stable, fetch, get_cookies, set_cookies, " +
-        "hand_over, save_secret, save_cookies_as_secret, restore_cookies_from_secret."
+        "hand_over, save_secret, save_cookies_as_secret, restore_cookies_from_secret, close_browser."
 
 private const val VERBOSE_BROWSER_DESCRIPTION =
     "Control a native multi-tab Android WebView browser (up to configured maxTabs) sharing persistent cookies. " +
@@ -213,7 +214,15 @@ internal fun buildBrowserSystemPrompt(
         AgentSecretWritePolicy.READ_ONLY -> Unit
     }
 
-    appendLine("- Android Google OAuth Guardrail: Google permanently blocks sign-in inside Android WebViews (`accounts.google.com`, `disallowed_useragent`, \"browser is not secure\"). Do NOT retry Google Login/OAuth walls in `browser_use` — instead give the user a clickable Markdown link `[Open in Chrome](https://accounts.google.com/...)` and ask them to finish in Chrome Custom Tabs.")
+    if (browserSettings.keepAllLoginsInApp) {
+        appendLine("- In-App Logins: All login and OAuth pages (including Google) stay inside the in-app WebView so you share the same session cookies. Only suggest Chrome if a site explicitly returns `disallowed_useragent` or blocks WebView sign-in.")
+    } else {
+        appendLine("- Android Google OAuth Guardrail: Google login/OAuth domains are routed to Chrome Custom Tabs. If a Google login wall appears, give the user a clickable Markdown link `[Open in Chrome](https://accounts.google.com/...)`.")
+    }
+
+    if (browserSettings.barDismissMode == BrowserBarDismissMode.AUTO_AGENT) {
+        appendLine("- Browser Preview Bar Lifecycle: When your browsing task is completely finished and no further browsing is needed, call `browser_use(action=\"close_browser\", tool_title=\"Close browser session\")` to dismiss the floating preview bar. If you are asking the user a follow-up question mid-task and may continue browsing, keep it open.")
+    }
 
     if (browserSettings.enableSearchToBrowserEscalationHint && hasWebSearch) {
         appendLine("- Search vs Browser: Use `search_web` for fast factual lookups, news, and quick queries. Escalate to `browser_use` for JavaScript-rendered SPAs, interactive flows, multi-step forms, authenticated pages, or visual layout inspection.")

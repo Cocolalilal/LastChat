@@ -92,6 +92,9 @@ class BrowserTabPool(
     val tabs: StateFlow<List<Tab>> = _tabs.asStateFlow()
 
     private val _selectedTabId = MutableStateFlow(0)
+
+    private val _barDismissedByAgentVersion = MutableStateFlow(0)
+    val barDismissedByAgentVersion: StateFlow<Int> = _barDismissedByAgentVersion.asStateFlow()
     val selectedTabId: StateFlow<Int> = _selectedTabId.asStateFlow()
 
     private val _isAgentBusyFlow = MutableStateFlow(false)
@@ -133,6 +136,15 @@ class BrowserTabPool(
 
     private val savedURLs = mutableMapOf<Int, String>()
     private var nextTabId = 0
+
+    fun managerForTab(tabId: Int?): BrowserUseManager? {
+        val current = _tabs.value
+        if (current.isEmpty()) return null
+        if (tabId != null) {
+            current.firstOrNull { it.id == tabId }?.manager?.let { return it }
+        }
+        return activeManager
+    }
 
     val activeManager: BrowserUseManager?
         get() {
@@ -435,6 +447,12 @@ class BrowserTabPool(
             BrowserAction.SAVE_SECRET -> handleSaveSecret(input)
             BrowserAction.SAVE_COOKIES_AS_SECRET -> handleSaveCookiesAsSecret(input)
             BrowserAction.RESTORE_COOKIES_FROM_SECRET -> handleRestoreCookiesFromSecret(input)
+            BrowserAction.CLOSE_BROWSER -> {
+                closeBrowserSheet()
+                releaseAllTabs()
+                _barDismissedByAgentVersion.value += 1
+                BrowserActionResult(text = "Closed browser preview bar.", success = true)
+            }
             else -> {
                 val serialTabId = input.tabId?.takeIf { reqId -> _tabs.value.any { it.id == reqId } }
                 if (serialTabId != null) {

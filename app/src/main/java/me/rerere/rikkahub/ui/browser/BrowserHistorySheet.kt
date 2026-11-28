@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,12 +55,15 @@ fun BrowserHistorySheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var searchQuery by remember { mutableStateOf("") }
+    var agentOnly by remember { mutableStateOf(false) }
     var showClearConfirm by remember { mutableStateOf(false) }
     val version by historyStore.entriesVersion.collectAsState()
 
-    val entries = remember(searchQuery, version) {
-        if (searchQuery.isBlank()) historyStore.groupedByDay()
+    val entries = remember(searchQuery, agentOnly, version) {
+        val raw = if (searchQuery.isBlank()) historyStore.groupedByDay()
         else mapOf("Results" to historyStore.search(searchQuery))
+        if (!agentOnly) raw
+        else raw.mapValues { (_, list) -> list.filter { it.byAgent } }.filterValues { it.isNotEmpty() }
     }
 
     ModalBottomSheet(

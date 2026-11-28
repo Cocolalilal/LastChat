@@ -679,7 +679,6 @@ fun MinimalChatInput(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            topAccessory?.invoke()
             val showSuggestions = !isQuestionnaireActive && !isToolApprovalActive && chatSuggestions.isNotEmpty()
             val showScrollToBottom = !isQuestionnaireActive && !isToolApprovalActive && showScrollToBottomButton
 
@@ -719,6 +718,7 @@ fun MinimalChatInput(
                     }
                 }
             }
+            topAccessory?.invoke()
 
             androidx.compose.animation.AnimatedVisibility(
                 visible = isWorkspaceRequiredCardVisible && !isQuestionnaireActive && !isToolApprovalActive,

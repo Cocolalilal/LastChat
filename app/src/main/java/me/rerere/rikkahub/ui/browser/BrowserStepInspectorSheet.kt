@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FirstPage
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LastPage
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,6 +48,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,20 +56,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.browser.BrowserFrames
+import me.rerere.rikkahub.data.browser.BrowserHistoryStore
 import me.rerere.rikkahub.data.browser.BrowserTabPool
 import me.rerere.rikkahub.ui.components.ui.ImagePreviewDialog
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.modifier.lastChatSheetContainerColor
 import me.rerere.rikkahub.ui.theme.AppShapes
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,17 +89,21 @@ fun BrowserStepInspectorSheet(
         onDismiss()
         return
     }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptics = rememberPremiumHaptics()
     var index by remember(steps.size, initialIndex) {
         mutableIntStateOf(initialIndex.coerceIn(0, steps.lastIndex))
     }
-    val step = steps[index.coerceIn(0, steps.lastIndex)]
+    val safeIndex = index.coerceIn(0, steps.lastIndex)
+    val step = steps[safeIndex]
     var zoomImagePath by remember { mutableStateOf<String?>(null) }
+    var showHistory by remember { mutableStateOf(false) }
 
-    val fallbackPath = remember(step.toolCallId, steps) {
+    val fallbackPath = remember(step.toolCallId, steps.size) {
         if (step.imageFilePath != null) null
-        else (index - 1 downTo 0).firstNotNullOfOrNull { i -> steps[i].imageFilePath }
+        else (safeIndex - 1 downTo 0).firstNotNullOfOrNull { i -> steps[i].imageFilePath }
     }
     val liveBitmap = rememberBrowserLiveSnapshot(step, tabPool, liveSnapshotIntervalMs)
     val savedBitmap by produceState<Bitmap?>(
@@ -106,7 +116,14 @@ fun BrowserStepInspectorSheet(
             runCatching { BitmapFactory.decodeFile(path) }.getOrNull()
         }
     }
-    val bitmap = liveBitmap ?: BrowserFrames.get(step.toolCallId) ?: savedBitmap
+    val cachedFrame = BrowserFrames.get(step.toolCallId)
+    // Prefer sharp on-disk full-res savedBitmap for completed steps; only prefer liveBitmap while running.
+    val bitmap = if (step.isRunning) {
+        liveBitmap ?: savedBitmap ?: cachedFrame
+    } else {
+        savedBitmap ?: cachedFrame ?: liveBitmap
+    }
+    val isDisplayingExactFile = !step.isRunning && savedBitmap != null && (step.imageFilePath != null || cachedFrame == null)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -123,17 +140,18 @@ fun BrowserStepInspectorSheet(
                 .padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Top bar: status + title + open live browser globe
+            // Top bar: status + title + history + open live browser globe
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 when {
                     step.isRunning -> CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     step.isSuccess -> Icon(Icons.Rounded.CheckCircle, null, tint = Color(0xFF34C759), modifier = Modifier.size(20.dp))
                     else -> Icon(Icons.Rounded.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                 }
+                Spacer(Modifier.width(4.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = step.toolTitle,
@@ -157,6 +175,18 @@ fun BrowserStepInspectorSheet(
                 IconButton(
                     onClick = {
                         haptics.perform(HapticPattern.Pop)
+                        showHistory = true
+                    },
+                ) {
+                    Icon(
+                        Icons.Rounded.History,
+                        contentDescription = "Browsing history",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
                         onOpenLiveBrowser(step.pageUrl, step.tabId)
                     },
                 ) {
@@ -170,7 +200,6 @@ fun BrowserStepInspectorSheet(
 
             // Screenshot preview
             val previewShape = RoundedCornerShape(14.dp)
-            val zoomableFilePath = step.imageFilePath ?: fallbackPath
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -178,8 +207,25 @@ fun BrowserStepInspectorSheet(
                     .clip(previewShape)
                     .background(Color(0xFF151519))
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), previewShape)
-                    .clickable(enabled = zoomableFilePath != null) {
-                        zoomImagePath = zoomableFilePath
+                    .clickable(enabled = bitmap != null) {
+                        val currentBmp = bitmap ?: return@clickable
+                        val directPath = step.imageFilePath ?: (if (isDisplayingExactFile) fallbackPath else null)
+                        if (directPath != null) {
+                            zoomImagePath = directPath
+                        } else {
+                            scope.launch {
+                                val tempPath = withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        val outFile = File(context.cacheDir, "browser_zoom_${step.toolCallId.hashCode()}.jpg")
+                                        outFile.outputStream().use { out ->
+                                            currentBmp.compress(Bitmap.CompressFormat.JPEG, 92, out)
+                                        }
+                                        outFile.absolutePath
+                                    }.getOrNull()
+                                }
+                                if (tempPath != null) zoomImagePath = tempPath
+                            }
+                        }
                     },
                 contentAlignment = Alignment.Center,
             ) {
@@ -265,38 +311,49 @@ fun BrowserStepInspectorSheet(
                 ) {
                     IconButton(
                         onClick = { haptics.perform(HapticPattern.Selection); index = 0 },
-                        enabled = index > 0,
+                        enabled = safeIndex > 0,
                     ) {
                         Icon(Icons.Rounded.FirstPage, contentDescription = "First")
                     }
                     IconButton(
-                        onClick = { haptics.perform(HapticPattern.Selection); if (index > 0) index-- },
-                        enabled = index > 0,
+                        onClick = { haptics.perform(HapticPattern.Selection); if (safeIndex > 0) index = safeIndex - 1 },
+                        enabled = safeIndex > 0,
                     ) {
                         Icon(Icons.Rounded.ChevronLeft, contentDescription = "Previous")
                     }
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "${index + 1} / ${steps.size}",
+                        text = "${safeIndex + 1} / ${steps.size}",
                         style = MaterialTheme.typography.labelLarge,
                         fontFamily = FontFamily.Monospace,
                     )
                     Spacer(Modifier.width(8.dp))
                     IconButton(
-                        onClick = { haptics.perform(HapticPattern.Selection); if (index < steps.lastIndex) index++ },
-                        enabled = index < steps.lastIndex,
+                        onClick = { haptics.perform(HapticPattern.Selection); if (safeIndex < steps.lastIndex) index = safeIndex + 1 },
+                        enabled = safeIndex < steps.lastIndex,
                     ) {
                         Icon(Icons.Rounded.ChevronRight, contentDescription = "Next")
                     }
                     IconButton(
                         onClick = { haptics.perform(HapticPattern.Selection); index = steps.lastIndex },
-                        enabled = index < steps.lastIndex,
+                        enabled = safeIndex < steps.lastIndex,
                     ) {
                         Icon(Icons.Rounded.LastPage, contentDescription = "Last")
                     }
                 }
             }
         }
+    }
+
+    if (showHistory) {
+        BrowserHistorySheet(
+            historyStore = BrowserHistoryStore.getInstance(context),
+            onNavigate = { url ->
+                showHistory = false
+                onOpenLiveBrowser(url, step.tabId)
+            },
+            onDismiss = { showHistory = false },
+        )
     }
 
     zoomImagePath?.let { path ->
