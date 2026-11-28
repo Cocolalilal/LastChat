@@ -89,6 +89,10 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("studio_hub")
     data object StudioHub : LocalToolOption()
+
+    @Serializable
+    @SerialName("browser_use")
+    data object Browser : LocalToolOption()
 }
 
 object LocalToolOptionListSerializer :
@@ -121,7 +125,10 @@ data class LocalToolDefinitionPreview(
     val schema: InputSchema?,
 )
 
-fun LocalToolOption.toDefinitionPreviews(): List<LocalToolDefinitionPreview> = when (this) {
+fun LocalToolOption.toDefinitionPreviews(
+    browserSettings: me.rerere.rikkahub.data.datastore.BrowserSettings = me.rerere.rikkahub.data.datastore.BrowserSettings(),
+): List<LocalToolDefinitionPreview> = when (this) {
+    LocalToolOption.Browser -> listOf(buildBrowserToolDefinitionPreview(browserSettings))
     LocalToolOption.JavascriptEngine -> listOf(
         LocalToolDefinitionPreview(
             name = "eval_javascript",
@@ -568,6 +575,7 @@ class LocalTools(
     private val studioHubRepository: StudioHubRepository? = null,
     private val storyStudioRepository: me.rerere.rikkahub.data.repository.StoryStudioRepository? = null,
     private val voiceMemoRepository: me.rerere.rikkahub.data.repository.VoiceMemoRepository? = null,
+    private val browserTabPool: me.rerere.rikkahub.data.browser.BrowserTabPool? = null,
 ) {
     val askUserTool by lazy {
         Tool(
@@ -1159,8 +1167,21 @@ class LocalTools(
         options: List<LocalToolOption>,
         assistantId: Uuid,
         conversationId: Uuid,
+        modelId: String? = null,
+        hasWebSearch: Boolean = false,
     ): List<Tool> {
         val tools = mutableListOf<Tool>()
+        if (options.contains(LocalToolOption.Browser) && browserTabPool != null) {
+            tools.add(
+                buildBrowserTool(
+                    browserTabPool = browserTabPool,
+                    settingsStore = settingsStore,
+                    conversationId = conversationId,
+                    modelId = modelId,
+                    hasWebSearch = hasWebSearch,
+                )
+            )
+        }
         if (options.contains(LocalToolOption.JavascriptEngine)) {
             tools.add(javascriptTool)
         }

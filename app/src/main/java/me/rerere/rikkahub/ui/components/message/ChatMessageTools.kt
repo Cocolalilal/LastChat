@@ -133,6 +133,7 @@ fun ToolCallItem(
                         "workspace_shell" -> Icons.Rounded.Terminal
                         "workspace_read_file", "workspace_write_file", "workspace_edit_file" -> Icons.Rounded.Description
                         "workspace_view_image" -> Icons.Rounded.Image
+                        "browser_use" -> Icons.Rounded.Public
                         in WORKSPACE_TOOLS -> Icons.Rounded.Computer
                         else -> Icons.Rounded.Build
                     },
@@ -191,6 +192,12 @@ fun ToolCallItem(
                             (arguments as? JsonObject)?.get("path")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
                         )
                         "import_attachment" -> stringResource(R.string.chat_message_tool_python_import)
+                        "browser_use" -> {
+                            val title = (arguments as? JsonObject)?.get("tool_title")?.jsonPrimitiveOrNull?.contentOrNull
+                                ?: (arguments as? JsonObject)?.get("action")?.jsonPrimitiveOrNull?.contentOrNull
+                                ?: "Browse Web"
+                            "Browser: $title"
+                        }
                         else -> stringResource(
                             R.string.chat_message_tool_call_generic,
                             toolName

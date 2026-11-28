@@ -884,7 +884,12 @@ class GenerationHandler(
                 messages = messages.markPendingToolCalls(pendingToolCallIds)
                 send(GenerationChunk.Messages(messages))
                 if (results.isNotEmpty()) {
-                    messages = appendToolResultsAndInjectedImages(messages, results, model)
+                    messages = appendToolResultsAndInjectedImages(
+                        messages,
+                        results,
+                        model,
+                        maxBrowserScreenshots = settings.browserSettings.maxScreenshotsInContext,
+                    )
                     send(
                         GenerationChunk.Messages(
                             messages.transforms(
@@ -898,7 +903,12 @@ class GenerationHandler(
                 }
                 break
             }
-            messages = appendToolResultsAndInjectedImages(messages, results, model)
+            messages = appendToolResultsAndInjectedImages(
+                messages,
+                results,
+                model,
+                maxBrowserScreenshots = settings.browserSettings.maxScreenshotsInContext,
+            )
             send(
                 GenerationChunk.Messages(
                     messages.transforms(
@@ -921,12 +931,16 @@ class GenerationHandler(
         messages: List<UIMessage>,
         results: List<UIMessagePart.ToolResult>,
         model: Model,
+        maxBrowserScreenshots: Int = 4,
     ): List<UIMessage> {
         val supportsVision = model.inputModalities.contains(Modality.IMAGE)
         val sanitizedResults = extractInjectedImagePayloads(results, supportsVision = supportsVision)
-        return messages + UIMessage(
-            role = MessageRole.TOOL,
-            parts = sanitizedResults
+        return me.rerere.rikkahub.data.browser.ScreenshotBudget.apply(
+            messages + UIMessage(
+                role = MessageRole.TOOL,
+                parts = sanitizedResults
+            ),
+            maxScreenshots = maxBrowserScreenshots,
         )
     }
 
@@ -1326,11 +1340,17 @@ class GenerationHandler(
             } else historyLimitedMessages
         } ?: historyLimitedMessages
         val imageArchivedMessages = if (smartEnabled) {
-            searchPrunedMessages
+            me.rerere.rikkahub.data.browser.ScreenshotBudget.apply(
+                searchPrunedMessages,
+                maxScreenshots = settings.browserSettings.maxScreenshotsInContext,
+            )
         } else {
-            archiveOldImageMessages(
-                messages = searchPrunedMessages,
-                assistant = assistant,
+            me.rerere.rikkahub.data.browser.ScreenshotBudget.apply(
+                archiveOldImageMessages(
+                    messages = searchPrunedMessages,
+                    assistant = assistant,
+                ),
+                maxScreenshots = settings.browserSettings.maxScreenshotsInContext,
             ).limitImagesForModel(model)
         }
         
@@ -1676,7 +1696,10 @@ class GenerationHandler(
                     ))
                 }
             }
-        }.limitImagesForModel(model)
+        val rawBuiltMessagesApplied = me.rerere.rikkahub.data.browser.ScreenshotBudget.apply(
+            rawBuiltMessages,
+            maxScreenshots = settings.browserSettings.maxScreenshotsInContext,
+        ).limitImagesForModel(model)
         val smartMessageBudget = if (smartEnabled) {
             (maxTokens - toolDefinitionTokens).coerceAtLeast(1)
         } else {
@@ -1684,13 +1707,13 @@ class GenerationHandler(
         }
         val builtMessages = if (smartMessageBudget != null) {
             smartFitContext(
-                messages = rawBuiltMessages,
+                messages = rawBuiltMessagesApplied,
                 model = model,
                 messageBudgetTokens = smartMessageBudget,
                 policy = assistant.contextCompressionPolicy,
             )
         } else {
-            rawBuiltMessages
+            rawBuiltMessagesApplied
         }
         // Build UsedMemory list for UI display
         val usedMemories = selectedMemories.mapIndexed { index, memory ->
@@ -2018,7 +2041,10 @@ class GenerationHandler(
                 }
             },
         )
-        val transformedMessages = transformedInput.messages.limitImagesForModel(model)
+        val transformedMessages = me.rerere.rikkahub.data.browser.ScreenshotBudget.apply(
+            transformedInput.messages,
+            maxScreenshots = settings.browserSettings.maxScreenshotsInContext,
+        ).limitImagesForModel(model)
         var internalMessages = buildResult.messageBudgetTokens?.let { budget ->
             smartFitContext(
                 messages = transformedMessages,

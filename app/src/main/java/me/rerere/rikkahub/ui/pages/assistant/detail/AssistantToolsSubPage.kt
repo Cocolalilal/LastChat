@@ -322,6 +322,24 @@ fun AssistantToolsSubPage(
                     )
                 }
             )
+
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_page_local_tools_browser_title),
+                subtitle = stringResource(R.string.assistant_page_local_tools_browser_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.Browser),
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                (assistant.localTools + LocalToolOption.Browser).distinct()
+                            } else {
+                                assistant.localTools - LocalToolOption.Browser
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
         }
 
         // MCP GROUP (only show if servers configured)

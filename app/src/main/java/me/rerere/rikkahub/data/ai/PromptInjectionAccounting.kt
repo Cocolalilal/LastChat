@@ -45,6 +45,7 @@ internal val VISUAL_TOOL_NAMES = setOf(
     "workspace_view_image",
     "workspace_read_file",
     "look_at_screen",
+    "browser_use",
 )
 
 internal const val STUDIO_HUB_CATALOG_TOKEN_CAP = 350
@@ -645,6 +646,7 @@ internal fun computePreRequestToolAccounting(
     conversationSkillIds: Set<Uuid>,
     workspaceReady: Boolean,
     includePythonTools: Boolean = true,
+    browserSecretsStore: me.rerere.rikkahub.data.browser.BrowserSecretsStore? = null,
 ): PreRequestToolAccounting {
     if (ModelAbility.TOOL !in model.abilities) {
         return PreRequestToolAccounting(
@@ -720,10 +722,18 @@ internal fun computePreRequestToolAccounting(
             add(LocalToolOption.StudioHub)
         }
     }
-    effectiveLocalTools.flatMap { it.toDefinitionPreviews() }.forEach { preview ->
+    effectiveLocalTools.flatMap { it.toDefinitionPreviews(settings.browserSettings) }.forEach { preview ->
         if (takeUnique(preview.name)) {
             localAndSearchPreviews += preview
         }
+    }
+    if (LocalToolOption.Browser in effectiveLocalTools) {
+        val hasWebSearch = (searchMode is AssistantSearchMode.Provider && !useBuiltInSearch) || useBuiltInSearch
+        embeddedPromptParts += me.rerere.rikkahub.data.ai.tools.buildBrowserSystemPrompt(
+            browserSettings = settings.browserSettings,
+            secretsStore = browserSecretsStore,
+            hasWebSearch = hasWebSearch,
+        )
     }
 
     // 3. Memory tools & Memory Summary tools

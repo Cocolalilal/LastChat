@@ -1206,6 +1206,18 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.SettingBrowser> {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Browser) {
+                            me.rerere.rikkahub.ui.pages.setting.SettingBrowserPage()
+                        }
+                    }
+
+                    composable<Screen.BrowserSecrets> {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.BrowserSecrets) {
+                            me.rerere.rikkahub.ui.browser.BrowserSecretsScreen()
+                        }
+                    }
+
                     composable<Screen.SettingMcp> {
                         AdaptiveSettingsScaffold(selected = SettingsDestination.Mcp) {
                             SettingMcpPage()
@@ -1517,6 +1529,12 @@ sealed interface Screen {
 
     @Serializable
     data object SettingWeb : Screen
+
+    @Serializable
+    data object SettingBrowser : Screen
+
+    @Serializable
+    data object BrowserSecrets : Screen
 
     @Serializable
     data object SettingMcp : Screen

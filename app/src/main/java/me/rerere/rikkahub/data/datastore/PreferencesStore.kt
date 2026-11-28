@@ -172,6 +172,9 @@ class SettingsStore(
         // TMDB
         val TMDB_SETTING = stringPreferencesKey("tmdb_setting")
 
+        // Browser
+        val BROWSER_SETTING = stringPreferencesKey("browser_setting")
+
         // Local Models
         val DEVICE_PERFORMANCE_PROFILE = stringPreferencesKey("device_performance_profile")
     }
@@ -286,6 +289,10 @@ class SettingsStore(
                     smartMicProfiles = decodePreferenceList(preferences[SMART_MIC_PROFILES]) ?: DEFAULT_SMART_MIC_PROFILES,
                     selectedSmartMicProfileId = preferences[SELECTED_SMART_MIC_PROFILE] ?: "raw_dictation",
                     tmdbSetting = decodePreferenceValue(preferences[TMDB_SETTING], TmdbSetting()),
+                    browserSettings = decodePreferenceValue(
+                        preferences[BROWSER_SETTING],
+                        BrowserSettings(),
+                    ).normalized(),
                 ).normalizeThemeId()
             }.getOrElse {
                 Log.e(TAG, "Failed to parse settings", it)
@@ -756,6 +763,7 @@ class SettingsStore(
             preferences[SMART_MIC_PROFILES] = JsonInstant.encodeToString(normalizedSettings.smartMicProfiles)
             preferences[SELECTED_SMART_MIC_PROFILE] = normalizedSettings.selectedSmartMicProfileId
             preferences[TMDB_SETTING] = JsonInstant.encodeToString(normalizedSettings.tmdbSetting)
+            preferences[BROWSER_SETTING] = JsonInstant.encodeToString(normalizedSettings.browserSettings.normalized())
         }
         return saved
     }

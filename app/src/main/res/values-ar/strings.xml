@@ -1192,4 +1192,7 @@
   <string name="chat_message_tool_workspace_view_image">عرض صورة مساحة العمل</string>
   <string name="activity_timeline_tool_workspace_view_image">عرض الصورة</string>
   <string name="workspace_detail_tool_view_image">عرض الصورة: فحص بصري لصور مساحة العمل (عندما يدعم النموذج إدخال الصور)</string>
+  <string name="setting_page_browser">المتصفح</string>
+  <string name="assistant_page_local_tools_browser_title">متصفح الوكيل</string>
+  <string name="assistant_page_local_tools_browser_desc">تصفح صفحات الويب والتفاعل معها وتعبئة النماذج وتشغيل JS والتقاط الصور</string>
 </resources>

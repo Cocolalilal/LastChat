@@ -183,4 +183,16 @@ val repositoryModule = module {
             tmdbService = get(),
         )
     }
+
+    single {
+        me.rerere.rikkahub.data.browser.BrowserSecretsStore(context = get())
+    }
+
+    single {
+        me.rerere.rikkahub.data.browser.BrowserTabPool(
+            context = get(),
+            settingsStore = get(),
+            secretsStore = get(),
+        )
+    }
 }

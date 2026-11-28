@@ -158,6 +158,20 @@ fun AssistantLocalToolSubPage(
                 onUpdate(assistant.copy(localTools = newLocalTools))
             }
         )
+
+        LocalToolCard(
+            title = stringResource(R.string.assistant_page_local_tools_browser_title),
+            description = stringResource(R.string.assistant_page_local_tools_browser_desc),
+            isEnabled = assistant.localTools.contains(LocalToolOption.Browser),
+            onToggle = { enabled ->
+                val newLocalTools = if (enabled) {
+                    (assistant.localTools + LocalToolOption.Browser).distinct()
+                } else {
+                    assistant.localTools - LocalToolOption.Browser
+                }
+                onUpdate(assistant.copy(localTools = newLocalTools))
+            }
+        )
     }
 
     if (showNotificationAccessDialog && pendingNotificationAccess.specialAccesses.isNotEmpty()) {

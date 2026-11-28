@@ -1655,4 +1655,7 @@
   <string name="python_no_plugins">No Python extensions installed</string>
   <string name="python_create_sample">Create Starter Extension</string>
   <string name="python_new_plugin">New Extension</string>
+  <string name="setting_page_browser">Browser</string>
+  <string name="assistant_page_local_tools_browser_title">Agent Browser</string>
+  <string name="assistant_page_local_tools_browser_desc">Browse live web pages, click, fill forms, run JS, and capture screenshots</string>
 </resources>

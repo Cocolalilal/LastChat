@@ -110,10 +110,81 @@ data class Settings(
     val smartMicProfiles: List<SmartMicProfile> = DEFAULT_SMART_MIC_PROFILES,
     val selectedSmartMicProfileId: String = "raw_dictation",
     val tmdbSetting: TmdbSetting = TmdbSetting(),
+    val browserSettings: BrowserSettings = BrowserSettings(),
 ) {
     companion object {
         fun dummy() = Settings(init = true)
     }
+}
+
+@Serializable
+enum class BrowserViewMode { DESKTOP, MOBILE, FIT_SCREEN, CUSTOM }
+
+@Serializable
+enum class AgentSecretWritePolicy { ASK_BEFORE_SAVING, AUTO_SAVE, READ_ONLY }
+
+@Serializable
+enum class SetOfMarkMode { OFF, AUTO_SMALL_MODELS, ALWAYS }
+
+@Serializable
+data class BrowserSettings(
+    // Viewport & Identity
+    val defaultViewMode: BrowserViewMode = BrowserViewMode.DESKTOP,
+    val customViewportWidth: Int = 1280,
+    val customViewportHeight: Int = 800,
+    val customUserAgent: String = "",
+    val showViewportToggleInBar: Boolean = true,
+
+    // Preview & UI
+    val showFloatingMiniPreviewBar: Boolean = true,
+    val liveSnapshotIntervalMs: Long = 3_000L, // 0L = Off
+    val enableTabletSplitPane: Boolean = true,
+    val showAgentTapRipple: Boolean = true,
+    val setOfMarkMode: SetOfMarkMode = SetOfMarkMode.OFF,
+
+    // Performance & Memory (4GB RAM safe defaults)
+    val maxTabs: Int = 2, // 1..3
+    val idleTabTimeoutMinutes: Int = 15, // 1..240
+    val maxScreenshotsInContext: Int = 4, // 2..6
+    val frameCacheCapMb: Int = 8, // 4..24
+    val screenshotMaxLongEdgePx: Int = 1080, // 720, 1080, 1440
+    val screenshotJpegQuality: Int = 75, // 60..90
+    val evictWebViewsOnLowMemory: Boolean = true,
+
+    // Safety, Privacy & Autonomy (all toggleable for local models)
+    val fullAutonomyMode: Boolean = false,
+    val autoHandoffOnSecretFields: Boolean = true,
+    val requireApprovalForRiskyClicks: Boolean = true,
+    val allowAgentHandOverAction: Boolean = true,
+    val handOverTimeoutMinutes: Int = 15,
+    val redactSecretsInToolOutput: Boolean = true,
+    val incognitoMode: Boolean = false,
+    val blockedDomains: List<String> = emptyList(),
+
+    // Secrets & Workspace Sync
+    val agentSecretWritePolicy: AgentSecretWritePolicy = AgentSecretWritePolicy.ASK_BEFORE_SAVING,
+    val syncSecretsToWorkspace: Boolean = false,
+
+    // Prompt & Model Behavior
+    val useCompactToolSchema: Boolean = true, // PromptDiet
+    val enableSearchToBrowserEscalationHint: Boolean = true,
+) {
+    fun normalized(): BrowserSettings = copy(
+        customViewportWidth = customViewportWidth.coerceIn(200, 4096),
+        customViewportHeight = customViewportHeight.coerceIn(200, 4096),
+        liveSnapshotIntervalMs = liveSnapshotIntervalMs.coerceIn(0L, 30_000L),
+        maxTabs = maxTabs.coerceIn(1, 3),
+        idleTabTimeoutMinutes = idleTabTimeoutMinutes.coerceIn(1, 240),
+        maxScreenshotsInContext = maxScreenshotsInContext.coerceIn(2, 6),
+        frameCacheCapMb = frameCacheCapMb.coerceIn(4, 24),
+        screenshotMaxLongEdgePx = when {
+            screenshotMaxLongEdgePx <= 720 -> 720
+            screenshotMaxLongEdgePx >= 1440 -> 1440
+            else -> 1080
+        },
+        screenshotJpegQuality = screenshotJpegQuality.coerceIn(60, 90),
+        handOverTimeoutMinutes = handOverTimeoutMinutes.coerceIn(1, 60),
+    )
 }
 
 @Serializable

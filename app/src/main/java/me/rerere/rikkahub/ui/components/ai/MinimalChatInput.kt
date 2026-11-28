@@ -270,6 +270,7 @@ fun MinimalChatInput(
     contextUsage: me.rerere.ai.context.ContextUsageBreakdown? = null,
     onCancelContextCompression: () -> Unit = {},
     onDeleteFile: (Uri) -> Unit = {},
+    topAccessory: @Composable (() -> Unit)? = null,
     bottomAccessory: @Composable (() -> Unit)? = null,
     showScrollToBottomButton: Boolean = false,
     onScrollToBottomClick: () -> Unit = {},
@@ -677,6 +678,7 @@ fun MinimalChatInput(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            topAccessory?.invoke()
             val showSuggestions = !isQuestionnaireActive && !isToolApprovalActive && chatSuggestions.isNotEmpty()
             val showScrollToBottom = !isQuestionnaireActive && !isToolApprovalActive && showScrollToBottomButton
 
@@ -2293,10 +2295,15 @@ private fun MinimalPickerContent(
         } else null
         val artifactsEnabled = settings.displaySetting.enableInWorldArtifacts
         val tmdbEnabled = settings.tmdbSetting.enabled
-        val activeToolsCount = (if (enableSearch) 1 else 0) + (if (artifactsEnabled) 1 else 0) + (if (tmdbEnabled) 1 else 0)
+        val browserEnabled = assistant.localTools.contains(LocalToolOption.Browser)
+        val activeToolsCount = (if (enableSearch) 1 else 0) +
+            (if (artifactsEnabled) 1 else 0) +
+            (if (tmdbEnabled) 1 else 0) +
+            (if (browserEnabled) 1 else 0)
         val isAnyToolActive = activeToolsCount > 0
         val toolsSubtitle = when {
             activeToolsCount >= 2 -> "$activeToolsCount active tools"
+            browserEnabled -> "Agent Browser active"
             enableSearch -> stringResource(R.string.chat_tools_subtitle_search)
             artifactsEnabled -> stringResource(R.string.chat_tools_subtitle_artifacts)
             tmdbEnabled -> "Movies & TV active"
@@ -2563,6 +2570,54 @@ private fun MinimalPickerContent(
                     text = stringResource(R.string.chat_tools_title),
                     style = MaterialTheme.typography.titleLarge
                 )
+
+                // Agent Browser Quick Toggle
+                val browserToolEnabled = assistant.localTools.contains(LocalToolOption.Browser)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(AppShapes.ListItem)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        androidx.compose.material.icons.Icons.Rounded.Public,
+                        contentDescription = null,
+                        tint = if (browserToolEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.setting_page_browser),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (browserToolEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            showSearchPicker = false
+                            navController.navigate(Screen.SettingBrowser)
+                        }
+                    ) {
+                        Icon(
+                            Icons.Rounded.Settings,
+                            contentDescription = stringResource(R.string.setting_page_browser),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    HapticSwitch(
+                        checked = browserToolEnabled,
+                        onCheckedChange = { enabled ->
+                            haptics.perform(HapticPattern.Pop)
+                            val updatedTools = if (enabled) {
+                                (assistant.localTools + LocalToolOption.Browser).distinct()
+                            } else {
+                                assistant.localTools - LocalToolOption.Browser
+                            }
+                            onUpdateAssistant(assistant.copy(localTools = updatedTools))
+                        }
+                    )
+                }
 
                 // In-World Visual Artifacts Quick Toggle
                 Row(

@@ -181,6 +181,11 @@ fun mergeSettingsEdit(base: Settings, edited: Settings, latest: Settings): Setti
             edited.tmdbSetting,
             latest.tmdbSetting,
         ),
+        browserSettings = mergeSettingsValue(
+            base.browserSettings,
+            edited.browserSettings,
+            latest.browserSettings,
+        ),
     )
 }
 

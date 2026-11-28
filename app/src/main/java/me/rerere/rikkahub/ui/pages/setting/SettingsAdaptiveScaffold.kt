@@ -71,6 +71,8 @@ enum class SettingsDestination {
     Tts,
     Mcp,
     Web,
+    Browser,
+    BrowserSecrets,
     AndroidIntegration,
     Backup,
     BackupWebDav,
@@ -299,6 +301,7 @@ private fun SettingsDestination.mainDestination(): SettingsDestination {
         SettingsDestination.Tts -> SettingsDestination.Providers
         SettingsDestination.Skills,
         SettingsDestination.Lorebooks -> SettingsDestination.PromptInjections
+        SettingsDestination.BrowserSecrets -> SettingsDestination.Browser
         else -> this
     }
 }
@@ -339,6 +342,7 @@ private fun settingsPaneGroups(): List<SettingsPaneGroup> {
                 SettingsPaneEntry(SettingsDestination.Providers, R.string.setting_page_providers, null, Icons.Rounded.Cloud, Screen.SettingProvider, providerChildren),
                 SettingsPaneEntry(SettingsDestination.Mcp, R.string.setting_page_mcp, null, Icons.Rounded.Extension, Screen.SettingMcp),
                 SettingsPaneEntry(SettingsDestination.Web, R.string.setting_page_web_server, null, Icons.Rounded.Language, Screen.SettingWeb),
+                SettingsPaneEntry(SettingsDestination.Browser, R.string.setting_page_browser, null, Icons.Rounded.Public, Screen.SettingBrowser),
                 SettingsPaneEntry(SettingsDestination.AndroidIntegration, R.string.setting_android_integration, null, Icons.Rounded.PhoneAndroid, Screen.SettingAndroidIntegration),
                 SettingsPaneEntry(SettingsDestination.Workspaces, R.string.extensions_page_workspace, null, Icons.Rounded.Code, Screen.Workspaces),
             )

@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Warning
@@ -175,6 +176,13 @@ fun SettingPage(
                     )
 
                     SettingGroupItem(
+                        title = stringResource(R.string.setting_page_browser),
+                        icon = { Icon(Icons.Rounded.Public, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
+                        onClick = { navController.navigate(Screen.SettingBrowser) }
+                    )
+
+                    SettingGroupItem(
                         title = stringResource(R.string.setting_android_integration),
                         icon = { Icon(Icons.Rounded.PhoneAndroid, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
@@ -197,7 +205,6 @@ fun SettingPage(
                 ) {
                     SettingGroupItem(
                         title = "Library",
-                        subtitle = "All photos, artifacts, stories, audio & files",
                         icon = { Icon(Icons.Rounded.Collections, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.Library) }

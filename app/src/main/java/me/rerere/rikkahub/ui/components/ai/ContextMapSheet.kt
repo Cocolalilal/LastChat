@@ -767,6 +767,7 @@ private fun buildMapSections(
     }
 
     val toolItems = entriesByCategory[ContextMapCategory.TOOL_DEFINITIONS].orEmpty()
+    val hasBrowserTool = me.rerere.rikkahub.data.ai.tools.LocalToolOption.Browser in assistant.localTools
     add(
         ContextMapSectionUi(
             category = ContextMapCategory.TOOL_DEFINITIONS,
@@ -782,6 +783,11 @@ private fun buildMapSections(
             primaryAction = ContextMapTarget.Route(
                 Screen.AssistantDetail(id = assistantId, startRoute = AssistantDetailRoutes.TOOLS)
             ),
+            secondaryChips = if (hasBrowserTool) {
+                listOf("Browser settings" to ContextMapTarget.Route(Screen.SettingBrowser))
+            } else {
+                emptyList()
+            },
         )
     )
 

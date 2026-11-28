@@ -746,6 +746,14 @@ fun ChatPage(
         manualTemporaryChat = false
     }
 
+    val browserTabPool = org.koin.compose.koinInject<me.rerere.rikkahub.data.browser.BrowserTabPool>()
+    val browserSecretsStore = org.koin.compose.koinInject<me.rerere.rikkahub.data.browser.BrowserSecretsStore>()
+    val browserSheetOpen by browserTabPool.browserSheetOpen.collectAsStateWithLifecycle()
+
+    LaunchedEffect(conversation.id) {
+        browserTabPool.setSession(conversation.id.toString())
+    }
+
     LaunchedEffect(id, persistenceMode) {
         vm.applyRoutePersistenceMode(ChatPersistenceMode.fromRouteValue(persistenceMode))
     }
@@ -1143,6 +1151,55 @@ fun ChatPage(
                                     inheritedBlur = wideBlur,
                                 )
                             }
+                            if (browserSheetOpen && setting.browserSettings.enableTabletSplitPane) {
+                                var splitBrowserWidthDp by rememberSaveable { mutableStateOf(420f) }
+                                val density = androidx.compose.ui.platform.LocalDensity.current
+                                Box(
+                                    modifier = Modifier
+                                        .width(8.dp)
+                                        .fillMaxHeight()
+                                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+                                        .pointerInput(Unit) {
+                                            detectHorizontalDragGestures { change, dragAmount ->
+                                                change.consume()
+                                                val deltaDp = with(density) { dragAmount.toDp().value }
+                                                splitBrowserWidthDp = (splitBrowserWidthDp - deltaDp).coerceIn(300f, 580f)
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(3.dp)
+                                            .height(36.dp)
+                                            .clip(RoundedCornerShape(50))
+                                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
+                                    )
+                                }
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    modifier = Modifier
+                                        .width(splitBrowserWidthDp.dp)
+                                        .fillMaxHeight(),
+                                ) {
+                                    me.rerere.rikkahub.ui.browser.BrowserPaneContent(
+                                        tabPool = browserTabPool,
+                                        browserSettings = setting.browserSettings,
+                                        onOpenSettings = { navController.navigate(Screen.SettingBrowser) },
+                                        onOpenSecrets = { navController.navigate(Screen.BrowserSecrets) },
+                                        onSendPageToChat = { pagePayload ->
+                                            val current = inputState.textContent.text.toString()
+                                            val merged = if (current.isBlank()) pagePayload else "$current\n\n$pagePayload"
+                                            inputState.setMessageTextAndFocus(merged, scope)
+                                        },
+                                        onDismiss = { browserTabPool.closeBrowserSheet() },
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .statusBarsPadding()
+                                            .navigationBarsPadding(),
+                                    )
+                                }
+                            }
                         }
                         if (showWideRailAssistantPicker) {
                             me.rerere.rikkahub.ui.components.ai.AssistantPickerSheet(
@@ -1202,14 +1259,36 @@ fun ChatPage(
                     manualTemporaryChat = manualTemporaryChat,
                     onManualTemporaryChatChange = { manualTemporaryChat = it },
                     bigScreen = false,
-                    contentMaxWidth = Dp.Unspecified,
-                    inputMaxWidth = Dp.Unspecified,
-                    initialSearchQuery = searchQuery
+                    contentMaxWidth = chatContentMaxWidth,
+                    inputMaxWidth = inputMaxWidth,
+                    initialSearchQuery = searchQuery,
                 )
             }
-            BackHandler(drawerState.isOpen) {
-                scope.launch { drawerState.close() }
-            }
+        }
+    }
+
+    if (browserSheetOpen && (!useWideLayout || !setting.browserSettings.enableTabletSplitPane)) {
+        me.rerere.rikkahub.ui.browser.BrowserSheet(
+            tabPool = browserTabPool,
+            browserSettings = setting.browserSettings,
+            onOpenSettings = {
+                browserTabPool.closeBrowserSheet()
+                navController.navigate(Screen.SettingBrowser)
+            },
+            onOpenSecrets = {
+                browserTabPool.closeBrowserSheet()
+                navController.navigate(Screen.BrowserSecrets)
+            },
+            onSendPageToChat = { pagePayload ->
+                val current = inputState.textContent.text.toString()
+                val merged = if (current.isBlank()) pagePayload else "$current\n\n$pagePayload"
+                inputState.setMessageTextAndFocus(merged, scope)
+                browserTabPool.closeBrowserSheet()
+            },
+            onDismiss = { browserTabPool.closeBrowserSheet() },
+        )
+    }
+}
         }
     }
 }
@@ -1386,6 +1465,13 @@ private fun ChatPageContent(
     val pythonExtensionsRevision by vm.pythonExtensionsRevision.collectAsStateWithLifecycle()
     val studioHubItems by vm.studioHubItems.collectAsStateWithLifecycle()
     val studioHubRevision by vm.studioHubRevision.collectAsStateWithLifecycle()
+    val browserTabPool = org.koin.compose.koinInject<me.rerere.rikkahub.data.browser.BrowserTabPool>()
+    val browserSecretsStore = org.koin.compose.koinInject<me.rerere.rikkahub.data.browser.BrowserSecretsStore>()
+    val browserSecretsRevision by browserSecretsStore.revision.collectAsStateWithLifecycle()
+    val browserSteps = remember(conversation.currentMessages, isGenerating) {
+        me.rerere.rikkahub.ui.browser.collectBrowserSteps(conversation.currentMessages, isGenerating)
+    }
+    var inspectedBrowserStepIndex by rememberSaveable(conversation.id) { mutableStateOf<Int?>(null) }
     val contextMeterUsage = rememberContextMeterUsage(
         enabled = setting.displaySetting.showContextTokenSummary,
         model = currentChatModel,
@@ -1398,6 +1484,8 @@ private fun ChatPageContent(
         pythonExtensionsRevision = pythonExtensionsRevision,
         studioHubItems = studioHubItems,
         studioHubRevision = studioHubRevision,
+        browserSecretsStore = browserSecretsStore,
+        browserSecretsRevision = browserSecretsRevision,
         persistenceMode = activePersistenceMode,
         pendingParts = inputState.getContents(),
         requestUsage = requestContextUsage,
@@ -2124,6 +2212,18 @@ private fun ChatPageContent(
                     contextUsage = contextMeterUsage,
                     onCancelContextCompression = vm::cancelContextOptimization,
                     onDeleteFile = { vm.deleteFile(it) },
+                    topAccessory = {
+                        me.rerere.rikkahub.ui.browser.BrowserHandOverCard(
+                            onOpenBrowser = { url -> browserTabPool.openBrowserSheet(url) },
+                        )
+                        me.rerere.rikkahub.ui.browser.BrowserRiskApprovalCard()
+                        me.rerere.rikkahub.ui.browser.BrowserMiniPreviewBar(
+                            steps = browserSteps,
+                            browserSettings = setting.browserSettings,
+                            tabPool = browserTabPool,
+                            onInspectStep = { idx -> inspectedBrowserStepIndex = idx },
+                        )
+                    },
                     bottomAccessory = bottomToolbarContent,
                     showScrollToBottomButton = showScrollToBottomButton,
                     onScrollToBottomClick = {
@@ -2197,6 +2297,21 @@ private fun ChatPageContent(
                     onCancel = vm::cancelContextOptimization,
                     onUpdateConversation = { vm.updateConversation(it) },
                     onDismiss = { showContextManagementFromMap = false },
+                )
+            }
+
+            inspectedBrowserStepIndex?.let { stepIdx ->
+                me.rerere.rikkahub.ui.browser.BrowserStepInspectorSheet(
+                    steps = browserSteps,
+                    initialIndex = stepIdx,
+                    tabPool = browserTabPool,
+                    liveSnapshotIntervalMs = setting.browserSettings.liveSnapshotIntervalMs,
+                    onOpenLiveBrowser = { url, tabId ->
+                        inspectedBrowserStepIndex = null
+                        if (tabId != null) browserTabPool.selectTab(tabId)
+                        browserTabPool.openBrowserSheet(url)
+                    },
+                    onDismiss = { inspectedBrowserStepIndex = null },
                 )
             }
 
@@ -3239,6 +3354,8 @@ private fun rememberContextMeterUsage(
     pythonExtensionsRevision: Int = 0,
     studioHubItems: List<StudioHubItem> = emptyList(),
     studioHubRevision: Int = 0,
+    browserSecretsStore: me.rerere.rikkahub.data.browser.BrowserSecretsStore? = null,
+    browserSecretsRevision: Int = 0,
 ): ContextUsageBreakdown? {
     if (!enabled) return null
     val activeModel = model?.takeIf { (it.contextCapacityTokens ?: 0) > 0 } ?: return null
@@ -3256,14 +3373,17 @@ private fun rememberContextMeterUsage(
     }
     val smartActive = (activeModel.contextCapacityTokens ?: 0) > 0
     val rawMessages = conversation.currentMessages
-    val messages = effectiveHistoryForContext(
-        messages = rawMessages,
-        smartManagement = smartActive,
-        summaryUpToIndex = conversation.contextSummaryUpToIndex.takeIf {
-            !conversation.contextSummary.isNullOrBlank()
-        } ?: -1,
-        truncateIndex = conversation.truncateIndex,
-        manualHistoryLimit = assistant.maxHistoryMessages,
+    val messages = me.rerere.rikkahub.data.browser.ScreenshotBudget.apply(
+        effectiveHistoryForContext(
+            messages = rawMessages,
+            smartManagement = smartActive,
+            summaryUpToIndex = conversation.contextSummaryUpToIndex.takeIf {
+                !conversation.contextSummary.isNullOrBlank()
+            } ?: -1,
+            truncateIndex = conversation.truncateIndex,
+            manualHistoryLimit = assistant.maxHistoryMessages,
+        ),
+        maxScreenshots = settings.browserSettings.maxScreenshotsInContext,
     )
     val memoryContextEnabled = assistant.enableMemory && persistenceMode == ChatPersistenceMode.NORMAL
     val eligibleMemoryCandidates = remember(memoryCandidates, assistant, memoryContextEnabled) {
@@ -3299,6 +3419,7 @@ private fun rememberContextMeterUsage(
         memorySummaryRevision,
         pythonExtensionsRevision,
         studioHubRevision,
+        browserSecretsRevision,
     ) {
         contextUsageSourceKey(
             conversation = conversation,
@@ -3309,6 +3430,7 @@ private fun rememberContextMeterUsage(
             memorySummaryRevision = memorySummaryRevision,
             pythonExtensionsRevision = pythonExtensionsRevision,
             studioHubRevision = studioHubRevision,
+            browserSecretsRevision = browserSecretsRevision,
         )
     }
     val matchingRequestUsage = requestUsage?.takeIf { usage -> usage.sourceKey == sourceKey }
@@ -3468,6 +3590,7 @@ private fun rememberContextMeterUsage(
         conversation.enabledModeIds,
         workspaceReady,
         pythonExtensionsRevision,
+        browserSecretsRevision,
     ) {
         computePreRequestToolAccounting(
             model = activeModel,
@@ -3479,6 +3602,7 @@ private fun rememberContextMeterUsage(
             conversationSkillIds = conversation.enabledModeIds,
             workspaceReady = workspaceReady,
             includePythonTools = true,
+            browserSecretsStore = browserSecretsStore,
         )
     }
     val toolDefinitionText = toolAccounting.toolDefinitionText

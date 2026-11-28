@@ -1640,4 +1640,7 @@
   <string name="file_action_preview_loading">正在加载预览…</string>
   <string name="file_action_preview_failed">无法预览此文件</string>
   <string name="file_action_not_found">找不到文件</string>
+  <string name="setting_page_browser">浏览器</string>
+  <string name="assistant_page_local_tools_browser_title">智能体浏览器</string>
+  <string name="assistant_page_local_tools_browser_desc">浏览网页、点击交互、填写表单、执行 JS 并截取屏幕</string>
 </resources>

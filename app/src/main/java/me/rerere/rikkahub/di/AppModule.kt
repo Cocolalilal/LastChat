@@ -42,6 +42,7 @@ val appModule = module {
             studioHubRepository = getOrNull(),
             storyStudioRepository = getOrNull(),
             voiceMemoRepository = getOrNull(),
+            browserTabPool = getOrNull(),
         )
     }
 
@@ -90,6 +91,7 @@ val appModule = module {
             platformHttpClient = get(),
             pythonPluginManager = get(),
             studioHubRepository = getOrNull(),
+            browserTabPool = getOrNull(),
         )
     }
 

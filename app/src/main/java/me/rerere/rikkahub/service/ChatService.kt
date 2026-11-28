@@ -667,6 +667,7 @@ class ChatService(
     private val platformHttpClient: PlatformHttpClient,
     private val pythonPluginManager: me.rerere.rikkahub.data.repository.PythonPluginManager? = null,
     private val studioHubRepository: me.rerere.rikkahub.data.repository.StudioHubRepository? = null,
+    private val browserTabPool: me.rerere.rikkahub.data.browser.BrowserTabPool? = null,
 ) {
     // 存储每个对话的状态
     private val conversationsLock = Any()
@@ -1343,10 +1344,18 @@ class ChatService(
                     tools = tools,
                 )
 
-                val sanitizedResults = extractInjectedImagePayloads(
-                    listOf(resolution.toolResult),
-                    supportsVision = model.inputModalities.contains(Modality.IMAGE),
-                )
+                val sanitizedResults = me.rerere.rikkahub.data.browser.ScreenshotBudget.apply(
+                    listOf(
+                        UIMessage(
+                            role = MessageRole.TOOL,
+                            parts = extractInjectedImagePayloads(
+                                listOf(resolution.toolResult),
+                                supportsVision = model.inputModalities.contains(Modality.IMAGE),
+                            ),
+                        )
+                    ),
+                    maxScreenshots = settings.browserSettings.maxScreenshotsInContext,
+                ).first().parts.filterIsInstance<UIMessagePart.ToolResult>()
                 val baseToolMessage = UIMessage(
                     role = MessageRole.TOOL,
                     parts = sanitizedResults,
@@ -1992,11 +2001,14 @@ class ChatService(
                 }
             }
 
+            val hasWebSearch = useBuiltInSearch || assistant.searchMode is AssistantSearchMode.Provider
             addAll(
                 localTools.getTools(
                     options = effectiveLocalTools,
                     assistantId = assistant.id,
                     conversationId = conversation.id,
+                    modelId = model.modelId,
+                    hasWebSearch = hasWebSearch,
                 )
             )
 
@@ -2465,6 +2477,7 @@ class ChatService(
         conversationDeletionLedger.expireUndoWindow(conversationId)
         stopGeneration(conversationId)
         cleanupConversation(conversationId)
+        browserTabPool?.deleteSessionData(conversationId.toString())
     }
 
     fun deleteConversation(conversation: Conversation) {
@@ -2482,6 +2495,7 @@ class ChatService(
                 withContext(Dispatchers.IO) {
                     if (conversationRepo.getConversationById(expired.id) == null) {
                         conversationRepo.finalizeConversationDeletion(expired.id)
+                        browserTabPool?.deleteSessionData(expired.id.toString())
                     }
                 }
             }
