@@ -2229,7 +2229,9 @@ private fun ChatPageContent(
                             steps = browserSteps,
                             browserSettings = setting.browserSettings,
                             tabPool = browserTabPool,
+                            conversationId = conversation.id.toString(),
                             hasUserMessageAfterSteps = hasUserMsgAfterBrowser,
+                            isChatScrolling = chatListState.isScrollInProgress,
                             onInspectStep = { idx -> inspectedBrowserStepIndex = idx },
                         )
                     },

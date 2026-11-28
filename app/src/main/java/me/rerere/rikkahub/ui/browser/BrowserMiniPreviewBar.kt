@@ -4,8 +4,14 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -26,6 +32,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -52,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -80,10 +88,9 @@ import me.rerere.rikkahub.data.datastore.BrowserPreviewSize
 import me.rerere.rikkahub.data.datastore.BrowserSettings
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
-import me.rerere.rikkahub.ui.modifier.lastChatFloatingSurfaceColor
 import me.rerere.rikkahub.ui.modifier.lastChatSoftEdgeBorder
 import org.json.JSONObject
+import java.net.URI
 
 data class BrowserStepRecord(
     val toolCallId: String,
@@ -173,16 +180,24 @@ fun hasUserMessageAfterBrowserSteps(messages: List<UIMessage>, steps: List<Brows
     return false
 }
 
+private fun extractShortHost(url: String?): String? {
+    if (url.isNullOrBlank()) return null
+    return runCatching {
+        URI(url).host?.removePrefix("www.")?.takeIf { it.isNotBlank() }
+    }.getOrNull()
+}
+
 @Composable
 fun rememberBrowserLiveSnapshot(
     step: BrowserStepRecord,
     tabPool: BrowserTabPool,
     intervalMs: Long,
+    paused: Boolean = false,
 ): Bitmap? {
     var liveBitmap by remember(step.toolCallId) { mutableStateOf<Bitmap?>(null) }
 
-    LaunchedEffect(step.toolCallId, step.isRunning, step.tabId, intervalMs) {
-        if (!step.isRunning || intervalMs <= 0L) return@LaunchedEffect
+    LaunchedEffect(step.toolCallId, step.isRunning, step.tabId, intervalMs, paused) {
+        if (!step.isRunning || intervalMs <= 0L || paused) return@LaunchedEffect
         val pollMs = intervalMs.coerceAtLeast(1_500L)
         while (isActive) {
             val manager = tabPool.managerForTab(step.tabId)
@@ -203,28 +218,36 @@ fun BrowserMiniPreviewBar(
     browserSettings: BrowserSettings,
     tabPool: BrowserTabPool,
     onInspectStep: (index: Int) -> Unit,
+    conversationId: String = "",
     hasUserMessageAfterSteps: Boolean = false,
+    isChatScrolling: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val haptics = rememberPremiumHaptics()
     val agentDismissVersion by tabPool.barDismissedByAgentVersion.collectAsState()
+    val dismissedMap by tabPool.dismissedBarStepCounts.collectAsState()
+    val latestLiveFrame by tabPool.latestFrame.collectAsState()
 
-    // Track manual dismissal (resets automatically whenever a new browser step arrives)
-    var dismissedAtStepCount by remember { mutableIntStateOf(-1) }
-    var lastSeenAgentDismissVersion by remember { mutableIntStateOf(agentDismissVersion) }
-    var dismissedByAgentAtStepCount by remember { mutableIntStateOf(-1) }
+    val persistedDismissCount = if (conversationId.isNotBlank()) {
+        dismissedMap[conversationId] ?: -1
+    } else {
+        -1
+    }
 
-    LaunchedEffect(agentDismissVersion, steps.size) {
+    // Persist agent-triggered close_browser dismissal across navigation too
+    var lastSeenAgentDismissVersion by remember(conversationId) { mutableIntStateOf(agentDismissVersion) }
+    LaunchedEffect(agentDismissVersion, steps.size, conversationId) {
         if (agentDismissVersion != lastSeenAgentDismissVersion) {
             lastSeenAgentDismissVersion = agentDismissVersion
-            dismissedByAgentAtStepCount = steps.size
+            if (conversationId.isNotBlank() && browserSettings.barDismissMode == BrowserBarDismissMode.AUTO_AGENT) {
+                tabPool.dismissPreviewBar(conversationId, steps.size)
+            }
         }
     }
 
-    val isManuallyDismissed = dismissedAtStepCount >= 0 && steps.size <= dismissedAtStepCount
+    val isManuallyDismissed = persistedDismissCount >= 0 && steps.size <= persistedDismissCount
     val isAgentDismissed = browserSettings.barDismissMode == BrowserBarDismissMode.AUTO_AGENT &&
-        (dismissedByAgentAtStepCount >= 0 && steps.size <= dismissedByAgentAtStepCount ||
-            steps.lastOrNull()?.let { it.actionName == "close_browser" && !it.isRunning } == true)
+        steps.lastOrNull()?.let { it.actionName == "close_browser" && !it.isRunning } == true
     val isHiddenByNextUserMsg = browserSettings.barDismissMode == BrowserBarDismissMode.HIDE_ON_NEXT_MESSAGE &&
         hasUserMessageAfterSteps &&
         steps.lastOrNull()?.isRunning != true
@@ -237,13 +260,13 @@ fun BrowserMiniPreviewBar(
 
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn() + expandVertically(),
-        exit = fadeOut() + shrinkVertically(),
+        enter = fadeIn(tween(180)) + expandVertically(tween(200)),
+        exit = fadeOut(tween(140)) + shrinkVertically(tween(160)),
         modifier = modifier,
     ) {
         if (steps.isEmpty()) return@AnimatedVisibility
-        var currentIndex by remember { mutableIntStateOf(steps.lastIndex.coerceAtLeast(0)) }
-        var userPinnedBack by remember { mutableStateOf(false) }
+        var currentIndex by remember(conversationId) { mutableIntStateOf(steps.lastIndex.coerceAtLeast(0)) }
+        var userPinnedBack by remember(conversationId) { mutableStateOf(false) }
         val lastIndex = steps.lastIndex
         LaunchedEffect(steps.size) {
             if (!userPinnedBack || currentIndex > lastIndex) {
@@ -252,15 +275,19 @@ fun BrowserMiniPreviewBar(
         }
         val safeIdx = currentIndex.coerceIn(0, lastIndex)
         val step = steps[safeIdx]
+        val isOnLatestStep = safeIdx == lastIndex
+
         val fallbackImagePath = remember(step.toolCallId, steps.size) {
             if (step.imageFilePath != null) null
             else (safeIdx - 1 downTo 0).firstNotNullOfOrNull { i -> steps[i].imageFilePath }
         }
 
-        val liveBitmap = rememberBrowserLiveSnapshot(
+        // Pause periodic polling while user is actively scrolling the chat list
+        val polledBitmap = rememberBrowserLiveSnapshot(
             step = step,
             tabPool = tabPool,
             intervalMs = browserSettings.liveSnapshotIntervalMs,
+            paused = isChatScrolling,
         )
         val savedBitmap by produceState<Bitmap?>(
             initialValue = null,
@@ -275,22 +302,40 @@ fun BrowserMiniPreviewBar(
                 }.getOrNull()
             }
         }
-        val thumbnailBitmap = if (step.isRunning) {
-            liveBitmap ?: BrowserFrames.get(step.toolCallId) ?: savedBitmap
+
+        // Reactive live frame pushed immediately by BrowserUseManager on page load / action finish
+        val pushedBitmap = latestLiveFrame
+            ?.takeIf { !it.bitmap.isRecycled && isOnLatestStep && (step.tabId == null || it.tabId == step.tabId) }
+            ?.bitmap
+
+        val candidateBitmap = if (step.isRunning) {
+            pushedBitmap ?: polledBitmap ?: BrowserFrames.get(step.toolCallId) ?: savedBitmap
         } else {
-            savedBitmap ?: BrowserFrames.get(step.toolCallId) ?: liveBitmap
+            (if (step.imageFilePath != null) savedBitmap else null)
+                ?: pushedBitmap
+                ?: BrowserFrames.get(step.toolCallId)
+                ?: savedBitmap
+                ?: polledBitmap
         }
+
+        // Keep last valid bitmap during async decode so thumbnail never flickers to blank/globe
+        var lastValidBitmap by remember(conversationId) { mutableStateOf<Bitmap?>(null) }
+        if (candidateBitmap != null && !candidateBitmap.isRecycled) {
+            lastValidBitmap = candidateBitmap
+        }
+        val displayBitmap = candidateBitmap?.takeIf { !it.isRecycled } ?: lastValidBitmap?.takeIf { !it.isRecycled }
 
         val (thumbnailWidth, thumbnailHeight) = when (browserSettings.miniPreviewSize) {
             BrowserPreviewSize.COMPACT -> 100.dp to 65.dp
             BrowserPreviewSize.MEDIUM -> 136.dp to 88.dp
             BrowserPreviewSize.LARGE -> 176.dp to 114.dp
         }
-        val barHeight = 38.dp
+        val barHeight = 40.dp
         val overhang = (thumbnailHeight - barHeight).coerceAtLeast(0.dp)
         val thumbnailInset = 10.dp
         val barStartPadding = thumbnailWidth + thumbnailInset + 8.dp
-        val surfaceColor = lastChatFloatingSurfaceColor(MaterialTheme.colorScheme.surfaceContainerHigh)
+        // Crisp elevated surface WITHOUT live Haze blur pass so chat scrolling stays 60fps on 4GB tablets
+        val surfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f)
 
         val interaction = remember { MutableInteractionSource() }
         val pressed by interaction.collectIsPressedAsState()
@@ -300,23 +345,26 @@ fun BrowserMiniPreviewBar(
             label = "browser_mini_preview_scale",
         )
 
+        val shortHost = remember(step.pageUrl, latestLiveFrame?.url, isOnLatestStep) {
+            extractShortHost(if (isOnLatestStep && step.isRunning) (latestLiveFrame?.url ?: step.pageUrl) else step.pageUrl)
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = overhang)
                 .graphicsLayer { scaleX = pressScale; scaleY = pressScale },
         ) {
-            // Layer 1: 38dp status bar
+            // Layer 1: 40dp status bar
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = surfaceColor,
                 border = lastChatSoftEdgeBorder(surfaceColor),
-                shadowElevation = 6.dp,
+                shadowElevation = 4.dp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(barHeight)
-                    .align(Alignment.BottomCenter)
-                    .lastChatBlurEffect(surfaceColor, RoundedCornerShape(12.dp)),
+                    .align(Alignment.BottomCenter),
             ) {
                 Row(
                     modifier = Modifier
@@ -416,42 +464,97 @@ fun BrowserMiniPreviewBar(
                             .size(18.dp)
                             .clickable {
                                 haptics.perform(HapticPattern.Pop)
-                                dismissedAtStepCount = steps.size
+                                if (conversationId.isNotBlank()) {
+                                    tabPool.dismissPreviewBar(conversationId, steps.size)
+                                }
                             },
                     )
                 }
             }
 
-            // Layer 2: Overhanging thumbnail on the left (Compact / Medium / Large)
-            val thumbShape = RoundedCornerShape(9.dp)
+            // Layer 2: Overhanging top-framed thumbnail on the left with smooth Crossfade & live badge
+            val thumbShape = RoundedCornerShape(10.dp)
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(start = thumbnailInset)
                     .size(width = thumbnailWidth, height = thumbnailHeight)
-                    .shadow(8.dp, thumbShape)
+                    .shadow(6.dp, thumbShape)
                     .clip(thumbShape)
                     .background(Color(0xFF1A1A1E))
-                    .border(0.6.dp, MaterialTheme.colorScheme.outlineVariant, thumbShape)
+                    .border(0.7.dp, MaterialTheme.colorScheme.outlineVariant, thumbShape)
                     .clickable {
                         haptics.perform(HapticPattern.Pop)
                         onInspectStep(safeIdx)
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                if (thumbnailBitmap != null) {
-                    Image(
-                        bitmap = thumbnailBitmap.asImageBitmap(),
-                        contentDescription = "Browser step preview",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+                Crossfade(
+                    targetState = displayBitmap,
+                    animationSpec = tween(160),
+                    label = "browser_thumb_crossfade",
+                    modifier = Modifier.fillMaxSize(),
+                ) { bmp ->
+                    if (bmp != null && !bmp.isRecycled) {
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = "Browser step preview",
+                            contentScale = ContentScale.Crop,
+                            alignment = Alignment.TopCenter,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Rounded.Public,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
+                    }
+                }
+
+                // Subtle host caption at bottom of Medium / Large thumbnails
+                if (browserSettings.miniPreviewSize != BrowserPreviewSize.COMPACT && !shortHost.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))
+                                )
+                            )
+                            .padding(horizontal = 6.dp, vertical = 3.dp),
+                    ) {
+                        Text(
+                            text = shortHost,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.92f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+
+                // Live pulsing dot badge while agent is actively running
+                if (step.isRunning) {
+                    val pulseTransition = rememberInfiniteTransition(label = "live_thumb_pulse")
+                    val pulseAlpha by pulseTransition.animateFloat(
+                        initialValue = 0.4f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+                        label = "live_thumb_pulse_alpha",
                     )
-                } else {
-                    Icon(
-                        Icons.Rounded.Public,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                        modifier = Modifier.size(24.dp),
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(5.dp)
+                            .size(8.dp)
+                            .background(Color(0xFF34C759).copy(alpha = pulseAlpha), CircleShape)
+                            .border(1.dp, Color.Black.copy(alpha = 0.5f), CircleShape),
                     )
                 }
             }

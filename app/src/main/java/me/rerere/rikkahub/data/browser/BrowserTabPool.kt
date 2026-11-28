@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.browser
 
 import android.content.ComponentCallbacks2
 import android.content.Context
+import android.graphics.Bitmap
 import android.content.res.Configuration
 import android.os.Message
 import android.util.Log
@@ -38,6 +39,13 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * Multi-tab native WebView pool for LastChat, optimized for 4GB-RAM tablets.
  */
+data class BrowserLiveFrame(
+    val tabId: Int,
+    val url: String,
+    val bitmap: Bitmap,
+    val timestampMs: Long = System.currentTimeMillis(),
+)
+
 class BrowserTabPool(
     private val context: Context,
     private val settingsStore: SettingsStore,
@@ -95,6 +103,43 @@ class BrowserTabPool(
 
     private val _barDismissedByAgentVersion = MutableStateFlow(0)
     val barDismissedByAgentVersion: StateFlow<Int> = _barDismissedByAgentVersion.asStateFlow()
+
+    private val dismissPrefs by lazy {
+        context.applicationContext.getSharedPreferences("browser_bar_dismiss_prefs", Context.MODE_PRIVATE)
+    }
+    private val _dismissedBarStepCounts = MutableStateFlow<Map<String, Int>>(loadDismissedBarMap())
+    val dismissedBarStepCounts: StateFlow<Map<String, Int>> = _dismissedBarStepCounts.asStateFlow()
+
+    private val _latestFrame = MutableStateFlow<BrowserLiveFrame?>(null)
+    val latestFrame: StateFlow<BrowserLiveFrame?> = _latestFrame.asStateFlow()
+
+    private fun loadDismissedBarMap(): Map<String, Int> {
+        return runCatching {
+            dismissPrefs.all.mapNotNull { (k, v) ->
+                (v as? Int)?.let { k to it }
+            }.toMap()
+        }.getOrDefault(emptyMap())
+    }
+
+    fun dismissPreviewBar(conversationId: String, stepCount: Int) {
+        if (conversationId.isBlank()) return
+        val updated = _dismissedBarStepCounts.value.toMutableMap().apply { put(conversationId, stepCount) }
+        _dismissedBarStepCounts.value = updated
+        dismissPrefs.edit().putInt(conversationId, stepCount).apply()
+    }
+
+    fun clearPreviewBarDismissal(conversationId: String) {
+        if (conversationId.isBlank()) return
+        if (!_dismissedBarStepCounts.value.containsKey(conversationId)) return
+        val updated = _dismissedBarStepCounts.value.toMutableMap().apply { remove(conversationId) }
+        _dismissedBarStepCounts.value = updated
+        dismissPrefs.edit().remove(conversationId).apply()
+    }
+
+    fun publishLiveFrame(tabId: Int, url: String, bitmap: Bitmap) {
+        if (bitmap.isRecycled) return
+        _latestFrame.value = BrowserLiveFrame(tabId = tabId, url = url, bitmap = bitmap)
+    }
     val selectedTabId: StateFlow<Int> = _selectedTabId.asStateFlow()
 
     private val _isAgentBusyFlow = MutableStateFlow(false)
@@ -433,6 +478,10 @@ class BrowserTabPool(
         manager.onDownloadStart = { url, ua, cd, mime, len -> startUrlDownload(url, ua, cd, mime, len) }
         manager.onBlobDownloadData = { data, name, mime -> saveBlobDownload(data, name, mime) }
         manager.onHandoffRequested = { url -> openBrowserSheet(url) }
+        manager.onFrameCaptured = { url, bmp ->
+            val tid = _tabs.value.firstOrNull { it.manager === manager }?.id ?: _selectedTabId.value
+            publishLiveFrame(tid, url, bmp)
+        }
     }
 
     // -- Agent Execution --

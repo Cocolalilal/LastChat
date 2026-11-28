@@ -111,6 +111,7 @@ class BrowserUseManager(
     var onDownloadStart: ((url: String, userAgent: String?, contentDisposition: String?, mimeType: String?, contentLength: Long) -> Unit)? = null
     var onBlobDownloadData: ((data: ByteArray, filename: String, mimeType: String?) -> Unit)? = null
     var onHandoffRequested: ((url: String) -> Unit)? = null
+    var onFrameCaptured: ((url: String, bitmap: Bitmap) -> Unit)? = null
 
     private var navigationDeferred: CompletableDeferred<Unit>? = null
     private var asyncJsDeferred: CompletableDeferred<String>? = null
@@ -375,6 +376,14 @@ class BrowserUseManager(
             }
         }
 
+        if (result.success && !BrowserAction.visualChangeActions.contains(input.action) && input.action != BrowserAction.SCREENSHOT) {
+            runCatching {
+                val liveBmp = captureLiveSnapshot(maxWidthPx = 480)
+                if (liveBmp != null && !liveBmp.isRecycled && !isMostlyUniformColor(liveBmp)) {
+                    onFrameCaptured?.invoke(_currentURL.value, liveBmp)
+                }
+            }
+        }
         return redactIfNeeded(result, settings)
     }
 
@@ -435,6 +444,13 @@ class BrowserUseManager(
             }
             val scaled = scaleToMaxLongEdge(bitmap, settings.screenshotMaxLongEdgePx)
             val file = saveBitmapToFile(scaled, "snapshot", settings.screenshotJpegQuality)
+            runCatching {
+                val previewRatio = (480f / scaled.width.coerceAtLeast(1)).coerceAtMost(1f)
+                val pw = (scaled.width * previewRatio).toInt().coerceAtLeast(1)
+                val ph = (scaled.height * previewRatio).toInt().coerceAtLeast(1)
+                val previewBmp = Bitmap.createScaledBitmap(scaled, pw, ph, true)
+                onFrameCaptured?.invoke(_currentURL.value, previewBmp)
+            }
             if (scaled !== bitmap) scaled.recycle()
             bitmap.recycle()
             result.copy(imageFilePath = file.absolutePath)
