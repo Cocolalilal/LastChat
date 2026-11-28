@@ -50,6 +50,11 @@ fun mergeSettingsEdit(base: Settings, edited: Settings, latest: Settings): Setti
             edited.subagentThinkingBudget,
             latest.subagentThinkingBudget,
         ),
+        studioEnhanceModelId = selectEditedValue(
+            base.studioEnhanceModelId,
+            edited.studioEnhanceModelId,
+            latest.studioEnhanceModelId,
+        ),
         imageGenerationModelId = selectEditedValue(
             base.imageGenerationModelId,
             edited.imageGenerationModelId,
@@ -165,6 +170,11 @@ fun mergeSettingsEdit(base: Settings, edited: Settings, latest: Settings): Setti
             base.enableStudioHubBridge,
             edited.enableStudioHubBridge,
             latest.enableStudioHubBridge,
+        ),
+        studioAppearance = mergeSettingsValue(
+            base.studioAppearance,
+            edited.studioAppearance,
+            latest.studioAppearance,
         ),
         smartMicProfiles = mergeSettingsValue(
             base.smartMicProfiles,

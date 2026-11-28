@@ -63,6 +63,7 @@ data class Settings(
     val summarizerThinkingBudget: Int = 0,
     val subagentModelId: Uuid? = null,
     val subagentThinkingBudget: Int = 0,
+    val studioEnhanceModelId: Uuid? = null,
     val imageGenerationModelId: Uuid = Uuid.random(),
     val titlePrompt: String = DEFAULT_TITLE_PROMPT,
     val translateModeId: Uuid = Uuid.random(),
@@ -107,6 +108,7 @@ data class Settings(
     val assistantOverlayConfig: AssistantOverlayConfig = AssistantOverlayConfig(),
     val enableVoiceMemosMemoryBridge: Boolean = true,
     val enableStudioHubBridge: Boolean = true,
+    val studioAppearance: StudioAppearanceSettings = StudioAppearanceSettings(),
     val smartMicProfiles: List<SmartMicProfile> = DEFAULT_SMART_MIC_PROFILES,
     val selectedSmartMicProfileId: String = "raw_dictation",
     val tmdbSetting: TmdbSetting = TmdbSetting(),
@@ -116,6 +118,23 @@ data class Settings(
         fun dummy() = Settings(init = true)
     }
 }
+
+@Serializable
+enum class StudioAttributionStyle {
+    SIGNATURE,
+    MONOGRAM,
+    CHIP,
+    HIDDEN,
+}
+
+@Serializable
+data class StudioAppearanceSettings(
+    val attributionStyle: StudioAttributionStyle = StudioAttributionStyle.SIGNATURE,
+    val attributionLabelFormat: String = "Created by {name}",
+    val defaultNoteColorToken: String? = null,
+    val defaultNoteThemeId: String? = null,
+    val showGreetingHeader: Boolean = true,
+)
 
 @Serializable
 enum class BrowserViewMode { DESKTOP, MOBILE, FIT_SCREEN, CUSTOM }
@@ -880,6 +899,7 @@ internal fun Settings.clearMissingModelReferences(): Settings {
         titleModelId = titleModelId.ensureValid(chatFallback),
         summarizerModelId = summarizerModelId.ensureValidOrNull(),
         subagentModelId = subagentModelId.ensureValidOrNull(),
+        studioEnhanceModelId = studioEnhanceModelId.ensureValidOrNull(),
         imageGenerationModelId = imageGenerationModelId.ensureValid(imageFallback),
         translateModeId = translateModeId.ensureValid(chatFallback),
         suggestionModelId = suggestionModelId.ensureValidOrDisabled(chatFallback),

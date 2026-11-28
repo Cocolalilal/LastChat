@@ -156,10 +156,13 @@ class StudioHubRepository internal constructor(
         attachmentSources: List<String> = emptyList(),
         tags: List<String> = emptyList(),
         colorToken: String? = null,
+        themeId: String? = null,
         isPinned: Boolean = false,
         reminderAtMillis: Long? = null,
         sourceUrl: String? = null,
         createdBy: String = "user",
+        createdByAssistantName: String? = null,
+        createdByAssistantId: String? = null,
     ): StudioHubItem = withContext(Dispatchers.IO) {
         val id = Uuid.random().toString()
         val copiedAttachments = importAttachments(id = id, sources = attachmentSources)
@@ -177,10 +180,13 @@ class StudioHubRepository internal constructor(
             attachmentPaths = copiedAttachments,
             tags = tags,
             colorToken = colorToken,
+            themeId = themeId,
             isPinned = isPinned,
             reminderAtMillis = reminderAtMillis,
             sourceUrl = sourceUrl?.trim()?.takeIf { it.isNotBlank() },
             createdBy = createdBy,
+            createdByAssistantName = createdByAssistantName?.trim()?.takeIf { it.isNotBlank() },
+            createdByAssistantId = createdByAssistantId?.trim()?.takeIf { it.isNotBlank() },
         )
         upsertItem(item)
     }
@@ -252,6 +258,15 @@ class StudioHubRepository internal constructor(
     suspend fun updateColor(itemId: String, colorToken: String?): StudioHubItem? {
         val item = getItem(itemId) ?: return null
         return upsertItem(item.copy(colorToken = colorToken))
+    }
+
+    suspend fun updateAppearance(
+        itemId: String,
+        colorToken: String?,
+        themeId: String?,
+    ): StudioHubItem? {
+        val item = getItem(itemId) ?: return null
+        return upsertItem(item.copy(colorToken = colorToken, themeId = themeId))
     }
 
     suspend fun markReminderTriggered(itemId: String) {
@@ -543,6 +558,9 @@ class StudioHubRepository internal constructor(
             appendLine("archived: ${item.isArchived}")
             appendLine("completed: ${item.isCompleted}")
             appendLine("created_by: ${item.createdBy}")
+            if (!item.createdByAssistantName.isNullOrBlank()) {
+                appendLine("created_by_assistant: ${item.createdByAssistantName}")
+            }
             if (item.tags.isNotEmpty()) {
                 appendLine("tags: [${item.tags.joinToString(", ")}]")
             }

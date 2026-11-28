@@ -35,6 +35,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.repository.GenMediaRepository
@@ -1216,11 +1217,18 @@ class LocalTools(
             tools.add(mediaWatchlistTool.withAlias("tmdb_watchlist"))
         }
         if (options.contains(LocalToolOption.StudioHub) && studioHubRepository != null) {
+            val creatingAssistantName = settingsStore.settingsFlow.value
+                .getAssistantById(assistantId)
+                ?.name
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
             tools.addAll(
                 buildStudioHubTools(
                     studioHubRepository = studioHubRepository,
                     storyStudioRepository = storyStudioRepository,
                     voiceMemoRepository = voiceMemoRepository,
+                    assistantName = creatingAssistantName,
+                    assistantId = assistantId.toString(),
                 )
             )
         }
@@ -1232,6 +1240,8 @@ internal fun buildStudioHubTools(
     studioHubRepository: StudioHubRepository,
     storyStudioRepository: me.rerere.rikkahub.data.repository.StoryStudioRepository? = null,
     voiceMemoRepository: me.rerere.rikkahub.data.repository.VoiceMemoRepository? = null,
+    assistantName: String? = null,
+    assistantId: String? = null,
 ): List<Tool> {
     val previews = LocalToolOption.StudioHub.toDefinitionPreviews().associateBy { it.name }
     fun parseIsoMillis(raw: String): Long? {
@@ -1406,8 +1416,12 @@ internal fun buildStudioHubTools(
                 }
             }
             val pinned = params["pinned"]?.jsonPrimitive?.booleanOrNull ?: false
+            val allowedColors = setOf(
+                "teal", "sage", "amber", "terracotta", "sky", "rose",
+                "moss", "sand", "slate", "plum", "charcoal", "lavender",
+            )
             val color = params["color"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase()
-                ?.takeIf { it in setOf("amber", "sage", "sky", "rose", "lavender") }
+                ?.takeIf { it in allowedColors }
 
             val created = studioHubRepository.createItem(
                 type = type,
@@ -1419,6 +1433,8 @@ internal fun buildStudioHubTools(
                 isPinned = pinned,
                 reminderAtMillis = reminderMillis,
                 createdBy = "assistant",
+                createdByAssistantName = assistantName,
+                createdByAssistantId = assistantId,
             )
             buildJsonObject {
                 put("status", "created")

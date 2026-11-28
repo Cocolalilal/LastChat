@@ -138,6 +138,7 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
 
             item {
                 SettingsGroup(title = stringResource(R.string.setting_model_page_group_processing)) {
+                    DefaultStudioEnhanceModelSetting(settings = settings, vm = vm)
                     DefaultImageGenerationModelSetting(settings = settings, vm = vm)
                     DefaultOcrModelSetting(settings = settings, vm = vm)
                     DefaultEmbeddingModelSetting(settings = settings, vm = vm)
@@ -804,6 +805,48 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             }
         }
     }
+}
+
+@Composable
+private fun DefaultStudioEnhanceModelSetting(
+    settings: Settings,
+    vm: SettingVM,
+) {
+    ModelFeatureCard(
+        title = {
+            Text("Studio Enhance Model", maxLines = 1)
+        },
+        description = {
+            Text("Model used to polish and organize Studio notes and checklists (defaults to active chat model)")
+        },
+        icon = {
+            Icon(Icons.Rounded.AutoAwesome, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.studioEnhanceModelId,
+                    type = ModelType.CHAT,
+                    allowBackendModels = true,
+                    onSelect = { selectedModel ->
+                        vm.updateSettings { current ->
+                            current.copy(
+                                studioEnhanceModelId = current.findModelById(selectedModel.id)?.id
+                            )
+                        }
+                    },
+                    providers = settings.providers,
+                    allowClear = true,
+                    onClear = {
+                        vm.updateSettings { current ->
+                            current.copy(studioEnhanceModelId = null)
+                        }
+                    },
+                    modifier = Modifier.wrapContentWidth(),
+                )
+            }
+        },
+    )
 }
 
 @Composable

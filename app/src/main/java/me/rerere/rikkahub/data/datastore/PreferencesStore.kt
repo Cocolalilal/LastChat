@@ -100,6 +100,7 @@ class SettingsStore(
         val SUMMARIZER_THINKING_BUDGET = intPreferencesKey("summarizer_thinking_budget")
         val SUBAGENT_MODEL = stringPreferencesKey("subagent_model")
         val SUBAGENT_THINKING_BUDGET = intPreferencesKey("subagent_thinking_budget")
+        val STUDIO_ENHANCE_MODEL = stringPreferencesKey("studio_enhance_model")
         val TRANSLATE_MODEL = stringPreferencesKey("translate_model")
         val SUGGESTION_MODEL = stringPreferencesKey("suggestion_model")
         val SUGGESTION_THINKING_BUDGET = intPreferencesKey("suggestion_thinking_budget")
@@ -166,6 +167,7 @@ class SettingsStore(
         // Voice Memos & Smart Mic
         val ENABLE_VOICE_MEMOS_MEMORY_BRIDGE = booleanPreferencesKey("enable_voice_memos_memory_bridge")
         val ENABLE_STUDIO_HUB_BRIDGE = booleanPreferencesKey("enable_studio_hub_bridge")
+        val STUDIO_APPEARANCE = stringPreferencesKey("studio_appearance")
         val SMART_MIC_PROFILES = stringPreferencesKey("smart_mic_profiles")
         val SELECTED_SMART_MIC_PROFILE = stringPreferencesKey("selected_smart_mic_profile")
 
@@ -207,6 +209,7 @@ class SettingsStore(
                     summarizerThinkingBudget = preferences[SUMMARIZER_THINKING_BUDGET] ?: 0,
                     subagentModelId = decodeUuidOrNull(preferences[SUBAGENT_MODEL]),
                     subagentThinkingBudget = preferences[SUBAGENT_THINKING_BUDGET] ?: 0,
+                    studioEnhanceModelId = decodeUuidOrNull(preferences[STUDIO_ENHANCE_MODEL]),
                     translateModeId = decodeUuid(preferences[TRANSLATE_MODEL], GEMINI_2_5_FLASH_ID),
                     suggestionModelId = decodeUuid(preferences[SUGGESTION_MODEL], GEMINI_2_5_FLASH_ID),
                     suggestionThinkingBudget = preferences[SUGGESTION_THINKING_BUDGET] ?: 0,
@@ -286,6 +289,10 @@ class SettingsStore(
                     ),
                     enableVoiceMemosMemoryBridge = preferences[ENABLE_VOICE_MEMOS_MEMORY_BRIDGE] ?: true,
                     enableStudioHubBridge = preferences[ENABLE_STUDIO_HUB_BRIDGE] ?: true,
+                    studioAppearance = decodePreferenceValue(
+                        preferences[STUDIO_APPEARANCE],
+                        StudioAppearanceSettings(),
+                    ),
                     smartMicProfiles = decodePreferenceList(preferences[SMART_MIC_PROFILES]) ?: DEFAULT_SMART_MIC_PROFILES,
                     selectedSmartMicProfileId = preferences[SELECTED_SMART_MIC_PROFILE] ?: "raw_dictation",
                     tmdbSetting = decodePreferenceValue(preferences[TMDB_SETTING], TmdbSetting()),
@@ -703,6 +710,9 @@ class SettingsStore(
                 preferences[SUBAGENT_MODEL] = it.toString()
             } ?: preferences.remove(SUBAGENT_MODEL)
             preferences[SUBAGENT_THINKING_BUDGET] = normalizedSettings.subagentThinkingBudget
+            normalizedSettings.studioEnhanceModelId?.let {
+                preferences[STUDIO_ENHANCE_MODEL] = it.toString()
+            } ?: preferences.remove(STUDIO_ENHANCE_MODEL)
             preferences[TRANSLATE_MODEL] = normalizedSettings.translateModeId.toString()
             preferences[SUGGESTION_MODEL] = normalizedSettings.suggestionModelId.toString()
             preferences[SUGGESTION_THINKING_BUDGET] = normalizedSettings.suggestionThinkingBudget
@@ -760,6 +770,7 @@ class SettingsStore(
             preferences[ASSISTANT_OVERLAY_CONFIG] = JsonInstant.encodeToString(normalizedSettings.assistantOverlayConfig)
             preferences[ENABLE_VOICE_MEMOS_MEMORY_BRIDGE] = normalizedSettings.enableVoiceMemosMemoryBridge
             preferences[ENABLE_STUDIO_HUB_BRIDGE] = normalizedSettings.enableStudioHubBridge
+            preferences[STUDIO_APPEARANCE] = JsonInstant.encodeToString(normalizedSettings.studioAppearance)
             preferences[SMART_MIC_PROFILES] = JsonInstant.encodeToString(normalizedSettings.smartMicProfiles)
             preferences[SELECTED_SMART_MIC_PROFILE] = normalizedSettings.selectedSmartMicProfileId
             preferences[TMDB_SETTING] = JsonInstant.encodeToString(normalizedSettings.tmdbSetting)

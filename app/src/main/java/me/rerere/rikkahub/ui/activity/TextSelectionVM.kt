@@ -520,6 +520,8 @@ class TextSelectionVM(
                     attachmentSources = attachmentSources,
                     sourceUrl = sourceUrl,
                     createdBy = "quick_ask",
+                    createdByAssistantName = assistant?.name?.trim()?.takeIf { it.isNotBlank() },
+                    createdByAssistantId = assistant?.id?.toString(),
                 )
 
                 val shouldSummarize = action.autoSummarizeOnSave && model != null && mergedBody.isNotBlank()

@@ -28,7 +28,8 @@ data class StudioHubItem(
     val checklist: List<StudioChecklistEntry> = emptyList(),
     val attachmentPaths: List<String> = emptyList(), // App-private copies under filesDir/studio_attachments/
     val tags: List<String> = emptyList(),
-    val colorToken: String? = null, // Subtle M3 tonal tint key ("amber", "sage", "sky", "rose", "lavender")
+    val colorToken: String? = null, // Curated note palette key ("teal", "sage", "amber", "terracotta", "sky", "rose", "moss", "sand", "slate", "plum", "charcoal", "lavender")
+    val themeId: String? = null, // Subtle canvas backdrop pattern ("dots", "lined", "blueprint", "dusk", "botanical", "constellation", "paper")
     val isPinned: Boolean = false,
     val isArchived: Boolean = false,
     val isCompleted: Boolean = false,
@@ -36,6 +37,8 @@ data class StudioHubItem(
     val reminderTriggered: Boolean = false,
     val sourceUrl: String? = null, // For web/share clips
     val createdBy: String = "user", // "user" | "assistant" | "quick_ask"
+    val createdByAssistantName: String? = null, // Display name of the creating assistant (e.g. "Abdullah")
+    val createdByAssistantId: String? = null, // UUID string of the creating assistant
     val briefSummary: String = "", // 1-2 line summary (<= 140 chars) for AI catalog manifest
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
