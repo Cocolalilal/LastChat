@@ -1,11 +1,15 @@
 package me.rerere.rikkahub.ui.components.avatar.animated
 
+import android.graphics.PathMeasure
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asAndroidPath
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.acos
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -171,6 +175,175 @@ internal object SquircleEyeGeometry {
     }
 
     /**
+     * Builds a closed 4-corner trapezoid path `(left, topLeft) -> (right, topRight) ->
+     * (right, bottom) -> (left, bottom)` with exact angle-aware Figma 100% G2 corner
+     * smoothing at every vertex. Unlike vertical shearing, both acute and obtuse slanted
+     * top corners stay symmetrically rounded along their true incident edges (zero beak).
+     */
+    internal fun roundedTrapezoidPath(
+        left: Float,
+        right: Float,
+        topLeft: Float,
+        topRight: Float,
+        bottom: Float,
+        rTop: Float,
+        rBot: Float,
+        smoothing: Float = FIGMA_SMOOTHING,
+    ): Path {
+        val vx = floatArrayOf(left, right, right, left)
+        val vy = floatArrayOf(topLeft, topRight, bottom, bottom)
+        val radii = floatArrayOf(rTop, rTop, rBot, rBot)
+        val s = smoothing.coerceIn(0f, 1f)
+        val path = Path()
+        // Start at the exact top-edge midpoint and walk clockwise (TR -> BR -> BL -> TL)
+        // so PathMeasure(s = 0) is continuously aligned to top-center with zero index snapping.
+        path.moveTo((left + right) * 0.5f, (topLeft + topRight) * 0.5f)
+        val order = intArrayOf(1, 2, 3, 0)
+        for (k in order) {
+            val prev = (k + 3) % 4
+            val next = (k + 1) % 4
+            val inDx = vx[k] - vx[prev]; val inDy = vy[k] - vy[prev]
+            val outDx = vx[next] - vx[k]; val outDy = vy[next] - vy[k]
+            val inLen = hypot(inDx, inDy).coerceAtLeast(1e-4f)
+            val outLen = hypot(outDx, outDy).coerceAtLeast(1e-4f)
+            val uInX = inDx / inLen; val uInY = inDy / inLen
+            val uOutX = outDx / outLen; val uOutY = outDy / outLen
+
+            val dot = (uInX * uOutX + uInY * uOutY).coerceIn(-0.9999f, 0.9999f)
+            val theta = acos(dot)
+            val halfTheta = theta * 0.5f
+            val tanHalf = tan(halfTheta).coerceAtLeast(1e-4f)
+            val maxEdgeSpan = min(inLen, outLen) * 0.5f
+            val r = min(radii[k].coerceAtLeast(0f), maxEdgeSpan / tanHalf)
+            val t = r * tanHalf
+            if (r <= 1e-4f || theta <= 1e-4f) {
+                path.lineTo(vx[k], vy[k])
+                continue
+            }
+            val p = min((1f + s) * t, maxEdgeSpan)
+            val halfBudget = maxEdgeSpan * 0.5f
+            val effS = if (t > halfBudget && halfBudget > 1e-4f) {
+                s * (1f - ((t - halfBudget) / halfBudget).coerceIn(0f, 1f))
+            } else {
+                s
+            }
+            val alpha = halfTheta * effS
+            val beta = (theta - 2f * alpha).coerceAtLeast(0f)
+
+            // Inward normal to incoming edge in y-down clockwise coordinates.
+            val nInX = -uInY; val nInY = uInX
+            val tInX = vx[k] - uInX * t; val tInY = vy[k] - uInY * t
+            val cx = tInX + nInX * r; val cy = tInY + nInY * r
+            val psiIn = atan2(tInY - cy, tInX - cx)
+
+            val q1Angle = psiIn + alpha
+            val q1x = cx + r * cos(q1Angle); val q1y = cy + r * sin(q1Angle)
+            val dInt = (t - r * tan(alpha * 0.5f)).coerceIn(0f, p)
+            val bRaw = if (alpha > 1e-4f) {
+                val ta = tan(alpha * 0.5f)
+                1.5f * r * ta * ta / sin(alpha)
+            } else 0f
+            val maxB = (p - dInt).coerceAtLeast(0f)
+            val b = bRaw.coerceIn(0f, maxB)
+            val a = (maxB - b).coerceAtLeast(0f)
+
+            val pStartX = vx[k] - uInX * p; val pStartY = vy[k] - uInY * p
+            path.lineTo(pStartX, pStartY)
+
+            val alphaDeg = (alpha * 180.0 / PI).toFloat()
+            val betaDeg = (beta * 180.0 / PI).toFloat()
+            if (alphaDeg > 0.05f) {
+                path.cubicTo(
+                    vx[k] - uInX * (p - a), vy[k] - uInY * (p - a),
+                    vx[k] - uInX * dInt, vy[k] - uInY * dInt,
+                    q1x, q1y,
+                )
+            }
+            if (betaDeg > 0.05f) {
+                path.arcTo(
+                    rect = Rect(cx - r, cy - r, cx + r, cy + r),
+                    startAngleDegrees = (q1Angle * 180.0 / PI).toFloat(),
+                    sweepAngleDegrees = betaDeg,
+                    forceMoveTo = false,
+                )
+            }
+            if (alphaDeg > 0.05f) {
+                path.cubicTo(
+                    vx[k] + uOutX * dInt, vy[k] + uOutY * dInt,
+                    vx[k] + uOutX * (p - a), vy[k] + uOutY * (p - a),
+                    vx[k] + uOutX * p, vy[k] + uOutY * p,
+                )
+            }
+        }
+        path.close()
+        return path
+    }
+
+    /** Samples a clockwise top-center-started [Path] into `n` uniform arc-length points. */
+    private fun samplePathAligned(path: Path, n: Int): Pair<FloatArray, FloatArray> {
+        val pm = PathMeasure(path.asAndroidPath(), true)
+        val len = pm.length
+        val xs = FloatArray(n)
+        val ys = FloatArray(n)
+        val pos = FloatArray(2)
+        for (i in 0 until n) {
+            pm.getPosTan(len * i / n, pos, null)
+            xs[i] = pos[0]
+            ys[i] = pos[1]
+        }
+        return xs to ys
+    }
+
+    /**
+     * Resamples a closed clockwise polygon (`xs`, `ys`) in place to `n` uniform arc-length
+     * points starting at the exact continuous top-center crossing (`x == cx`, top half).
+     */
+    private fun resampleUniformFromTopCenter(xs: FloatArray, ys: FloatArray, cx: Float, midY: Float) {
+        val n = xs.size
+        if (n < 3) return
+        val cum = FloatArray(n + 1)
+        for (i in 0 until n) {
+            val j = (i + 1) % n
+            cum[i + 1] = cum[i] + hypot(xs[j] - xs[i], ys[j] - ys[i])
+        }
+        val total = cum[n]
+        if (total <= 1e-4f) return
+        // Find exact arc-length position where the top half crosses x == cx.
+        var startS = 0f
+        var bestY = Float.MAX_VALUE
+        for (i in 0 until n) {
+            val j = (i + 1) % n
+            val x0 = xs[i]; val x1 = xs[j]
+            val y0 = ys[i]; val y1 = ys[j]
+            if ((x0 <= cx && x1 >= cx) || (x1 <= cx && x0 >= cx)) {
+                val dx = x1 - x0
+                val t = if (abs(dx) > 1e-6f) ((cx - x0) / dx).coerceIn(0f, 1f) else 0f
+                val yCross = y0 + (y1 - y0) * t
+                if (yCross <= midY && yCross < bestY) {
+                    bestY = yCross
+                    startS = cum[i] + (cum[i + 1] - cum[i]) * t
+                }
+            }
+        }
+        val outX = FloatArray(n)
+        val outY = FloatArray(n)
+        var seg = 0
+        for (k in 0 until n) {
+            var target = startS + total * k / n
+            if (target >= total) target -= total
+            if (k == 0 || target < cum[seg]) seg = 0
+            while (seg < n - 1 && cum[seg + 1] < target) seg++
+            val segLen = (cum[seg + 1] - cum[seg]).coerceAtLeast(1e-6f)
+            val t = ((target - cum[seg]) / segLen).coerceIn(0f, 1f)
+            val next = (seg + 1) % n
+            outX[k] = xs[seg] + (xs[next] - xs[seg]) * t
+            outY[k] = ys[seg] + (ys[next] - ys[seg]) * t
+        }
+        System.arraycopy(outX, 0, xs, 0, n)
+        System.arraycopy(outY, 0, ys, 0, n)
+    }
+
+    /**
      * Smoothly estimates the top and bottom full squircle corner spans `(pTop, pBot)` from
      * each half's corner area deficit. Continuous in every vertex coordinate, so morphing
      * between expressions never jumps.
@@ -302,9 +475,15 @@ internal object SquircleEyeGeometry {
             pTop *= k; pBot *= k
         }
 
-        // Map each vertex using isotropic corner bands (same scale in X and Y inside every corner).
-        // Compute outX first and evaluate slant against outX so slanted lids are strictly linear
-        // in final X with zero shoulder kink between the corner band and the straight middle.
+        // Map each vertex isotropically for upright lids (slant = 0), then add the exact
+        // angle-aware Figma 100%-smoothed trapezoid delta T(slant) - T(0) when slant != 0.
+        // This guarantees zero pointy sheared beaks on inclined lids AND exact C∞ continuity
+        // at slant = 0 and across all expression morphs.
+        val fMid = p.upper.coerceIn(0.05f, maxUpper)
+        val newHMid = (hb * fMid * p.sy).coerceAtLeast(1f)
+        val newTopMid = lidBottom - newHMid
+        val straightY1 = (newHMid - pTop - pBot).coerceAtLeast(0f)
+
         val outX = FloatArray(n)
         val outY = FloatArray(n)
         for (i in 0 until n) {
@@ -329,21 +508,34 @@ internal object SquircleEyeGeometry {
                 straightX0 > 1e-4f -> p1 + (dxEdge - p0) / straightX0 * straightX1
                 else -> (dxEdge / hw) * newHw
             }
-            val nx = cx + sideSign * (newHw - dxNew)
-            outX[i] = nx
-
-            val uX = ((nx - (cx - newHw)) / newW).coerceIn(0f, 1f) // 0 = left, 1 = right
-            val xn = (uX * 2f - 1f) * inward // +1 = inner corner
-            val f = (p.upper - p.slant * xn).coerceIn(0.05f, maxUpper)
-            val newH = (hb * f * p.sy).coerceAtLeast(1f)
-            val newTop = lidBottom - newH
-
-            val straightY1 = (newH - pTop - pBot).coerceAtLeast(0f)
+            outX[i] = cx + sideSign * (newHw - dxNew)
             outY[i] = when {
-                dyTop <= pTop0 && pTop0 > 1e-4f -> newTop + dyTop * (pTop / pTop0)
+                dyTop <= pTop0 && pTop0 > 1e-4f -> newTopMid + dyTop * (pTop / pTop0)
                 dyBot <= pBot0 && pBot0 > 1e-4f -> lidBottom - dyBot * (pBot / pBot0)
-                straightY0 > 1e-4f -> newTop + pTop + (dyTop - pTop0) / straightY0 * straightY1
-                else -> newTop + (dyTop / h) * newH
+                straightY0 > 1e-4f -> newTopMid + pTop + (dyTop - pTop0) / straightY0 * straightY1
+                else -> newTopMid + (dyTop / h) * newHMid
+            }
+        }
+
+        resampleUniformFromTopCenter(outX, outY, cx, (newTopMid + lidBottom) * 0.5f)
+        if (abs(p.slant) > 1e-4f) {
+            val newLeft = cx - newHw
+            val newRight = cx + newHw
+            val topL = lidBottom - (hb * fLeft * p.sy).coerceAtLeast(1f)
+            val topR = lidBottom - (hb * fRight * p.sy).coerceAtLeast(1f)
+            val rTop = (pTop * 0.65f).coerceAtLeast(1f)
+            val rBot = (pBot * 0.65f).coerceAtLeast(1f)
+            val (baseTx, baseTy) = samplePathAligned(
+                roundedTrapezoidPath(newLeft, newRight, newTopMid, newTopMid, lidBottom, rTop, rBot),
+                n,
+            )
+            val (slantTx, slantTy) = samplePathAligned(
+                roundedTrapezoidPath(newLeft, newRight, topL, topR, lidBottom, rTop, rBot),
+                n,
+            )
+            for (i in 0 until n) {
+                outX[i] += slantTx[i] - baseTx[i]
+                outY[i] += slantTy[i] - baseTy[i]
             }
         }
 

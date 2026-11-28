@@ -135,9 +135,9 @@ internal object Appraisal {
      * (decaying count over minutes), [valence] = mood.
      */
     fun poke(burst: Int, familiar: Float, valence: Float, k: MindKnobs): Meaning {
-        val crossAt = (2f + 2.2f * k.patience + (if (valence > 0.3f) 0.6f else 0f)).toInt().coerceIn(2, 5)
+        val crossAt = (10f + 5f * k.patience + (if (valence > 0.3f) 2f else 0f)).toInt().coerceIn(10, 16)
         return when {
-            burst >= crossAt + 3 -> Meaning.FedUp
+            burst >= crossAt + 5 -> Meaning.FedUp
             burst >= crossAt -> Meaning.Annoyed
             burst >= 2 -> Meaning.Startled
             // Poked over and over across minutes (not in a burst): it gets used to it.

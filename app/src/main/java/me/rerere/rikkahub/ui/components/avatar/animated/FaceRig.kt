@@ -143,24 +143,35 @@ class FaceRig(private val rng: Random) {
      * saccade. [blink] 0…1 closure — eyes squash wider as the lids meet.
      * [valence]/[arousal] from [MoodEngine]; [calm] false while busy (mood bias softer).
      */
-    fun update(dt: Float, eyeVx: Float, eyeVy: Float, blink: Float, valence: Float, arousal: Float, still: Boolean): FaceParams {
+    fun update(
+        dt: Float,
+        eyeVx: Float,
+        eyeVy: Float,
+        blink: Float,
+        valence: Float,
+        arousal: Float,
+        still: Boolean,
+        neutralWeight: Float = 1f,
+    ): FaceParams {
         t += dt
         if (accentLeft > 0f) {
             accentLeft -= dt
             if (accentLeft <= 0f) accent = FaceAccent.None
         }
+        val nw = neutralWeight.coerceIn(0f, 1f)
         for (side in 0..1) {
             val e = accentTarget(accent, side, t)
             val o = side * 8
             e.toArray(target, o)
             // Mood: happy lifts the lower lids a touch, low mood slants them worried,
             // high arousal opens the eyes a little, low arousal lowers the upper lids.
-            val pos = max(0f, valence); val neg = max(0f, -valence)
+            // Scaled by neutralWeight so authored non-Neutral Figma expressions stay pure.
+            val pos = max(0f, valence) * nw; val neg = max(0f, -valence) * nw
             target[o + 6] -= 0.1f * pos
             target[o + 7] -= 0.12f * neg
-            target[o + 0] *= 1f + 0.05f * (arousal - 0.5f)
-            target[o + 1] *= 1f + 0.07f * (arousal - 0.5f)
-            target[o + 5] -= 0.22f * ((0.38f - arousal) / 0.38f).coerceIn(0f, 1f)
+            target[o + 0] *= 1f + 0.05f * (arousal - 0.5f) * nw
+            target[o + 1] *= 1f + 0.07f * (arousal - 0.5f) * nw
+            target[o + 5] -= 0.22f * ((0.38f - arousal) / 0.38f).coerceIn(0f, 1f) * nw
             // Saccade stretch (along the motion) — a few percent at most.
             val sp = kotlin.math.hypot(eyeVx, eyeVy)
             if (sp > 0.5f) {

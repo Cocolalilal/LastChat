@@ -110,8 +110,13 @@ class MoodBehaviorTest {
         stage.update(s.stageId, 1, androidx.compose.ui.geometry.Offset(100f, 400f), 50f, "blob|grok", 1080f, 2200f)
         repeat(60) { s.tick(DT, AvatarMotionHints(), at(15)) }
 
-        // 1. Make it cross through repeated rapid pokes
+        // 1. Make it cross through repeated rapid pokes (a short 3-poke burst must NOT annoy it)
         repeat(3) {
+            s.poke()
+            repeat(15) { s.tick(DT, AvatarMotionHints(), at(15)) }
+        }
+        assertTrue("3 pokes must not make avatar cross", !s.crossNow())
+        repeat(10) {
             s.poke()
             repeat(15) { s.tick(DT, AvatarMotionHints(), at(15)) }
         }
@@ -133,7 +138,7 @@ class MoodBehaviorTest {
         repeat((1.6f / DT).toInt()) { s.tick(DT, AvatarMotionHints(), at(15)) }
 
         // 2. Put it back in a cross state
-        repeat(3) {
+        repeat(13) {
             s.poke()
             repeat(15) { s.tick(DT, AvatarMotionHints(), at(15)) }
         }

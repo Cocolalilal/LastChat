@@ -63,8 +63,10 @@ class MindAuditTest {
         assertTrue(MindRules.perceptionScale(0.9f, 0.8f, false, k) < MindRules.perceptionScale(0.2f, 0.2f, true, k))
         // Appraisal: repeated poke = annoyed; patience moves the threshold; habituation calms it.
         assertEquals(Meaning.Startled, Appraisal.poke(1, 0f, 0.1f, k))
-        assertEquals(Meaning.Annoyed, Appraisal.poke(3, 0f, 0.1f, k))
-        assertTrue(Appraisal.poke(3, 0f, 0.1f, k.copy(patience = 1f)) != Meaning.Annoyed)
+        assertTrue(Appraisal.poke(3, 0f, 0.1f, k) != Meaning.Annoyed)
+        assertTrue(Appraisal.poke(9, 0f, 0.1f, k) != Meaning.Annoyed)
+        assertEquals(Meaning.Annoyed, Appraisal.poke(12, 0f, 0.1f, k))
+        assertTrue(Appraisal.poke(12, 0f, 0.1f, k.copy(patience = 1f)) != Meaning.Annoyed)
         assertEquals(Meaning.Habituated, Appraisal.poke(1, 6f, 0.1f, k))
         assertEquals(Meaning.Satisfied, Appraisal.replyEnd(8f, 0.1f))
         // Memory: no repeated looks, glance-back candidates.

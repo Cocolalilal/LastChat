@@ -69,15 +69,40 @@ class AnimatedAvatarContinuityTest {
             FaceRig.shapeOutline(xs, ys, 0, shape)
             val sMinX = xs.min(); val sMaxX = xs.max()
             val sMinY = ys.min(); val sMaxY = ys.max()
-            // Top-left corner sample around the 45° diagonal of Neutral must remain symmetric (dx ≈ dy).
-            val origDiagIdx = neutral.x.indices
-                .filter { neutral.x[it] < midX && neutral.y[it] < neutral.cy }
-                .minBy { abs((neutral.x[it] - minX) - (neutral.y[it] - topMinY)) }
-            val origRatio = (neutral.y[origDiagIdx] - topMinY) / (neutral.x[origDiagIdx] - minX)
-            val dxNew = xs[origDiagIdx] - sMinX
-            val dyNew = ys[origDiagIdx] - sMinY
-            val ratio = if (dxNew > 1e-3f) dyNew / dxNew else 0f
-            assertEquals("$accent top-left corner was squeezed (dx=$dxNew, dy=$dyNew)", origRatio, ratio, 0.01f)
+            // Top-left corner geometry must remain symmetric (unsqueezed): vertical inset at
+            // horizontal distance d from left edge equals horizontal inset at vertical distance d from top.
+            val (newTopSpan, _) = SquircleEyeGeometry.cornerSpans(xs, ys, sMinX, sMaxX, sMinY, sMaxY)
+            val probe = newTopSpan * 0.22f
+            fun insetAtX(targetX: Float): Float {
+                var best = Float.MAX_VALUE
+                for (i in xs.indices) {
+                    val j = (i + 1) % xs.size
+                    val x0 = xs[i]; val x1 = xs[j]
+                    if ((x0 <= targetX && x1 >= targetX) || (x1 <= targetX && x0 >= targetX)) {
+                        val t = if (abs(x1 - x0) > 1e-6f) ((targetX - x0) / (x1 - x0)).coerceIn(0f, 1f) else 0f
+                        val y = ys[i] + (ys[j] - ys[i]) * t
+                        if (y < (sMinY + sMaxY) * 0.5f) best = minOf(best, y - sMinY)
+                    }
+                }
+                return best
+            }
+            fun insetAtY(targetY: Float): Float {
+                var best = Float.MAX_VALUE
+                for (i in xs.indices) {
+                    val j = (i + 1) % xs.size
+                    val y0 = ys[i]; val y1 = ys[j]
+                    if ((y0 <= targetY && y1 >= targetY) || (y1 <= targetY && y0 >= targetY)) {
+                        val t = if (abs(y1 - y0) > 1e-6f) ((targetY - y0) / (y1 - y0)).coerceIn(0f, 1f) else 0f
+                        val x = xs[i] + (xs[j] - xs[i]) * t
+                        if (x < (sMinX + sMaxX) * 0.5f) best = minOf(best, x - sMinX)
+                    }
+                }
+                return best
+            }
+            val dyAtProbe = insetAtX(sMinX + probe)
+            val dxAtProbe = insetAtY(sMinY + probe)
+            val ratio = if (dxAtProbe > 1e-3f) dyAtProbe / dxAtProbe else 0f
+            assertEquals("$accent top-left corner was squeezed (dx=$dxAtProbe, dy=$dyAtProbe)", 1f, ratio, 0.05f)
             if (accent == FaceAccent.Focused || accent == FaceAccent.Drowsy) {
                 val (newTopSpan, _) = SquircleEyeGeometry.cornerSpans(xs, ys, sMinX, sMaxX, sMinY, sMaxY)
                 assertTrue("$accent top corner should tighten ($newTopSpan vs $origTopSpan)", newTopSpan < origTopSpan - 4f)
@@ -359,5 +384,37 @@ class AnimatedAvatarContinuityTest {
             }
         }
         assertTrue("Expected to test partial limb visibility during sphere spin", checkedPartialVisibility)
+    }
+
+    @Test
+    fun wideOpenNeverOverlapsShapeChangingExpressionsDuringPokes() {
+        val dt = 1f / 60f
+        for (seed in 1..12) {
+            val s = AvatarMotionState(Random(seed))
+            var ms = 1_700_000_000_000L
+            // Warm up
+            repeat(60) {
+                s.tick(dt, AvatarMotionHints(), ms)
+                ms += 16L
+            }
+            // Spam 16 rapid pokes across several seconds, checking every frame that the active
+            // target expression and active shape-changing accent never combine wide-open with
+            // another eye-shape expression as a goal.
+            for (poke in 1..16) {
+                s.poke((poke % 3 - 1) * 0.3f, 0.1f)
+                repeat(15) {
+                    s.tick(dt, AvatarMotionHints(), ms)
+                    ms += 16L
+                    val base = ExpressionDirector.normalize(s.frame.exprTo)
+                    val acc = s.currentAccent
+                    val shapeAccent = acc != FaceAccent.None && acc != FaceAccent.Dizzy
+                    if (base != "Neutral" && shapeAccent) {
+                        throw AssertionError(
+                            "Seed $seed poke #$poke overlapped base expression '$base' with shape accent '$acc'"
+                        )
+                    }
+                }
+            }
+        }
     }
 }

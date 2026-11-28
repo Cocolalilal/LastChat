@@ -1110,9 +1110,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 director.gesture(MotionDirector.Gesture.Recoil)
                 val usedToIt = stm.pokeFamiliar > 5.5f && pokeWindow <= 0f
                 val er = rng.nextFloat() * (if (usedToIt) 1.4f else 1f)
+                val canWidenReflex = ExpressionDirector.normalize(expr.to) == "Neutral" && !rig.active
                 when {
-                    er < 0.45f -> because("poke reflex", MindRules.P_USER) { accent(FaceAccent.Startled, if (usedToIt) 0.2f else 0.32f, force = true) }
-                    er < 0.72f -> because("poke reflex", MindRules.P_USER) { accent(FaceAccent.Startled, 0.14f, force = true) }
+                    canWidenReflex && er < 0.45f -> because("poke reflex", MindRules.P_USER) { accent(FaceAccent.Startled, if (usedToIt) 0.2f else 0.32f, force = true) }
+                    canWidenReflex && er < 0.72f -> because("poke reflex", MindRules.P_USER) { accent(FaceAccent.Startled, 0.14f, force = true) }
                     else -> log("poke reflex: body only")
                 }
                 repeat(pendingPokes) { stimulus(Stimulus("poke", 0f, 0f, 0.9f, direct = true), { r -> because("poke", MindRules.P_USER) { onPoke(r) } }, allowNone = false) }
@@ -1350,6 +1351,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         director.moodValence = mood.valence
         director.moodArousal = mood.arousal
         val busyNow = MotionDirector.isBusy(director.lifecycle)
+        val neutralWeight = expr.weights.firstOrNull { it.first == "Neutral" }?.second ?: 0f
         val faceLive = rig.update(
             dt,
             gaze.evx, gaze.evy,
@@ -1357,6 +1359,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             valence = if (live) mood.valence * (if (busyNow) 0.5f else 1f) else 0f,
             arousal = if (live) mood.arousal else 0.5f,
             still = live && !gaze.bigShift && social == null,
+            neutralWeight = neutralWeight,
         )
 
         stage?.setCalm(stageId, calmLife && social == null && reaction == null && !drowsy)
@@ -1947,6 +1950,12 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     /** Play a parametric look (with a cooldown so faces don't pile up) and let neighbours see it. */
     private fun accent(a: FaceAccent, sec: Float, force: Boolean = false): Boolean {
         if (!force && (accentCooldown > 0f || rig.active)) return false
+        val shapeAccent = a != FaceAccent.None && a != FaceAccent.Dizzy
+        val baseFace = ExpressionDirector.normalize(expr.to)
+        if (shapeAccent && baseFace != "Neutral") {
+            log("accent $a dropped: base expression $baseFace owns eye shape")
+            return false
+        }
         val prio = if (force) maxOf(whyPrio, MindRules.P_EVENT) else whyPrio
         val cause = why
         val busy = MotionDirector.isBusy(director.lifecycle)
@@ -1956,6 +1965,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         @Suppress("NAME_SHADOWING") val sec = if (prio >= MindRules.P_EVENT) sec else max(sec, MindRules.minDwell(a.name)) // spontaneous: full dwell
         if (!mind.faceSafe(prio, expr.morphing) || (!force && !mind.budgetOk(prio, busy, mood.arousal))) {
             mind.propose(Intention(Lane.Face, "accent:$a", prio, cause, mind.now, if (force) 2.5f else 1.2f) {
+                if (shapeAccent && ExpressionDirector.normalize(expr.to) != "Neutral") return@Intention
                 rig.play(a, sec); mind.landAccent(a.name, prio, cause, sec); log("accent $a cause=$cause (after waiting)")
             })
             accentCooldown = sec + 1.5f
@@ -2204,6 +2214,9 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             return
         }
         reactionPrio = prio; reactionCause = cause; reactionWait = 0f
+        if (ExpressionDirector.normalize(e0) != "Neutral" && rig.accent != FaceAccent.Dizzy) {
+            rig.clear()
+        }
         log("expr $from→$e0 cause=$cause")
         remember("face:$e0")
         // Confused has a left/right variant: the raised brow goes on the side it is looking
@@ -2695,24 +2708,34 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 if (reactionQueue?.first == "Happy") reactionQueue = null
                 director.gesture(MotionDirector.Gesture.TurnAway)
                 setReaction("pouty", 1.6f, cause = "poked too much")
-                accent(FaceAccent.Annoyed, 1.8f, force = true)
                 mood.nudge(-0.12f, 0.05f)
                 forgiveIn = 2.6f + rng.nextFloat() * 1.5f
             }
-            pokeCount >= 2 -> {
-                setReaction("Surprised", 0.9f, cause = "poke")
+            pokeCount == 2 -> {
+                setReaction("Surprised", 0.75f, cause = "poke")
                 blink.request(minGap = 0.2f)
+            }
+            pokeCount > 2 -> {
+                // Mid-burst pokes before annoyance: stay playful/varied without locking eyes wide open.
+                when (pokeCount % 4) {
+                    3 -> { director.gesture(MotionDirector.Gesture.Tilt); blink.request(minGap = 0f) }
+                    0 -> if (rng.nextFloat() < 0.5f) setReaction("confused", 0.9f, cause = "poked repeatedly") else director.gesture(MotionDirector.Gesture.Nod)
+                    1 -> blink.request(double = true, minGap = 0f)
+                    else -> director.gesture(MotionDirector.Gesture.Tilt)
+                }
             }
             // First poke: not the same reaction every time.
             else -> when (r) {
                 Response.Startle -> {
-                    accent(FaceAccent.Startled, 0.45f, force = true)
                     if (crossNow()) {
                         val crossFace = if (mind.owner == "Angry" || ExpressionDirector.normalize(expr.to) == "Angry") "Angry" else "pouty"
                         setReaction(crossFace, 1.2f, cause = "poked while cross")
-                    } else if (rng.nextFloat() < 0.4f) {
-                        reactionQueue = "Happy" to 1.2f
-                        reactionQueueIn = 0.6f
+                    } else {
+                        accent(FaceAccent.Startled, 0.45f, force = true)
+                        if (rng.nextFloat() < 0.4f) {
+                            reactionQueue = "Happy" to 1.2f
+                            reactionQueueIn = 0.6f
+                        }
                     }
                 }
                 Response.Freeze -> perform(Response.Freeze, Stimulus("poke", 0f, 0f, 0.9f))
